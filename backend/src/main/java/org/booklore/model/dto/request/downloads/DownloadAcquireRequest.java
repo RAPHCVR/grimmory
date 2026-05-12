@@ -8,6 +8,6 @@ import lombok.EqualsAndHashCode;
 public class DownloadAcquireRequest extends DownloadSearchRequest {
     private Long targetLibraryId;
     private Long targetLibraryPathId;
-    private Boolean autoFinalize = false;
+    private Boolean autoFinalize = true;
     private Integer confidenceThreshold = 90;
 }

@@ -28,6 +28,25 @@
         "seriesNumber": "Numéro",
         "directUrl": "URL directe"
     },
+    "contentKinds": {
+        "AUTO": "Auto",
+        "BOOK": "Livre",
+        "MANGA": "Manga",
+        "COMIC": "Comics / BD",
+        "WEBTOON": "Webtoon"
+    },
+    "acquisitionTypes": {
+        "DIRECT_FILE": "Fichier direct",
+        "TORRENT": "Torrent",
+        "NZB": "NZB",
+        "OPDS_ACQUISITION": "OPDS",
+        "MANGADEX_CHAPTER": "Chapitre MangaDex",
+        "IMAGE_SEQUENCE_CBZ": "Images vers CBZ",
+        "CLI_GALLERY_DL": "gallery-dl",
+        "EXTERNAL_STACKS": "Stacks",
+        "WEB_PLUGIN": "Plugin web",
+        "UNKNOWN": "Inconnu"
+    },
     "results": {
         "title": "Résultats",
         "searchId": "Recherche #{{id}}",

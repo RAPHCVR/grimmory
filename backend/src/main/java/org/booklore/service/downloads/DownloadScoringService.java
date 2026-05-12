@@ -1,6 +1,7 @@
 package org.booklore.service.downloads;
 
 import org.booklore.model.enums.DownloadFormat;
+import org.booklore.model.enums.DownloadAcquisitionType;
 import org.booklore.model.enums.DownloadContentKind;
 import org.booklore.service.downloads.dto.DownloadScoreBreakdown;
 import org.booklore.service.downloads.dto.DownloadSearchCriteria;
@@ -46,6 +47,9 @@ public class DownloadScoringService {
         String expectedTitle = firstNonBlank(criteria.getTitle(), criteria.effectiveQuery());
         if (!isBlank(expectedTitle) && (!isBlank(result.getTitle()) || !isBlank(result.getSeriesName()))) {
             double titleSimilarity = Math.max(similarity(expectedTitle, result.getTitle()), similarity(expectedTitle, result.getSeriesName()));
+            if (queryContainsMoreThanAuthor(expectedTitle, result)) {
+                titleSimilarity = Math.max(titleSimilarity, similarity(expectedTitle, combinedTitleAndAuthors(result)));
+            }
             if (titleSimilarity >= 0.98) {
                 score += 45;
                 reasons.add("+45 title exact match");
@@ -119,10 +123,18 @@ public class DownloadScoringService {
             }
         }
 
-        if (result.getContentKind() == criteria.getContentKind()) {
+        DownloadContentKind requestedKind = criteria.getContentKind() == null ? DownloadContentKind.AUTO : criteria.getContentKind();
+        if (requestedKind == DownloadContentKind.AUTO) {
+            score += 5;
+            reasons.add("+5 content kind inferred automatically");
+            if (result.getContentKind() != null && result.getContentKind().isSequentialArt()) {
+                score += 5;
+                reasons.add("+5 visual content kind evidence");
+            }
+        } else if (result.getContentKind() == requestedKind) {
             score += 10;
             reasons.add("+10 content kind match");
-        } else if (directUrlMatch && criteria.getContentKind() == DownloadContentKind.BOOK) {
+        } else if (directUrlMatch && requestedKind == DownloadContentKind.BOOK) {
             score += 10;
             reasons.add("+10 content kind inferred from direct URL");
         } else {
@@ -130,7 +142,7 @@ public class DownloadScoringService {
             reasons.add("-30 content kind mismatch");
         }
 
-        score += scoreFormat(criteria.getPreferredFormats(), result.getFormat(), reasons);
+        score += scoreFormat(criteria.getPreferredFormats(), result, reasons);
 
         if (result.getSizeBytes() != null) {
             if (result.getSizeBytes() >= MIN_REASONABLE_SIZE_BYTES) {
@@ -152,8 +164,13 @@ public class DownloadScoringService {
                 .build();
     }
 
-    private int scoreFormat(List<DownloadFormat> preferredFormats, DownloadFormat resultFormat, List<String> reasons) {
+    private int scoreFormat(List<DownloadFormat> preferredFormats, NormalizedDownloadResult result, List<String> reasons) {
+        DownloadFormat resultFormat = result.getFormat();
         if (resultFormat == null || resultFormat == DownloadFormat.UNKNOWN) {
+            if (isDeferredSequentialArtPayload(preferredFormats, result)) {
+                reasons.add("+5 torrent payload format deferred");
+                return 5;
+            }
             reasons.add("-15 unknown format");
             return -15;
         }
@@ -169,10 +186,54 @@ public class DownloadScoringService {
         return -50;
     }
 
+    private boolean isDeferredSequentialArtPayload(List<DownloadFormat> preferredFormats, NormalizedDownloadResult result) {
+        if (result.getContentKind() == null || !result.getContentKind().isSequentialArt()) {
+            return false;
+        }
+        DownloadAcquisitionType acquisitionType = result.getAcquisitionType();
+        if (acquisitionType != DownloadAcquisitionType.TORRENT && acquisitionType != DownloadAcquisitionType.NZB) {
+            return false;
+        }
+        if (preferredFormats == null || preferredFormats.isEmpty()) {
+            return true;
+        }
+        return preferredFormats.stream().anyMatch(format -> format != null && format.isArchiveComicFormat());
+    }
+
     private boolean requiresDownloadUrl(NormalizedDownloadResult result) {
         return result == null
                 || result.getAcquisitionType() == null
                 || result.getAcquisitionType() != org.booklore.model.enums.DownloadAcquisitionType.EXTERNAL_STACKS;
+    }
+
+    private boolean queryContainsMoreThanAuthor(String query, NormalizedDownloadResult result) {
+        if (isBlank(query) || result.getAuthors() == null || result.getAuthors().isEmpty()) {
+            return false;
+        }
+        Set<String> queryTokens = tokens(normalize(query));
+        if (queryTokens.isEmpty()) {
+            return false;
+        }
+        Set<String> authorTokens = new LinkedHashSet<>();
+        for (String author : result.getAuthors()) {
+            authorTokens.addAll(tokens(normalize(author)));
+        }
+        authorTokens.remove("");
+        return !authorTokens.isEmpty() && !authorTokens.containsAll(queryTokens);
+    }
+
+    private String combinedTitleAndAuthors(NormalizedDownloadResult result) {
+        List<String> parts = new ArrayList<>();
+        if (!isBlank(result.getTitle())) {
+            parts.add(result.getTitle());
+        }
+        if (!isBlank(result.getSeriesName())) {
+            parts.add(result.getSeriesName());
+        }
+        if (result.getAuthors() != null) {
+            parts.addAll(result.getAuthors());
+        }
+        return String.join(" ", parts);
     }
 
     private int scoreRequestedNumber(String expectedTitle, NormalizedDownloadResult result, List<String> reasons) {
@@ -247,9 +308,23 @@ public class DownloadScoringService {
         if (leftTokens.isEmpty() || rightTokens.isEmpty()) return 0;
 
         if (leftTokens.size() >= 2 && rightTokens.containsAll(leftTokens)) {
-            return 0.86;
+            double coverage = (double) leftTokens.size() / (double) rightTokens.size();
+            if (hasNumericToken(leftTokens) || coverage >= 0.50D) {
+                return 0.86;
+            }
+            if (leftTokens.size() >= 4 && coverage >= 0.30D) {
+                return 0.86;
+            }
         }
 
+        return jaccard(leftTokens, rightTokens);
+    }
+
+    private boolean hasNumericToken(Set<String> tokens) {
+        return tokens.stream().anyMatch(token -> token.matches("\\d{1,5}"));
+    }
+
+    private double jaccard(Set<String> leftTokens, Set<String> rightTokens) {
         Set<String> intersection = new HashSet<>(leftTokens);
         intersection.retainAll(rightTokens);
         Set<String> union = new HashSet<>(leftTokens);

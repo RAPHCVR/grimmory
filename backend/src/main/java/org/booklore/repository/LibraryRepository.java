@@ -27,4 +27,6 @@ public interface LibraryRepository extends JpaRepository<LibraryEntity, Long>, J
     @EntityGraph(attributePaths = {"libraryPaths"})
     @Query("SELECT l FROM LibraryEntity l")
     List<LibraryEntity> findAllWithPaths();
+
+    Optional<LibraryEntity> findByName(String name);
 }

@@ -47,7 +47,7 @@
         "PROWLARR_TORZNAB": "Prowlarr / Torznab",
         "DIRECT_URL": "URL directe",
         "MANGADEX": "MangaDex",
-        "ANNAS_ARCHIVE_API": "Pont API Anna",
+        "ANNAS_ARCHIVE_API": "Anna via Stacks",
         "CUSTOM_WEB_PLUGIN": "Plugin web personnalisé"
     },
     "delete": {

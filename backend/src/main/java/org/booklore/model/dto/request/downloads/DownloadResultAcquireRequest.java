@@ -6,6 +6,6 @@ import lombok.Data;
 public class DownloadResultAcquireRequest {
     private Long targetLibraryId;
     private Long targetLibraryPathId;
-    private Boolean autoFinalize = false;
+    private Boolean autoFinalize = true;
     private Integer confidenceThreshold = 90;
 }

@@ -12,6 +12,7 @@ public class AppProperties {
     private String bookdropFolder;
     private String version;
     private RemoteAuth remoteAuth;
+    private Downloads downloads = new Downloads();
     private Boolean forceDisableOidc = false;
 
     /**
@@ -37,5 +38,13 @@ public class AppProperties {
         private String headerGroups;
         private String adminGroup;
         private String groupsDelimiter = "\\s+";  // Default to whitespace for backward compatibility
+    }
+
+    @Getter
+    @Setter
+    public static class Downloads {
+        private boolean autoCreateLibrary = true;
+        private String defaultLibraryName = "Downloads";
+        private String defaultLibraryPath = "/books/Downloads";
     }
 }

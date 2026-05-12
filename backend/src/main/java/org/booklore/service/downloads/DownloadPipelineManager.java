@@ -53,6 +53,7 @@ public class DownloadPipelineManager {
     private final DownloadExecutorRegistry executorRegistry;
     private final DownloadScoringService scoringService;
     private final DownloadNamingService namingService;
+    private final DownloadTargetResolver targetResolver;
     private final DownloadedCbxMetadataService downloadedCbxMetadataService;
     private final BookdropDeliveryService bookdropDeliveryService;
     private final ObjectMapper objectMapper;
@@ -108,6 +109,7 @@ public class DownloadPipelineManager {
                 .stream()
                 .max(Comparator.comparing(DownloadResultEntity::getScore, Comparator.nullsFirst(Integer::compareTo)))
                 .orElseThrow(() -> new DownloadException("No downloadable result found for query: " + criteria.effectiveQuery()));
+        DownloadTargetResolver.ResolvedTarget target = targetResolver.resolve(targetLibraryId, targetLibraryPathId, autoFinalize, best.getFormat());
 
         DownloadJobEntity job = DownloadJobEntity.builder()
                 .search(best.getSearch())
@@ -117,8 +119,8 @@ public class DownloadPipelineManager {
                 .confidenceScore(best.getScore())
                 .autoFinalize(autoFinalize)
                 .confidenceThreshold(confidenceThreshold)
-                .targetLibraryId(targetLibraryId)
-                .targetLibraryPathId(targetLibraryPathId)
+                .targetLibraryId(target.libraryId())
+                .targetLibraryPathId(target.libraryPathId())
                 .build();
         return jobRepository.save(job);
     }
@@ -140,6 +142,7 @@ public class DownloadPipelineManager {
                                          int confidenceThreshold) {
         DownloadResultEntity result = resultRepository.findWithSearchAndSourceById(resultId)
                 .orElseThrow(() -> new DownloadException("Download result not found: " + resultId));
+        DownloadTargetResolver.ResolvedTarget target = targetResolver.resolve(targetLibraryId, targetLibraryPathId, autoFinalize, result.getFormat());
 
         DownloadJobEntity job = DownloadJobEntity.builder()
                 .search(result.getSearch())
@@ -149,8 +152,8 @@ public class DownloadPipelineManager {
                 .confidenceScore(result.getScore())
                 .autoFinalize(autoFinalize)
                 .confidenceThreshold(confidenceThreshold)
-                .targetLibraryId(targetLibraryId)
-                .targetLibraryPathId(targetLibraryPathId)
+                .targetLibraryId(target.libraryId())
+                .targetLibraryPathId(target.libraryPathId())
                 .build();
         return jobRepository.save(job);
     }
@@ -194,6 +197,9 @@ public class DownloadPipelineManager {
 
             updateJob(job, DownloadJobStatus.VALIDATING, 100, null);
             DownloadFormat detectedFormat = validateDownloadedFile(partFile, result);
+            if (detectedFormat != result.getFormat()) {
+                result = result.toBuilder().format(detectedFormat).build();
+            }
             String finalFileName = namingService.buildFinalFileName(result, detectedFormat);
             downloadedCbxMetadataService.embedIfApplicable(partFile, result, detectedFormat);
             Path stagedFile = stagingDir.resolve(finalFileName + ".staged");
@@ -298,12 +304,9 @@ public class DownloadPipelineManager {
             throw new DownloadValidationException("Downloaded file is much smaller than expected");
         }
 
-        DownloadFormat format = result.getFormat();
-        if (format == null || format == DownloadFormat.UNKNOWN) {
-            format = DownloadFormat.fromFileName(partFile.getFileName().toString())
-                    .or(() -> DownloadFormat.fromFileName(result.getDownloadUrl()))
-                    .orElse(DownloadFormat.UNKNOWN);
-        }
+        DownloadFormat format = DownloadFormat.fromFileName(partFile.getFileName().toString())
+                .or(() -> DownloadFormat.fromFileName(result.getDownloadUrl()))
+                .orElse(result.getFormat() == null ? DownloadFormat.UNKNOWN : result.getFormat());
         if (format == DownloadFormat.UNKNOWN || format.extension().isBlank()) {
             throw new DownloadValidationException("Unsupported or unknown downloaded format");
         }

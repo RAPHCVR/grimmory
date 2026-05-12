@@ -144,7 +144,7 @@ class DownloadScoringServiceTest {
 
         assertTrue(score.getScore() >= 90);
         assertTrue(score.getReasons().contains("+80 direct URL exact match"));
-        assertTrue(score.getReasons().contains("+10 content kind inferred from direct URL"));
+        assertTrue(score.getReasons().contains("+5 content kind inferred automatically"));
     }
 
     @Test
@@ -171,5 +171,77 @@ class DownloadScoringServiceTest {
         assertTrue(score.getScore() >= 40);
         assertTrue(score.getReasons().contains("+45 query author match"));
         assertTrue(score.getReasons().stream().noneMatch("-100 missing download URL"::equals));
+    }
+
+    @Test
+    void score_universalQueryWithTitleAndAuthorMatchesCombinedMetadata() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("Les Fourmis Bernard Werber")
+                .contentKind(DownloadContentKind.BOOK)
+                .preferredFormats(List.of(DownloadFormat.EPUB))
+                .build();
+
+        NormalizedDownloadResult result = NormalizedDownloadResult.builder()
+                .sourceResultId("6fc83a82e765e3808aa55102b0894275")
+                .title("Les Fourmis (Les Fourmis, Tome 1) (Le Livre de Poche) (French Edition)")
+                .authors(List.of("Bernard Werber Werber"))
+                .format(DownloadFormat.EPUB)
+                .contentKind(DownloadContentKind.BOOK)
+                .acquisitionType(DownloadAcquisitionType.EXTERNAL_STACKS)
+                .detailsUrl("https://annas-archive.gl/md5/6fc83a82e765e3808aa55102b0894275")
+                .build();
+
+        var score = service.score(criteria, result);
+
+        assertTrue(score.getScore() >= 60);
+        assertTrue(score.getReasons().contains("+35 title strong match"));
+    }
+
+    @Test
+    void score_autoContentKindAcceptsInferredMangaAndDefersTorrentFormat() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("One Piece 100")
+                .contentKind(DownloadContentKind.AUTO)
+                .preferredFormats(List.of(DownloadFormat.CBZ))
+                .build();
+
+        NormalizedDownloadResult result = NormalizedDownloadResult.builder()
+                .title("[ENG] One Piece - Vol. 100 (FULL COLOR Digital Colored Comics)")
+                .format(DownloadFormat.UNKNOWN)
+                .contentKind(DownloadContentKind.MANGA)
+                .acquisitionType(DownloadAcquisitionType.TORRENT)
+                .downloadUrl("magnet:?xt=urn:btih:abcdef")
+                .sizeBytes(159_593_264L)
+                .build();
+
+        var score = service.score(criteria, result);
+
+        assertTrue(score.getScore() >= 75);
+        assertTrue(score.getReasons().contains("+5 content kind inferred automatically"));
+        assertTrue(score.getReasons().contains("+5 visual content kind evidence"));
+        assertTrue(score.getReasons().contains("+5 torrent payload format deferred"));
+    }
+
+    @Test
+    void score_disconnectedQueryTokensDoNotCreateStrongTitleMatch() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("Tower of God")
+                .contentKind(DownloadContentKind.AUTO)
+                .preferredFormats(List.of(DownloadFormat.CBZ))
+                .build();
+
+        NormalizedDownloadResult result = NormalizedDownloadResult.builder()
+                .title("Welcome to [The Lesser Tower of Clubs]")
+                .seriesName("The Female God of Babel: KAMISAMA Club in Tower of Babel")
+                .format(DownloadFormat.CBZ)
+                .contentKind(DownloadContentKind.MANGA)
+                .acquisitionType(DownloadAcquisitionType.MANGADEX_CHAPTER)
+                .downloadUrl("chapter-id")
+                .build();
+
+        var score = service.score(criteria, result);
+
+        assertTrue(score.getScore() < 50);
+        assertTrue(score.getReasons().contains("-35 title weak match"));
     }
 }

@@ -2,6 +2,7 @@ package org.booklore.model.enums;
 
 import java.util.Locale;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 public enum DownloadFormat {
     EPUB("epub"),
@@ -49,6 +50,16 @@ public enum DownloadFormat {
         String normalized = value.trim().toUpperCase(Locale.ROOT).replace(".", "");
         for (DownloadFormat format : values()) {
             if (format.name().equals(normalized) || format.extension.toUpperCase(Locale.ROOT).equals(normalized)) {
+                return format;
+            }
+        }
+        String lower = value.toLowerCase(Locale.ROOT);
+        for (DownloadFormat format : values()) {
+            if (format == UNKNOWN || format.extension.isBlank()) {
+                continue;
+            }
+            Pattern token = Pattern.compile("(?i)(^|[^a-z0-9])" + Pattern.quote(format.extension) + "([^a-z0-9]|$)");
+            if (token.matcher(lower).find()) {
                 return format;
             }
         }

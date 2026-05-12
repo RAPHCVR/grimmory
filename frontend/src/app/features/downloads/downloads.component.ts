@@ -69,10 +69,10 @@ export class DownloadsComponent implements OnInit, OnDestroy {
   seriesName = '';
   seriesNumber: number | null = null;
   directUrl = '';
-  contentKind: DownloadContentKind = 'BOOK';
-  preferredFormats: DownloadFormat[] = ['EPUB', 'PDF', 'CBZ'];
+  contentKind: DownloadContentKind = 'AUTO';
+  preferredFormats: DownloadFormat[] = [...DOWNLOAD_FORMATS];
   maxResults = 25;
-  autoFinalize = false;
+  autoFinalize = true;
   confidenceThreshold = 90;
   targetLibraryId: number | null = null;
   targetLibraryPathId: number | null = null;
@@ -88,7 +88,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
   acquiringResultIds = new Set<number>();
   processingJobIds = new Set<number>();
 
-  contentKindOptions: SelectOption<DownloadContentKind>[] = DOWNLOAD_CONTENT_KINDS.map(value => ({label: value, value}));
+  contentKindOptions: SelectOption<DownloadContentKind>[] = DOWNLOAD_CONTENT_KINDS.map(value => ({label: this.contentKindLabel(value), value}));
   formatOptions: SelectOption<DownloadFormat>[] = DOWNLOAD_FORMATS.map(value => ({label: value, value}));
 
   private pollSub?: Subscription;
@@ -153,14 +153,6 @@ export class DownloadsComponent implements OnInit, OnDestroy {
 
   acquire(result: DownloadResult): void {
     if (this.acquiringResultIds.has(result.id)) return;
-    if (this.autoFinalize && !this.hasAutoFinalizeTarget()) {
-      this.messageService.add({
-        severity: 'warn',
-        summary: this.t.translate('downloads.toast.targetRequiredSummary'),
-        detail: this.t.translate('downloads.toast.targetRequiredDetail')
-      });
-      return;
-    }
 
     this.acquiringResultIds.add(result.id);
     this.downloadsService.queueSelectedResult(result.id, {
@@ -265,8 +257,8 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     this.seriesName = '';
     this.seriesNumber = null;
     this.directUrl = '';
-    this.contentKind = 'BOOK';
-    this.preferredFormats = ['EPUB', 'PDF', 'CBZ'];
+    this.contentKind = 'AUTO';
+    this.preferredFormats = [...DOWNLOAD_FORMATS];
     this.maxResults = 25;
     this.results = [];
     this.searchId = null;
@@ -286,11 +278,17 @@ export class DownloadsComponent implements OnInit, OnDestroy {
   resultMeta(result: DownloadResult): string {
     const parts = [
       this.authors(result),
-      result.seriesName ? `${result.seriesName}${result.seriesNumber ? ` #${result.seriesNumber}` : ''}` : null,
+      this.isVisualResult(result) && result.seriesName && result.title !== result.seriesName
+        ? `${result.title}${result.seriesNumber ? ` #${result.seriesNumber}` : ''}`
+        : result.seriesName ? `${result.seriesName}${result.seriesNumber ? ` #${result.seriesNumber}` : ''}` : null,
       result.publishedYear,
       result.language
     ].filter(Boolean);
     return parts.join(' · ');
+  }
+
+  displayTitle(result: DownloadResult): string {
+    return this.isVisualResult(result) && result.seriesName ? result.seriesName : result.title;
   }
 
   scoreSeverity(score?: number | null): 'success' | 'info' | 'warn' | 'danger' | 'secondary' {
@@ -328,6 +326,33 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     return this.t.translate(`downloads.statuses.${status}`);
   }
 
+  contentKindLabel(kind: DownloadContentKind): string {
+    return this.t.translate(`downloads.contentKinds.${kind}`);
+  }
+
+  acquisitionLabel(acquisitionType: string): string {
+    return this.t.translate(`downloads.acquisitionTypes.${acquisitionType}`);
+  }
+
+  contentKindSeverity(kind: DownloadContentKind): 'success' | 'info' | 'warn' | 'danger' | 'secondary' {
+    switch (kind) {
+      case 'BOOK':
+        return 'info';
+      case 'MANGA':
+        return 'success';
+      case 'COMIC':
+        return 'warn';
+      case 'WEBTOON':
+        return 'danger';
+      default:
+        return 'secondary';
+    }
+  }
+
+  private isVisualResult(result: DownloadResult): boolean {
+    return ['MANGA', 'COMIC', 'WEBTOON'].includes(result.contentKind);
+  }
+
   get targetLibraryOptions(): SelectOption<number>[] {
     return this.libraries
       .filter(lib => lib.id != null)
@@ -339,10 +364,6 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     return selected?.paths
       ?.filter(path => path.id != null)
       .map(path => ({label: path.path, value: Number(path.id)})) ?? [];
-  }
-
-  get autoFinalizeTargetMissing(): boolean {
-    return this.autoFinalize && !this.hasAutoFinalizeTarget();
   }
 
   onAutoFinalizeChange(enabled: boolean): void {
@@ -402,10 +423,6 @@ export class DownloadsComponent implements OnInit, OnDestroy {
   private clean(value: string): string | null {
     const trimmed = value?.trim();
     return trimmed ? trimmed : null;
-  }
-
-  private hasAutoFinalizeTarget(): boolean {
-    return this.targetLibraryId != null && this.targetLibraryPathId != null;
   }
 
   private applyDefaultTargetIfSingle(): void {

@@ -21,6 +21,10 @@ app:
     groups-delimiter: ${REMOTE_AUTH_GROUPS_DELIMITER:\\s+}
   force-disable-oidc: ${FORCE_DISABLE_OIDC:false}
   disk-type: ${DISK_TYPE:LOCAL}
+  downloads:
+    auto-create-library: ${DOWNLOADS_AUTO_CREATE_LIBRARY:true}
+    default-library-name: ${DOWNLOADS_DEFAULT_LIBRARY_NAME:Downloads}
+    default-library-path: ${DOWNLOADS_DEFAULT_LIBRARY_PATH:/books/Downloads}
 
 server:
   forward-headers-strategy: native

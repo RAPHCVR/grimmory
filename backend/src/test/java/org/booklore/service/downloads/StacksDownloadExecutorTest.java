@@ -125,7 +125,7 @@ class StacksDownloadExecutorTest {
     }
 
     @Test
-    void download_usesNativeStacksQueueApiAndMovesCompletedFileIntoStaging() throws Exception {
+    void download_usesNativeStacksQueueApiAndCopiesCompletedFileIntoStaging() throws Exception {
         Path bookdrop = tempDir.resolve("bookdrop");
         Path stagingDir = bookdrop.resolve(".downloads").resolve("42");
         Files.createDirectories(stagingDir);
@@ -209,7 +209,150 @@ class StacksDownloadExecutorTest {
             assertTrue(submitBody.get().contains("\"md5\":\"abc123\""));
             assertTrue(result.startsWith(stagingDir));
             assertTrue(Files.exists(result));
-            assertTrue(Files.notExists(stacksOutput));
+            assertTrue(Files.exists(stacksOutput));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void download_whenStacksStatusIsAdminOnlyPollsSharedFolderAndCopiesCompletedFileIntoStaging() throws Exception {
+        Path bookdrop = tempDir.resolve("bookdrop");
+        Path stagingDir = bookdrop.resolve(".downloads").resolve("42");
+        Files.createDirectories(stagingDir);
+        Path stacksOutput = bookdrop.resolve("Les fourmis_116121562.epub");
+
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/api/queue/add", exchange -> {
+            byte[] response = """
+                    {"success":true,"message":"Added to queue","md5":"6fc83a82e765e3808aa55102b0894275"}
+                    """.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.createContext("/api/status", exchange -> {
+            Files.writeString(stacksOutput, "epub");
+            byte[] response = """
+                    {"error":"Insufficient permissions. Admin access required.","success":false}
+                    """.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(403, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.start();
+
+        try {
+            String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+            DownloadSourceEntity source = DownloadSourceEntity.builder()
+                    .name("Stacks")
+                    .configJson(objectMapper.writeValueAsString(Map.of(
+                            "stacks", Map.of(
+                                    "baseUrl", baseUrl,
+                                    "apiKey", "downloader-secret",
+                                    "localDownloadRoot", bookdrop.toString(),
+                                    "pollIntervalSeconds", 1,
+                                    "timeoutMinutes", 1,
+                                    "requestTimeoutSeconds", 5
+                            )
+                    )))
+                    .build();
+            StacksDownloadExecutor executor = new StacksDownloadExecutor(
+                    HttpClient.newHttpClient(),
+                    objectMapper,
+                    new DownloadSourceConfigReader(objectMapper),
+                    mock(DownloadJobRepository.class)
+            );
+
+            Path result = executor.download(DownloadExecutionRequest.builder()
+                    .job(DownloadJobEntity.builder().id(42L).build())
+                    .source(source)
+                    .result(NormalizedDownloadResult.builder()
+                            .sourceResultId("6fc83a82e765e3808aa55102b0894275")
+                            .title("Les Fourmis (Les Fourmis, Tome 1)")
+                            .authors(List.of("Bernard Werber"))
+                            .format(DownloadFormat.EPUB)
+                            .contentKind(DownloadContentKind.BOOK)
+                            .acquisitionType(DownloadAcquisitionType.EXTERNAL_STACKS)
+                            .rawJson("{\"md5\":\"6fc83a82e765e3808aa55102b0894275\"}")
+                            .build())
+                    .stagingDir(stagingDir)
+                    .targetPartFile(stagingDir.resolve("download.part"))
+                    .build(), ignored -> {
+                    });
+
+            assertTrue(result.startsWith(stagingDir));
+            assertTrue(Files.exists(result));
+            assertTrue(Files.exists(stacksOutput));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void download_whenStacksAlreadyDownloadedUsesCachedPayload() throws Exception {
+        Path bookdrop = tempDir.resolve("bookdrop");
+        Path stagingDir = bookdrop.resolve(".downloads").resolve("42");
+        Files.createDirectories(stagingDir);
+        Path stacksOutput = bookdrop.resolve("Bernard Werber - Les Fourmis.epub");
+        Files.writeString(stacksOutput, "epub");
+
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/api/queue/add", exchange -> {
+            byte[] response = """
+                    {"success":false,"message":"Already downloaded successfully","md5":"abc123"}
+                    """.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.start();
+
+        try {
+            String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+            DownloadSourceEntity source = DownloadSourceEntity.builder()
+                    .name("Stacks")
+                    .configJson(objectMapper.writeValueAsString(Map.of(
+                            "stacks", Map.of(
+                                    "baseUrl", baseUrl,
+                                    "apiKey", "downloader-secret",
+                                    "localDownloadRoot", bookdrop.toString(),
+                                    "pollIntervalSeconds", 1,
+                                    "timeoutMinutes", 1,
+                                    "requestTimeoutSeconds", 5
+                            )
+                    )))
+                    .build();
+            StacksDownloadExecutor executor = new StacksDownloadExecutor(
+                    HttpClient.newHttpClient(),
+                    objectMapper,
+                    new DownloadSourceConfigReader(objectMapper),
+                    mock(DownloadJobRepository.class)
+            );
+
+            Path result = executor.download(DownloadExecutionRequest.builder()
+                    .job(DownloadJobEntity.builder().id(42L).build())
+                    .source(source)
+                    .result(NormalizedDownloadResult.builder()
+                            .sourceResultId("abc123")
+                            .title("Les Fourmis")
+                            .authors(List.of("Bernard Werber"))
+                            .format(DownloadFormat.EPUB)
+                            .contentKind(DownloadContentKind.BOOK)
+                            .acquisitionType(DownloadAcquisitionType.EXTERNAL_STACKS)
+                            .rawJson("{\"md5\":\"abc123\"}")
+                            .build())
+                    .stagingDir(stagingDir)
+                    .targetPartFile(stagingDir.resolve("download.part"))
+                    .build(), ignored -> {
+                    });
+
+            assertTrue(result.startsWith(stagingDir));
+            assertTrue(Files.exists(result));
+            assertTrue(Files.exists(stacksOutput));
         } finally {
             server.stop(0);
         }

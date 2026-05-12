@@ -3,6 +3,7 @@ package org.booklore.service.downloads;
 import org.booklore.config.AppProperties;
 import org.booklore.model.entity.BookdropFileEntity;
 import org.booklore.model.entity.DownloadJobEntity;
+import org.booklore.model.dto.request.BookdropFinalizeRequest;
 import org.booklore.model.enums.DownloadContentKind;
 import org.booklore.model.enums.DownloadFormat;
 import org.booklore.repository.BookdropFileRepository;
@@ -25,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -88,8 +90,71 @@ class BookdropDeliveryServiceTest {
         assertEquals(saved.getOriginalMetadata(), saved.getFetchedMetadata());
         assertTrue(saved.getFetchedMetadata().contains("One Piece"));
         assertTrue(saved.getFetchedMetadata().contains("Eiichiro Oda"));
+        assertTrue(saved.getFetchedMetadata().contains("Manga"));
+        assertTrue(saved.getFetchedMetadata().contains("comicMetadata"));
         assertTrue(Files.exists(bookdrop.resolve("[ENG] One Piece - Vol. 100.cbz")));
         verify(metadataService).attachFetchedMetadata(77L);
         verify(notificationService).sendBookdropFileSummaryNotification();
+    }
+
+    @Test
+    void deliver_autoFinalize_usesResolvedTargetAndDownloadMetadata() throws Exception {
+        Path stagedFile = tempDir.resolve("fourmis.staged");
+        Files.writeString(stagedFile, "epub");
+        Path bookdrop = tempDir.resolve("bookdrop-auto");
+
+        AppProperties appProperties = new AppProperties();
+        appProperties.setBookdropFolder(bookdrop.toString());
+        BookdropFileRepository repository = mock(BookdropFileRepository.class);
+        BookdropMetadataService metadataService = mock(BookdropMetadataService.class);
+        BookdropNotificationService notificationService = mock(BookdropNotificationService.class);
+        BookdropMonitoringService monitoringService = mock(BookdropMonitoringService.class);
+        BookDropService bookDropService = mock(BookDropService.class);
+
+        when(repository.save(any(BookdropFileEntity.class))).thenAnswer(invocation -> {
+            BookdropFileEntity entity = invocation.getArgument(0);
+            entity.setId(88L);
+            return entity;
+        });
+
+        BookdropDeliveryService service = new BookdropDeliveryService(
+                appProperties,
+                monitoringService,
+                repository,
+                metadataService,
+                notificationService,
+                bookDropService,
+                new ObjectMapper()
+        );
+
+        service.deliver(
+                DownloadJobEntity.builder()
+                        .autoFinalize(true)
+                        .confidenceScore(95)
+                        .confidenceThreshold(90)
+                        .targetLibraryId(12L)
+                        .targetLibraryPathId(34L)
+                        .build(),
+                NormalizedDownloadResult.builder()
+                        .title("Les Fourmis")
+                        .authors(List.of("Bernard Werber"))
+                        .publishedYear(1991)
+                        .format(DownloadFormat.EPUB)
+                        .contentKind(DownloadContentKind.BOOK)
+                        .build(),
+                stagedFile,
+                "Bernard Werber - Les Fourmis.epub"
+        );
+
+        ArgumentCaptor<BookdropFinalizeRequest> requestCaptor = ArgumentCaptor.forClass(BookdropFinalizeRequest.class);
+        verify(bookDropService).finalizeImport(requestCaptor.capture());
+        BookdropFinalizeRequest request = requestCaptor.getValue();
+        assertEquals(12L, request.getDefaultLibraryId());
+        assertEquals(34L, request.getDefaultPathId());
+        assertEquals(88L, request.getFiles().getFirst().getFileId());
+        assertEquals("Les Fourmis", request.getFiles().getFirst().getMetadata().getTitle());
+        assertEquals(List.of("Bernard Werber"), request.getFiles().getFirst().getMetadata().getAuthors());
+        verify(metadataService, never()).attachFetchedMetadata(88L);
+        verify(notificationService, never()).sendBookdropFileSummaryNotification();
     }
 }

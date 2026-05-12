@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class DirectUrlAdapterTest {
 
-    private final DirectUrlAdapter adapter = new DirectUrlAdapter(new ObjectMapper());
+    private final DirectUrlAdapter adapter = new DirectUrlAdapter(new ObjectMapper(), new DownloadContentClassifier());
 
     @TempDir
     Path tempDir;

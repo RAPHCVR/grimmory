@@ -1,5 +1,5 @@
 export type DownloadSourceType = 'OPDS' | 'PROWLARR_TORZNAB' | 'DIRECT_URL' | 'MANGADEX' | 'ANNAS_ARCHIVE_API' | 'CUSTOM_WEB_PLUGIN';
-export type DownloadContentKind = 'BOOK' | 'MANGA' | 'COMIC' | 'WEBTOON';
+export type DownloadContentKind = 'AUTO' | 'BOOK' | 'MANGA' | 'COMIC' | 'WEBTOON';
 export type DownloadFormat = 'EPUB' | 'PDF' | 'CBZ' | 'CBR' | 'CB7' | 'MOBI' | 'AZW' | 'AZW3' | 'FB2' | 'UNKNOWN';
 export type DownloadAcquisitionType =
   | 'DIRECT_FILE'
@@ -122,5 +122,5 @@ export interface DownloadJob {
 }
 
 export const DOWNLOAD_SOURCE_TYPES: DownloadSourceType[] = ['PROWLARR_TORZNAB', 'MANGADEX', 'ANNAS_ARCHIVE_API', 'OPDS', 'DIRECT_URL', 'CUSTOM_WEB_PLUGIN'];
-export const DOWNLOAD_CONTENT_KINDS: DownloadContentKind[] = ['BOOK', 'MANGA', 'COMIC', 'WEBTOON'];
+export const DOWNLOAD_CONTENT_KINDS: DownloadContentKind[] = ['AUTO', 'BOOK', 'MANGA', 'COMIC', 'WEBTOON'];
 export const DOWNLOAD_FORMATS: DownloadFormat[] = ['EPUB', 'PDF', 'CBZ', 'CBR', 'CB7', 'MOBI', 'AZW', 'AZW3', 'FB2'];

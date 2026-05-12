@@ -389,12 +389,16 @@ export class DownloadSourcesComponent implements OnInit {
             statusUrlTemplate: 'http://localhost:7788/api/status',
             apiKey: '',
             apiKeyHeader: 'X-API-Key',
-            remoteDownloadRoots: ['/opt/stacks/download', '/bookdrop'],
-            localDownloadRoot: '{bookdrop}',
+            remoteDownloadRoots: ['/opt/stacks/download', '/bookdrop/.downloads/stacks-cache', '/bookdrop'],
+            localDownloadRoot: '{bookdrop}/.downloads/stacks-cache',
             remoteStagingPath: '{stagingDir}',
-            pollIntervalSeconds: 10,
+            pollIntervalSeconds: 2,
             timeoutMinutes: 180,
-            requestTimeoutSeconds: 30
+            requestTimeoutSeconds: 30,
+            clearHistoryOnAlreadyDownloadedMissing: false,
+            filesystemFallbackOnForbiddenStatus: true,
+            filesystemFallbackMaxDepth: 3,
+            filesystemFallbackRecentSlackSeconds: 10
           },
           flareSolverr: {
             ...flareSolverr,

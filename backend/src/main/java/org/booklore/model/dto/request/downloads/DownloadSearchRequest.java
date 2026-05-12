@@ -14,7 +14,7 @@ public class DownloadSearchRequest {
     private String isbn;
     private String seriesName;
     private Float seriesNumber;
-    private DownloadContentKind contentKind = DownloadContentKind.BOOK;
+    private DownloadContentKind contentKind = DownloadContentKind.AUTO;
     private List<DownloadFormat> preferredFormats = List.of();
     private String directUrl;
     private Integer maxResults = 25;

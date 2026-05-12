@@ -190,9 +190,7 @@ public class QbittorrentDownloadExecutor implements DownloadExecutor {
     }
 
     private boolean isSequentialArt(DownloadContentKind contentKind) {
-        return contentKind == DownloadContentKind.MANGA
-                || contentKind == DownloadContentKind.COMIC
-                || contentKind == DownloadContentKind.WEBTOON;
+        return contentKind != null && contentKind.isSequentialArt();
     }
 
     private long safeSize(Path path) {

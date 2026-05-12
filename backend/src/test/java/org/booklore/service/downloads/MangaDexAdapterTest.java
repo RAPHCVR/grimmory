@@ -92,6 +92,38 @@ class MangaDexAdapterTest {
         }
     }
 
+    @Test
+    void search_autoContentKind_includesMangaDexResultsAsManga() throws Exception {
+        AtomicReference<String> mangaPath = new AtomicReference<>();
+        AtomicReference<String> feedPath = new AtomicReference<>();
+        HttpServer server = mangaDexServer(mangaPath, feedPath);
+        server.start();
+
+        try {
+            String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+            DownloadSourceEntity source = source("""
+                    {
+                      "mangadex": {
+                        "apiBaseUrl": "%s",
+                        "siteBaseUrl": "https://mangadex.local",
+                        "timeoutSeconds": 5
+                      }
+                    }
+                    """.formatted(baseUrl));
+
+            List<NormalizedDownloadResult> results = adapter().search(source, DownloadSearchCriteria.builder()
+                    .query("Wakfu")
+                    .contentKind(DownloadContentKind.AUTO)
+                    .maxResults(10)
+                    .build());
+
+            assertEquals(1, results.size());
+            assertEquals(DownloadContentKind.MANGA, results.getFirst().getContentKind());
+        } finally {
+            server.stop(0);
+        }
+    }
+
     private HttpServer mangaDexServer(AtomicReference<String> mangaPath,
                                       AtomicReference<String> feedPath) throws Exception {
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);

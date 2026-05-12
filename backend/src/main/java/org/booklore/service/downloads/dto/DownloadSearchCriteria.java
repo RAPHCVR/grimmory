@@ -17,7 +17,7 @@ public class DownloadSearchCriteria {
     String seriesName;
     Float seriesNumber;
     @Builder.Default
-    DownloadContentKind contentKind = DownloadContentKind.BOOK;
+    DownloadContentKind contentKind = DownloadContentKind.AUTO;
     @Builder.Default
     List<DownloadFormat> preferredFormats = List.of();
     String directUrl;

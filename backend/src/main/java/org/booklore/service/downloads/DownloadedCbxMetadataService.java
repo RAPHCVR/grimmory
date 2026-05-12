@@ -150,7 +150,7 @@ public class DownloadedCbxMetadataService {
             case WEBTOON -> "Webcomic";
             case MANGA -> "Manga";
             case COMIC -> "Comic";
-            case BOOK -> null;
+            case AUTO, BOOK -> null;
         };
     }
 

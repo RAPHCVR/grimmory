@@ -208,7 +208,7 @@ public class DownloadController {
                 .isbn(request.getIsbn())
                 .seriesName(request.getSeriesName())
                 .seriesNumber(request.getSeriesNumber())
-                .contentKind(request.getContentKind() == null ? DownloadContentKind.BOOK : request.getContentKind())
+                .contentKind(request.getContentKind() == null ? DownloadContentKind.AUTO : request.getContentKind())
                 .preferredFormats(request.getPreferredFormats() == null ? List.of() : request.getPreferredFormats())
                 .directUrl(request.getDirectUrl())
                 .maxResults(request.getMaxResults() == null ? 25 : Math.max(1, request.getMaxResults()))

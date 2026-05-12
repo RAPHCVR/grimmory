@@ -27,6 +27,9 @@ services:
       DISK_TYPE: LOCAL
       ALLOWED_ORIGINS: ${GRIMMORY_ALLOWED_ORIGINS:-http://localhost:6060}
       FORCE_DISABLE_OIDC: ${FORCE_DISABLE_OIDC:-false}
+      DOWNLOADS_AUTO_CREATE_LIBRARY: ${DOWNLOADS_AUTO_CREATE_LIBRARY:-true}
+      DOWNLOADS_DEFAULT_LIBRARY_NAME: ${DOWNLOADS_DEFAULT_LIBRARY_NAME:-Downloads}
+      DOWNLOADS_DEFAULT_LIBRARY_PATH: ${DOWNLOADS_DEFAULT_LIBRARY_PATH:-/books/Downloads}
     ports:
       - "${GRIMMORY_PORT:-6060}:6060"
     volumes:
@@ -134,7 +137,8 @@ services:
       - ./shared/stacks/config:/opt/stacks/config
       - ./shared/stacks/logs:/opt/stacks/logs
       - ./shared/bookdrop:/bookdrop
-      - ./shared/bookdrop:/opt/stacks/download
+      - ./shared/bookdrop/.downloads/stacks-cache:/opt/stacks/download
+      - ./shared/bookdrop/.downloads/stacks-cache/incomplete:/opt/stacks/download/incomplete
     ports:
       - "${STACKS_PORT:-7788}:7788"
     networks:

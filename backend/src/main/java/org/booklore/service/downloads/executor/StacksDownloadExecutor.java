@@ -42,8 +42,11 @@ public class StacksDownloadExecutor implements DownloadExecutor {
     private static final int DEFAULT_REQUEST_TIMEOUT_SECONDS = 30;
     private static final int DEFAULT_POLL_SECONDS = 10;
     private static final int DEFAULT_TIMEOUT_MINUTES = 180;
+    private static final int DEFAULT_FILESYSTEM_FALLBACK_MAX_DEPTH = 3;
+    private static final int DEFAULT_FILESYSTEM_FALLBACK_RECENT_SLACK_SECONDS = 10;
     private static final String DEFAULT_DOWNLOAD_ENDPOINT = "/api/queue/add";
     private static final String DEFAULT_STATUS_ENDPOINT = "/api/status";
+    private static final String DEFAULT_HISTORY_CLEAR_ENDPOINT = "/api/history/clear";
     private static final Set<String> DEFAULT_COMPLETED_STATUSES = Set.of("completed", "complete", "finished", "done", "success", "succeeded", "downloaded");
     private static final Set<String> DEFAULT_FAILED_STATUSES = Set.of("failed", "error", "cancelled", "canceled", "aborted");
     private static final List<String> TASK_ID_FIELDS = List.of("taskId", "task_id", "downloadId", "download_id", "id", "uuid", "jobId", "job_id");
@@ -54,6 +57,10 @@ public class StacksDownloadExecutor implements DownloadExecutor {
     private static final List<String> ERROR_FIELDS = List.of("error", "errorMessage", "error_message", "message", "reason");
     private static final List<String> STACKS_STATUS_ARRAYS = List.of("current_downloads", "active", "queue", "queued", "recent_history", "history");
     private static final List<String> DEFAULT_REMOTE_DOWNLOAD_ROOTS = List.of("/opt/stacks/download", "/bookdrop");
+    private static final Set<String> FILE_MATCH_STOPWORDS = Set.of(
+            "the", "and", "with", "from", "edition", "french", "english", "book",
+            "les", "des", "une", "pour", "avec", "dans", "tome", "roman", "livre", "poche"
+    );
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
@@ -77,8 +84,29 @@ public class StacksDownloadExecutor implements DownloadExecutor {
             progressSink.onProgress(1);
         }
 
+        Instant submittedAt = Instant.now();
         SubmittedStacksTask submitted = submitTask(config, request, externalIdentifier);
         saveExternalTask(request.getJob(), firstNonBlank(submitted.taskId(), submitted.statusUrl()));
+        if (submitted.alreadyDownloaded()) {
+            Optional<Path> cachedPayload = findFilesystemFallbackPayload(config, request, Instant.EPOCH);
+            if (cachedPayload.isPresent()) {
+                if (progressSink != null) {
+                    progressSink.onProgress(100);
+                }
+                return cachedPayload.get();
+            }
+            if (config.clearHistoryOnAlreadyDownloadedMissing() && config.hasAdminAuthentication()) {
+                clearHistory(config);
+                submittedAt = Instant.now();
+                submitted = submitTask(config, request, externalIdentifier);
+                saveExternalTask(request.getJob(), firstNonBlank(submitted.taskId(), submitted.statusUrl()));
+                if (submitted.alreadyDownloaded()) {
+                    throw staleAlreadyDownloadedException(config, request);
+                }
+            } else {
+                throw staleAlreadyDownloadedException(config, request);
+            }
+        }
 
         StacksStatus initialStatus = toStatus(submitted.responseBody(), externalIdentifier);
         if (isComplete(initialStatus, config)) {
@@ -96,24 +124,48 @@ public class StacksDownloadExecutor implements DownloadExecutor {
         Instant deadline = Instant.now().plus(Duration.ofMinutes(config.timeoutMinutes()));
         StacksStatus lastStatus = initialStatus;
         int lastProgress = 1;
+        boolean statusPollingForbidden = false;
         while (Instant.now().isBefore(deadline)) {
-            lastStatus = fetchStatus(config, statusUri, externalIdentifier);
-            Integer progress = lastStatus.progressPercent();
-            if (progress != null && progressSink != null) {
-                lastProgress = Math.max(lastProgress, Math.min(99, Math.max(1, progress)));
-                progressSink.onProgress(lastProgress);
-            }
-            if (isComplete(lastStatus, config)) {
-                Path completed = resolveCompletedFile(lastStatus, config, request);
-                if (progressSink != null) {
-                    progressSink.onProgress(100);
+            if (!statusPollingForbidden) {
+                try {
+                    lastStatus = fetchStatus(config, statusUri, externalIdentifier);
+                    Integer progress = lastStatus.progressPercent();
+                    if (progress != null && progressSink != null) {
+                        lastProgress = Math.max(lastProgress, Math.min(99, Math.max(1, progress)));
+                        progressSink.onProgress(lastProgress);
+                    }
+                    if (isComplete(lastStatus, config)) {
+                        Path completed = resolveCompletedFile(lastStatus, config, request);
+                        if (progressSink != null) {
+                            progressSink.onProgress(100);
+                        }
+                        return completed;
+                    }
+                    if (isFailed(lastStatus, config)) {
+                        throw new DownloadSourceException("Stacks download failed: " + firstNonBlank(lastStatus.errorMessage(), lastStatus.status(), "unknown error"));
+                    }
+                } catch (DownloadSourceException e) {
+                    if (!config.filesystemFallbackOnForbiddenStatus() || !isStatusPermissionFailure(e)) {
+                        throw e;
+                    }
+                    statusPollingForbidden = true;
                 }
-                return completed;
             }
-            if (isFailed(lastStatus, config)) {
-                throw new DownloadSourceException("Stacks download failed: " + firstNonBlank(lastStatus.errorMessage(), lastStatus.status(), "unknown error"));
+
+            if (statusPollingForbidden) {
+                Optional<Path> completed = findFilesystemFallbackPayload(config, request, submittedAt);
+                if (completed.isPresent()) {
+                    if (progressSink != null) {
+                        progressSink.onProgress(100);
+                    }
+                    return completed.get();
+                }
+                if (progressSink != null) {
+                    lastProgress = Math.min(99, Math.max(lastProgress, 5));
+                    progressSink.onProgress(lastProgress);
+                }
             }
-            sleep(config.pollIntervalSeconds());
+            sleep(statusPollingForbidden ? Math.min(config.pollIntervalSeconds(), 2) : config.pollIntervalSeconds());
         }
 
         String state = lastStatus == null ? "no status response" : firstNonBlank(lastStatus.status(), "unknown state");
@@ -156,7 +208,11 @@ public class StacksDownloadExecutor implements DownloadExecutor {
 
             JsonNode body = parseJson(response.body());
             if (body.path("success").isBoolean() && !body.path("success").asBoolean()) {
-                throw new DownloadSourceException("Stacks submit rejected the download: " + firstNonBlank(firstText(body, ERROR_FIELDS), body.path("message").asText(null), "unknown error"));
+                String message = firstNonBlank(firstText(body, ERROR_FIELDS), body.path("message").asText(null), "unknown error");
+                if (isAlreadyDownloadedMessage(message)) {
+                    return new SubmittedStacksTask(externalIdentifier, null, body, true);
+                }
+                throw new DownloadSourceException("Stacks submit rejected the download: " + message);
             }
 
             String taskId = firstNonBlank(firstText(body, TASK_ID_FIELDS), body.path("md5").asText(null), externalIdentifier);
@@ -164,7 +220,7 @@ public class StacksDownloadExecutor implements DownloadExecutor {
             if (taskId == null && statusUrl == null && !isComplete(toStatus(body, externalIdentifier), config)) {
                 throw new DownloadSourceException("Stacks submit response did not expose a task id or status URL");
             }
-            return new SubmittedStacksTask(taskId, statusUrl, body);
+            return new SubmittedStacksTask(taskId, statusUrl, body, false);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new DownloadSourceException("Stacks submit interrupted", e);
@@ -181,7 +237,7 @@ public class StacksDownloadExecutor implements DownloadExecutor {
                     .timeout(Duration.ofSeconds(config.requestTimeoutSeconds()))
                     .header("Accept", "application/json")
                     .GET();
-            addAuthenticationHeaders(builder, config);
+            addStatusAuthenticationHeaders(builder, config);
             HttpResponse<String> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             if (response.statusCode() < 200 || response.statusCode() > 299) {
                 throw new DownloadSourceException("Stacks status failed with HTTP status " + response.statusCode() + ": " + response.body());
@@ -266,6 +322,106 @@ public class StacksDownloadExecutor implements DownloadExecutor {
                 .orElseThrow(() -> new DownloadSourceException("Stacks completed but no supported file was visible in staging: " + stagingDir));
     }
 
+    private Optional<Path> findFilesystemFallbackPayload(StacksConfig config, DownloadExecutionRequest request, Instant submittedAt) {
+        Instant minimumModifiedAt = submittedAt.minusSeconds(config.filesystemFallbackRecentSlackSeconds());
+        List<FallbackCandidate> candidates = new ArrayList<>();
+        Set<String> seenRoots = new java.util.LinkedHashSet<>();
+        List<Path> roots = new ArrayList<>();
+        roots.add(request.getStagingDir());
+        String localRoot = config.resolveLocalDownloadRoot(request.getStagingDir());
+        if (localRoot != null && !localRoot.isBlank()) {
+            roots.add(Path.of(localRoot));
+        }
+
+        for (Path root : roots) {
+            Path normalizedRoot = root.toAbsolutePath().normalize();
+            if (!seenRoots.add(normalizedRoot.toString()) || Files.notExists(normalizedRoot)) {
+                continue;
+            }
+            try (Stream<Path> paths = Files.walk(normalizedRoot, config.filesystemFallbackMaxDepth())) {
+                paths.filter(Files::isRegularFile)
+                        .filter(path -> BookFileExtension.fromFileName(path.getFileName().toString()).isPresent())
+                        .filter(path -> !isPartialFile(path))
+                        .filter(path -> !isInIncompleteDirectory(path))
+                        .map(path -> fallbackCandidate(path, request.getResult(), minimumModifiedAt))
+                        .flatMap(Optional::stream)
+                        .forEach(candidates::add);
+            } catch (IOException e) {
+                throw new DownloadSourceException("Failed to inspect Stacks shared download folder: " + e.getMessage(), e);
+            }
+        }
+
+        if (candidates.isEmpty()) {
+            return Optional.empty();
+        }
+        int bestMatchScore = candidates.stream().mapToInt(FallbackCandidate::matchScore).max().orElse(0);
+        Stream<FallbackCandidate> stream = candidates.stream();
+        if (bestMatchScore > 0) {
+            stream = stream.filter(candidate -> candidate.matchScore() == bestMatchScore);
+        } else if (candidates.size() > 1) {
+            return Optional.empty();
+        }
+        return stream
+                .max(Comparator
+                        .comparingInt(FallbackCandidate::matchScore)
+                        .thenComparing(FallbackCandidate::modifiedAt)
+                        .thenComparingLong(FallbackCandidate::size))
+                .map(FallbackCandidate::path)
+                .map(path -> waitForStableFile(moveIntoStagingIfNeeded(path, request.getStagingDir().toAbsolutePath().normalize())));
+    }
+
+    private Optional<FallbackCandidate> fallbackCandidate(Path path, NormalizedDownloadResult result, Instant minimumModifiedAt) {
+        try {
+            Instant modifiedAt = Files.getLastModifiedTime(path).toInstant();
+            long size = Files.size(path);
+            if (size <= 0 || modifiedAt.isBefore(minimumModifiedAt)) {
+                return Optional.empty();
+            }
+            return Optional.of(new FallbackCandidate(path.toAbsolutePath().normalize(), modifiedAt, size, fileMatchScore(path, result)));
+        } catch (IOException ignored) {
+            return Optional.empty();
+        }
+    }
+
+    private int fileMatchScore(Path path, NormalizedDownloadResult result) {
+        String fileName = normalizeForFileMatch(path.getFileName().toString());
+        Set<String> tokens = meaningfulFileTokens(result);
+        int score = 0;
+        for (String token : tokens) {
+            if (fileName.contains(token)) {
+                score++;
+            }
+        }
+        String normalizedTitle = normalizeForFileMatch(result.getTitle());
+        if (!normalizedTitle.isBlank() && fileName.contains(normalizedTitle)) {
+            score += 5;
+        }
+        return score;
+    }
+
+    private Set<String> meaningfulFileTokens(NormalizedDownloadResult result) {
+        String title = normalizeForFileMatch(result.getTitle());
+        Set<String> tokens = new java.util.LinkedHashSet<>();
+        for (String token : title.split(" ")) {
+            if (token.length() >= 3 && !FILE_MATCH_STOPWORDS.contains(token)) {
+                tokens.add(token);
+            }
+        }
+        return tokens;
+    }
+
+    private String normalizeForFileMatch(String value) {
+        if (value == null) {
+            return "";
+        }
+        String normalized = java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "")
+                .toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9]+", " ")
+                .trim();
+        return normalized.replaceAll("\\s+", " ");
+    }
+
     private Optional<Path> findCompletedPayload(Path stagingDir) {
         try (Stream<Path> paths = Files.walk(stagingDir)) {
             return paths
@@ -308,6 +464,15 @@ public class StacksDownloadExecutor implements DownloadExecutor {
         return name.endsWith(".part") || name.endsWith(".tmp") || name.endsWith(".crdownload");
     }
 
+    private boolean isInIncompleteDirectory(Path path) {
+        for (Path part : path) {
+            if ("incomplete".equalsIgnoreCase(part.toString())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private Path localCandidateFor(String returnedPath, StacksConfig config, DownloadExecutionRequest request) {
         String remoteRoot = config.resolveRemoteStagingPath(request.getStagingDir(), request.getJob().getId());
         String remoteRootNormalized = normalizePathText(remoteRoot);
@@ -348,9 +513,10 @@ public class StacksDownloadExecutor implements DownloadExecutor {
         try {
             Files.createDirectories(stagingDir);
             Path target = uniqueTarget(stagingDir, normalizedSource.getFileName().toString());
-            return Files.move(normalizedSource, target, StandardCopyOption.REPLACE_EXISTING).toAbsolutePath().normalize();
+            Files.copy(normalizedSource, target, StandardCopyOption.REPLACE_EXISTING);
+            return target.toAbsolutePath().normalize();
         } catch (IOException e) {
-            throw new DownloadSourceException("Failed to move Stacks completed file into staging: " + e.getMessage(), e);
+            throw new DownloadSourceException("Failed to copy Stacks completed file into staging: " + e.getMessage(), e);
         }
     }
 
@@ -396,14 +562,70 @@ public class StacksDownloadExecutor implements DownloadExecutor {
         jobRepository.save(job);
     }
 
-    private void addAuthenticationHeaders(HttpRequest.Builder request, StacksConfig config) {
-        if (config.apiKey() != null && config.authorizationScheme() != null) {
-            request.header("Authorization", config.authorizationScheme() + " " + config.apiKey());
-        } else if (config.apiKey() != null && config.apiKeyHeader() != null) {
-            request.header(config.apiKeyHeader(), config.apiKey());
+    private void clearHistory(StacksConfig config) {
+        try {
+            HttpRequest.Builder builder = HttpRequest.newBuilder(config.resolveUrl(config.historyClearUrl()))
+                    .timeout(Duration.ofSeconds(config.requestTimeoutSeconds()))
+                    .header("Accept", "application/json")
+                    .POST(HttpRequest.BodyPublishers.noBody());
+            addAdminAuthenticationHeaders(builder, config);
+            HttpResponse<String> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (response.statusCode() < 200 || response.statusCode() > 299) {
+                throw new DownloadSourceException("Stacks history cleanup failed with HTTP status " + response.statusCode() + ": " + response.body());
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new DownloadSourceException("Stacks history cleanup interrupted", e);
+        } catch (DownloadSourceException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new DownloadSourceException("Stacks history cleanup failed: " + e.getMessage(), e);
         }
-        if (config.username() != null && !config.username().isBlank()) {
-            String token = config.username() + ":" + (config.password() == null ? "" : config.password());
+    }
+
+    private void addAuthenticationHeaders(HttpRequest.Builder request, StacksConfig config) {
+        addConfiguredAuthenticationHeaders(
+                request,
+                config.apiKey(),
+                config.apiKeyHeader(),
+                config.authorizationScheme(),
+                config.username(),
+                config.password()
+        );
+    }
+
+    private void addStatusAuthenticationHeaders(HttpRequest.Builder request, StacksConfig config) {
+        if (config.hasAdminAuthentication()) {
+            addAdminAuthenticationHeaders(request, config);
+        } else {
+            addAuthenticationHeaders(request, config);
+        }
+    }
+
+    private void addAdminAuthenticationHeaders(HttpRequest.Builder request, StacksConfig config) {
+        addConfiguredAuthenticationHeaders(
+                request,
+                config.adminApiKey(),
+                config.adminApiKeyHeader(),
+                config.adminAuthorizationScheme(),
+                config.adminUsername(),
+                config.adminPassword()
+        );
+    }
+
+    private void addConfiguredAuthenticationHeaders(HttpRequest.Builder request,
+                                                    String apiKey,
+                                                    String apiKeyHeader,
+                                                    String authorizationScheme,
+                                                    String username,
+                                                    String password) {
+        if (apiKey != null && authorizationScheme != null) {
+            request.header("Authorization", authorizationScheme + " " + apiKey);
+        } else if (apiKey != null && apiKeyHeader != null) {
+            request.header(apiKeyHeader, apiKey);
+        }
+        if (username != null && !username.isBlank()) {
+            String token = username + ":" + (password == null ? "" : password);
             request.header("Authorization", "Basic " + Base64.getEncoder().encodeToString(token.getBytes(StandardCharsets.UTF_8)));
         }
     }
@@ -430,9 +652,23 @@ public class StacksDownloadExecutor implements DownloadExecutor {
         String authorizationScheme = blankToNull(node.path("authorizationScheme").asText(null));
         String username = blankToNull(node.path("username").asText(null));
         String password = blankToNull(node.path("password").asText(null));
+        String adminApiKey = blankToNull(node.path("adminApiKey").asText(null));
+        String adminApiKeyHeader = blankToNull(node.path("adminApiKeyHeader").asText(apiKeyHeader == null ? "X-API-Key" : apiKeyHeader));
+        String adminAuthorizationScheme = blankToNull(node.path("adminAuthorizationScheme").asText(null));
+        String adminUsername = blankToNull(node.path("adminUsername").asText(null));
+        String adminPassword = blankToNull(node.path("adminPassword").asText(null));
         int requestTimeoutSeconds = Math.max(3, node.path("requestTimeoutSeconds").asInt(DEFAULT_REQUEST_TIMEOUT_SECONDS));
         int pollIntervalSeconds = Math.max(1, node.path("pollIntervalSeconds").asInt(DEFAULT_POLL_SECONDS));
         int timeoutMinutes = Math.max(1, node.path("timeoutMinutes").asInt(DEFAULT_TIMEOUT_MINUTES));
+        boolean clearHistoryOnAlreadyDownloadedMissing = node.path("clearHistoryOnAlreadyDownloadedMissing").asBoolean(false);
+        boolean filesystemFallbackOnForbiddenStatus = node.path("filesystemFallbackOnForbiddenStatus").asBoolean(true);
+        int filesystemFallbackMaxDepth = Math.max(1, node.path("filesystemFallbackMaxDepth").asInt(DEFAULT_FILESYSTEM_FALLBACK_MAX_DEPTH));
+        int filesystemFallbackRecentSlackSeconds = Math.max(0, node.path("filesystemFallbackRecentSlackSeconds").asInt(DEFAULT_FILESYSTEM_FALLBACK_RECENT_SLACK_SECONDS));
+        String historyClearUrl = firstNonBlank(
+                node.path("historyClearUrl").asText(null),
+                node.path("historyClearEndpointUrl").asText(null),
+                baseUrl == null || baseUrl.isBlank() ? null : trimTrailingSlash(baseUrl) + DEFAULT_HISTORY_CLEAR_ENDPOINT
+        );
         String remoteStagingPath = firstNonBlank(
                 node.path("remoteStagingPath").asText(null),
                 node.path("stagingPath").asText(null),
@@ -453,14 +689,24 @@ public class StacksDownloadExecutor implements DownloadExecutor {
                 authorizationScheme,
                 username,
                 password,
+                adminApiKey,
+                adminApiKeyHeader,
+                adminAuthorizationScheme,
+                adminUsername,
+                adminPassword,
                 requestTimeoutSeconds,
                 pollIntervalSeconds,
                 timeoutMinutes,
+                firstNonBlank(historyClearUrl, DEFAULT_HISTORY_CLEAR_ENDPOINT),
+                clearHistoryOnAlreadyDownloadedMissing,
                 remoteStagingPath,
                 stringList(node.path("remoteDownloadRoots"), DEFAULT_REMOTE_DOWNLOAD_ROOTS),
                 localDownloadRoot,
                 statusList(node.path("completedStatuses"), DEFAULT_COMPLETED_STATUSES),
-                statusList(node.path("failedStatuses"), DEFAULT_FAILED_STATUSES)
+                statusList(node.path("failedStatuses"), DEFAULT_FAILED_STATUSES),
+                filesystemFallbackOnForbiddenStatus,
+                filesystemFallbackMaxDepth,
+                filesystemFallbackRecentSlackSeconds
         );
     }
 
@@ -666,6 +912,29 @@ public class StacksDownloadExecutor implements DownloadExecutor {
         }
     }
 
+    private boolean isStatusPermissionFailure(DownloadSourceException e) {
+        String message = e.getMessage();
+        return message != null
+                && message.contains("Stacks status failed with HTTP status 403")
+                && (message.contains("Admin access required") || message.contains("Insufficient permissions"));
+    }
+
+    private boolean isAlreadyDownloadedMessage(String message) {
+        if (message == null) {
+            return false;
+        }
+        String normalized = message.toLowerCase(Locale.ROOT);
+        return normalized.contains("already downloaded") || normalized.contains("already exists in history");
+    }
+
+    private DownloadSourceException staleAlreadyDownloadedException(StacksConfig config, DownloadExecutionRequest request) {
+        return new DownloadSourceException(
+                "Stacks reports this item is already downloaded, but no cached file was found under "
+                        + config.resolveLocalDownloadRoot(request.getStagingDir())
+                        + ". The Stacks history is stale because the cached file was deleted or moved."
+        );
+    }
+
     private String normalizeStatus(String status) {
         return status == null || status.isBlank() ? null : status.trim().toLowerCase(Locale.ROOT);
     }
@@ -708,10 +977,13 @@ public class StacksDownloadExecutor implements DownloadExecutor {
         return value;
     }
 
-    private record SubmittedStacksTask(String taskId, String statusUrl, JsonNode responseBody) {
+    private record SubmittedStacksTask(String taskId, String statusUrl, JsonNode responseBody, boolean alreadyDownloaded) {
     }
 
     private record StacksStatus(String status, Integer progressPercent, String filePath, String errorMessage, JsonNode raw) {
+    }
+
+    private record FallbackCandidate(Path path, Instant modifiedAt, long size, int matchScore) {
     }
 
     private record StacksConfig(URI submitUri,
@@ -721,14 +993,24 @@ public class StacksDownloadExecutor implements DownloadExecutor {
                                 String authorizationScheme,
                                 String username,
                                 String password,
+                                String adminApiKey,
+                                String adminApiKeyHeader,
+                                String adminAuthorizationScheme,
+                                String adminUsername,
+                                String adminPassword,
                                 int requestTimeoutSeconds,
                                 int pollIntervalSeconds,
                                 int timeoutMinutes,
+                                String historyClearUrl,
+                                boolean clearHistoryOnAlreadyDownloadedMissing,
                                 String remoteStagingPath,
                                 List<String> remoteDownloadRoots,
                                 String localDownloadRoot,
                                 List<String> completedStatuses,
-                                List<String> failedStatuses) {
+                                List<String> failedStatuses,
+                                boolean filesystemFallbackOnForbiddenStatus,
+                                int filesystemFallbackMaxDepth,
+                                int filesystemFallbackRecentSlackSeconds) {
 
         URI resolveUrl(String value) {
             if (value.startsWith("http://") || value.startsWith("https://")) {
@@ -736,6 +1018,11 @@ public class StacksDownloadExecutor implements DownloadExecutor {
             }
             URI base = submitUri.resolve(".");
             return base.resolve(value);
+        }
+
+        boolean hasAdminAuthentication() {
+            return (adminApiKey != null && !adminApiKey.isBlank())
+                    || (adminUsername != null && !adminUsername.isBlank());
         }
 
         String resolveRemoteStagingPath(Path stagingDir, Long jobId) {

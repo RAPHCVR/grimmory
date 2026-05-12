@@ -6,6 +6,7 @@ import org.booklore.model.enums.DownloadAcquisitionType;
 import org.booklore.model.enums.DownloadContentKind;
 import org.booklore.model.enums.DownloadFormat;
 import org.booklore.model.enums.DownloadSourceType;
+import org.booklore.service.downloads.DownloadContentClassifier;
 import org.booklore.service.downloads.adapter.DownloadSourceAdapter;
 import org.booklore.service.downloads.dto.DownloadSearchCriteria;
 import org.booklore.service.downloads.dto.NormalizedDownloadResult;
@@ -40,6 +41,7 @@ public class DirectUrlAdapter implements DownloadSourceAdapter {
     private static final String DEFAULT_GALLERY_DL_BINARY = "gallery-dl";
 
     private final ObjectMapper objectMapper;
+    private final DownloadContentClassifier contentClassifier;
 
     @Override
     public DownloadSourceType sourceType() {
@@ -63,15 +65,25 @@ public class DirectUrlAdapter implements DownloadSourceAdapter {
         DownloadFormat format = acquisitionType == DownloadAcquisitionType.CLI_GALLERY_DL
                 ? DownloadFormat.CBZ
                 : DownloadFormat.fromFileName(fileName).orElse(DownloadFormat.UNKNOWN);
+        String title = firstNonBlank(criteria.getTitle(), urlMetadata.title(), stripExtension(fileName));
+        DownloadContentKind inferredContentKind = firstNonNull(
+                urlMetadata.contentKind(),
+                contentClassifier.infer(sourceType(), source.getName(), title, urlMetadata.seriesName(), criteria.getDirectUrl(), criteria.getDirectUrl(), format, acquisitionType, urlMetadata.rawJson())
+        );
+        DownloadContentKind contentKind = contentClassifier.resolve(
+                criteria.getContentKind(),
+                inferredContentKind,
+                format.isArchiveComicFormat() ? DownloadContentKind.COMIC : DownloadContentKind.BOOK
+        );
         return List.of(NormalizedDownloadResult.builder()
                 .sourceResultId(criteria.getDirectUrl())
-                .title(firstNonBlank(criteria.getTitle(), urlMetadata.title(), stripExtension(fileName)))
+                .title(title)
                 .authors(resolveAuthors(criteria, urlMetadata))
                 .seriesName(firstNonBlank(criteria.getSeriesName(), urlMetadata.seriesName()))
                 .seriesNumber(criteria.getSeriesNumber() != null ? criteria.getSeriesNumber() : urlMetadata.seriesNumber())
                 .isbn(criteria.getIsbn())
                 .language(urlMetadata.language())
-                .contentKind(resolveContentKind(criteria.getContentKind(), urlMetadata.contentKind()))
+                .contentKind(contentKind)
                 .format(format)
                 .downloadUrl(criteria.getDirectUrl())
                 .detailsUrl(criteria.getDirectUrl())
@@ -282,16 +294,6 @@ public class DirectUrlAdapter implements DownloadSourceAdapter {
         return dot > 0 ? fileName.substring(0, dot) : fileName;
     }
 
-    private DownloadContentKind resolveContentKind(DownloadContentKind requested, DownloadContentKind inferred) {
-        if (inferred == null) {
-            return requested;
-        }
-        if (requested == null || requested == DownloadContentKind.BOOK) {
-            return inferred;
-        }
-        return requested;
-    }
-
     private Map<String, String> parseQuery(String rawQuery) {
         if (rawQuery == null || rawQuery.isBlank()) {
             return Map.of();
@@ -381,6 +383,15 @@ public class DirectUrlAdapter implements DownloadSourceAdapter {
 
     private Float firstNonNull(Float... values) {
         for (Float value : values) {
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private DownloadContentKind firstNonNull(DownloadContentKind... values) {
+        for (DownloadContentKind value : values) {
             if (value != null) {
                 return value;
             }

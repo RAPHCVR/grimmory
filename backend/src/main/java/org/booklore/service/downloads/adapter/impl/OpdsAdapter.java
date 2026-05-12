@@ -3,8 +3,10 @@ package org.booklore.service.downloads.adapter.impl;
 import lombok.RequiredArgsConstructor;
 import org.booklore.model.entity.DownloadSourceEntity;
 import org.booklore.model.enums.DownloadAcquisitionType;
+import org.booklore.model.enums.DownloadContentKind;
 import org.booklore.model.enums.DownloadFormat;
 import org.booklore.model.enums.DownloadSourceType;
+import org.booklore.service.downloads.DownloadContentClassifier;
 import org.booklore.service.downloads.adapter.DownloadSourceAdapter;
 import org.booklore.service.downloads.dto.DownloadSearchCriteria;
 import org.booklore.service.downloads.dto.NormalizedDownloadResult;
@@ -34,6 +36,7 @@ public class OpdsAdapter implements DownloadSourceAdapter {
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
+    private final DownloadContentClassifier contentClassifier;
 
     @Override
     public DownloadSourceType sourceType() {
@@ -55,7 +58,7 @@ public class OpdsAdapter implements DownloadSourceAdapter {
             if (response.statusCode() < 200 || response.statusCode() > 299) {
                 throw new DownloadSourceException("OPDS search failed with HTTP status " + response.statusCode());
             }
-            return parseAtomFeed(response.body(), criteria);
+            return parseAtomFeed(response.body(), source.getName(), criteria);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new DownloadSourceException("OPDS search interrupted", e);
@@ -78,7 +81,7 @@ public class OpdsAdapter implements DownloadSourceAdapter {
         return baseUrl;
     }
 
-    private List<NormalizedDownloadResult> parseAtomFeed(String xml, DownloadSearchCriteria criteria) throws Exception {
+    private List<NormalizedDownloadResult> parseAtomFeed(String xml, String sourceName, DownloadSearchCriteria criteria) throws Exception {
         var factory = DocumentBuilderFactory.newInstance();
         factory.setNamespaceAware(false);
         factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
@@ -95,13 +98,21 @@ public class OpdsAdapter implements DownloadSourceAdapter {
             String href = acquisition.getAttribute("href");
             if (href == null || href.isBlank()) continue;
             String type = acquisition.getAttribute("type");
+            String title = firstNonBlank(text(entry, "title"), "Untitled");
+            DownloadFormat format = formatFromMime(type, href);
+            String categoryText = categoryText(entry);
+            DownloadContentKind contentKind = contentClassifier.resolve(
+                    criteria.getContentKind(),
+                    contentClassifier.infer(sourceType(), sourceName, title, null, firstNonBlank(text(entry, "id"), href), href, format, DownloadAcquisitionType.OPDS_ACQUISITION, type + " " + categoryText),
+                    DownloadContentKind.BOOK
+            );
 
             results.add(NormalizedDownloadResult.builder()
                     .sourceResultId(text(entry, "id"))
-                    .title(firstNonBlank(text(entry, "title"), "Untitled"))
+                    .title(title)
                     .authors(authorNames(entry))
-                    .format(formatFromMime(type, href))
-                    .contentKind(criteria.getContentKind())
+                    .format(format)
+                    .contentKind(contentKind)
                     .acquisitionType(DownloadAcquisitionType.OPDS_ACQUISITION)
                     .downloadUrl(href)
                     .detailsUrl(firstNonBlank(text(entry, "id"), href))
@@ -139,6 +150,20 @@ public class OpdsAdapter implements DownloadSourceAdapter {
             }
         }
         return names;
+    }
+
+    private String categoryText(Element entry) {
+        NodeList categories = entry.getElementsByTagName("category");
+        List<String> values = new ArrayList<>(categories.getLength());
+        for (int i = 0; i < categories.getLength(); i++) {
+            Node node = categories.item(i);
+            if (!(node instanceof Element category)) continue;
+            String value = firstNonBlank(category.getAttribute("term"), category.getAttribute("label"), category.getTextContent());
+            if (value != null) {
+                values.add(value);
+            }
+        }
+        return String.join(" ", values);
     }
 
     private DownloadFormat formatFromMime(String mime, String href) {

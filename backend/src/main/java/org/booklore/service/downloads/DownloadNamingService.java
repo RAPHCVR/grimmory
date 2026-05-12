@@ -20,7 +20,7 @@ public class DownloadNamingService {
         String fileName = switch (result.getContentKind()) {
             case MANGA, COMIC -> mangaName(result, extension);
             case WEBTOON -> webtoonName(result, extension);
-            case BOOK -> bookName(result, extension);
+            case AUTO, BOOK -> bookName(result, extension);
         };
         return PathPatternResolver.truncateFilenameWithExtension(sanitize(fileName));
     }

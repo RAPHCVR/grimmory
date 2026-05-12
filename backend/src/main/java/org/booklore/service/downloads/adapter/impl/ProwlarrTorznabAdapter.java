@@ -4,8 +4,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.booklore.model.entity.DownloadSourceEntity;
 import org.booklore.model.enums.DownloadAcquisitionType;
+import org.booklore.model.enums.DownloadContentKind;
 import org.booklore.model.enums.DownloadFormat;
 import org.booklore.model.enums.DownloadSourceType;
+import org.booklore.service.downloads.DownloadContentClassifier;
 import org.booklore.service.downloads.adapter.DownloadSourceAdapter;
 import org.booklore.service.downloads.dto.DownloadSearchCriteria;
 import org.booklore.service.downloads.dto.NormalizedDownloadResult;
@@ -38,6 +40,7 @@ public class ProwlarrTorznabAdapter implements DownloadSourceAdapter {
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
+    private final DownloadContentClassifier contentClassifier;
 
     @Override
     public DownloadSourceType sourceType() {
@@ -53,11 +56,11 @@ public class ProwlarrTorznabAdapter implements DownloadSourceAdapter {
         }
 
         return config.nativeProwlarrApi()
-                ? searchProwlarrNative(config, term, criteria)
-                : searchTorznab(config, term, criteria);
+                ? searchProwlarrNative(config, source.getName(), term, criteria)
+                : searchTorznab(config, source.getName(), term, criteria);
     }
 
-    private List<NormalizedDownloadResult> searchTorznab(TorznabConfig config, String term, DownloadSearchCriteria criteria) {
+    private List<NormalizedDownloadResult> searchTorznab(TorznabConfig config, String sourceName, String term, DownloadSearchCriteria criteria) {
         URI uri = UriComponentsBuilder.fromUriString(config.baseUrl())
                 .pathSegment("api", "v2.0", "indexers", config.indexer(), "results", "torznab", "api")
                 .queryParam("apikey", config.apiKey())
@@ -79,7 +82,7 @@ public class ProwlarrTorznabAdapter implements DownloadSourceAdapter {
             if (response.statusCode() < 200 || response.statusCode() > 299) {
                 throw new DownloadSourceException("Torznab search failed with HTTP status " + response.statusCode());
             }
-            return parseTorznabResults(response.body(), criteria);
+            return parseTorznabResults(response.body(), sourceName, criteria);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new DownloadSourceException("Torznab search interrupted", e);
@@ -91,7 +94,7 @@ public class ProwlarrTorznabAdapter implements DownloadSourceAdapter {
         }
     }
 
-    private List<NormalizedDownloadResult> searchProwlarrNative(TorznabConfig config, String term, DownloadSearchCriteria criteria) {
+    private List<NormalizedDownloadResult> searchProwlarrNative(TorznabConfig config, String sourceName, String term, DownloadSearchCriteria criteria) {
         UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(config.baseUrl())
                 .pathSegment("api", "v1", "search")
                 .queryParam("apikey", config.apiKey())
@@ -116,7 +119,7 @@ public class ProwlarrTorznabAdapter implements DownloadSourceAdapter {
             if (response.statusCode() < 200 || response.statusCode() > 299) {
                 throw new DownloadSourceException("Prowlarr search failed with HTTP status " + response.statusCode());
             }
-            return parseProwlarrResults(response.body(), criteria);
+            return parseProwlarrResults(response.body(), sourceName, criteria);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new DownloadSourceException("Prowlarr search interrupted", e);
@@ -128,7 +131,7 @@ public class ProwlarrTorznabAdapter implements DownloadSourceAdapter {
         }
     }
 
-    private List<NormalizedDownloadResult> parseTorznabResults(String xml, DownloadSearchCriteria criteria) throws Exception {
+    private List<NormalizedDownloadResult> parseTorznabResults(String xml, String sourceName, DownloadSearchCriteria criteria) throws Exception {
         var factory = DocumentBuilderFactory.newInstance();
         factory.setNamespaceAware(false);
         factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
@@ -149,6 +152,13 @@ public class ProwlarrTorznabAdapter implements DownloadSourceAdapter {
             String guid = firstNonBlank(text(item, "guid"), link, title);
             Long size = firstLong(attrs.get("size"), text(item, "size"), text(item, "length"));
             DownloadFormat format = inferFormat(title, attrs);
+            DownloadAcquisitionType acquisitionType = inferAcquisitionType(link);
+            String rawJson = objectMapper.writeValueAsString(attrs);
+            DownloadContentKind contentKind = contentClassifier.resolve(
+                    criteria.getContentKind(),
+                    contentClassifier.infer(sourceType(), sourceName, title, firstNonBlank(attrs.get("series"), attrs.get("seriesName")), details, link, format, acquisitionType, rawJson),
+                    DownloadContentKind.BOOK
+            );
 
             results.add(NormalizedDownloadResult.builder()
                     .sourceResultId(guid)
@@ -160,18 +170,18 @@ public class ProwlarrTorznabAdapter implements DownloadSourceAdapter {
                     .isbn(firstNonBlank(attrs.get("isbn"), attrs.get("isbn13"), attrs.get("isbn10")))
                     .language(firstNonBlank(attrs.get("language"), attrs.get("lang")))
                     .format(format)
-                    .contentKind(criteria.getContentKind())
-                    .acquisitionType(inferAcquisitionType(link))
+                    .contentKind(contentKind)
+                    .acquisitionType(acquisitionType)
                     .sizeBytes(size)
                     .downloadUrl(link)
                     .detailsUrl(details)
-                    .rawJson(objectMapper.writeValueAsString(attrs))
+                    .rawJson(rawJson)
                     .build());
         }
         return results;
     }
 
-    private List<NormalizedDownloadResult> parseProwlarrResults(String json, DownloadSearchCriteria criteria) throws Exception {
+    private List<NormalizedDownloadResult> parseProwlarrResults(String json, String sourceName, DownloadSearchCriteria criteria) throws Exception {
         JsonNode root = objectMapper.readTree(json);
         if (!root.isArray()) {
             throw new DownloadSourceException("Prowlarr search response is not an array");
@@ -185,7 +195,14 @@ public class ProwlarrTorznabAdapter implements DownloadSourceAdapter {
             String guid = firstNonBlank(item.path("guid").asText(null), downloadUrl, title);
             String sourceResultId = firstNonBlank(item.path("infoHash").asText(null), guid);
             String protocol = item.path("protocol").asText(null);
-            DownloadFormat format = DownloadFormat.fromFileName(title).orElse(DownloadFormat.UNKNOWN);
+            String rawJson = objectMapper.writeValueAsString(item);
+            DownloadFormat format = inferProwlarrFormat(title, rawJson);
+            DownloadAcquisitionType acquisitionType = inferProwlarrAcquisitionType(downloadUrl, protocol);
+            DownloadContentKind contentKind = contentClassifier.resolve(
+                    criteria.getContentKind(),
+                    contentClassifier.infer(sourceType(), sourceName, title, null, detailsUrl, downloadUrl, format, acquisitionType, rawJson),
+                    DownloadContentKind.BOOK
+            );
 
             results.add(NormalizedDownloadResult.builder()
                     .sourceResultId(sourceResultId)
@@ -193,12 +210,12 @@ public class ProwlarrTorznabAdapter implements DownloadSourceAdapter {
                     .authors(List.of())
                     .publishedYear(yearFromIsoDate(item.path("publishDate").asText(null)))
                     .format(format)
-                    .contentKind(criteria.getContentKind())
-                    .acquisitionType(inferProwlarrAcquisitionType(downloadUrl, protocol))
+                    .contentKind(contentKind)
+                    .acquisitionType(acquisitionType)
                     .sizeBytes(positiveLong(item.path("size").asLong(0L)))
                     .downloadUrl(downloadUrl)
                     .detailsUrl(detailsUrl)
-                    .rawJson(objectMapper.writeValueAsString(item))
+                    .rawJson(rawJson)
                     .build());
         }
         return results;
@@ -261,7 +278,19 @@ public class ProwlarrTorznabAdapter implements DownloadSourceAdapter {
                 return format;
             }
         }
-        return DownloadFormat.fromFileName(title).orElse(DownloadFormat.UNKNOWN);
+        DownloadFormat titleFormat = DownloadFormat.fromFileName(title).orElse(DownloadFormat.UNKNOWN);
+        if (titleFormat != DownloadFormat.UNKNOWN) {
+            return titleFormat;
+        }
+        return DownloadFormat.fromText(title + " " + String.join(" ", attrs.values()));
+    }
+
+    private DownloadFormat inferProwlarrFormat(String title, String rawJson) {
+        return DownloadFormat.fromFileName(title)
+                .orElseGet(() -> {
+                    DownloadFormat titleFormat = DownloadFormat.fromText(title);
+                    return titleFormat != DownloadFormat.UNKNOWN ? titleFormat : DownloadFormat.fromText(rawJson);
+                });
     }
 
     private DownloadAcquisitionType inferAcquisitionType(String link) {

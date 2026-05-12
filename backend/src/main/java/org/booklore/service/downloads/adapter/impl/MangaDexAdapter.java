@@ -278,7 +278,11 @@ public class MangaDexAdapter implements DownloadSourceAdapter {
     }
 
     private boolean supports(DownloadContentKind requested) {
-        return requested == DownloadContentKind.MANGA || requested == DownloadContentKind.WEBTOON || requested == DownloadContentKind.COMIC;
+        return requested == null
+                || requested == DownloadContentKind.AUTO
+                || requested == DownloadContentKind.MANGA
+                || requested == DownloadContentKind.WEBTOON
+                || requested == DownloadContentKind.COMIC;
     }
 
     private MangaDexConfig readConfig(DownloadSourceEntity source) {

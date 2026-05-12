@@ -4,9 +4,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.booklore.config.AppProperties;
 import org.booklore.model.dto.BookMetadata;
+import org.booklore.model.dto.ComicMetadata;
 import org.booklore.model.dto.request.BookdropFinalizeRequest;
 import org.booklore.model.entity.BookdropFileEntity;
 import org.booklore.model.entity.DownloadJobEntity;
+import org.booklore.model.enums.DownloadContentKind;
 import org.booklore.repository.BookdropFileRepository;
 import org.booklore.service.bookdrop.BookDropService;
 import org.booklore.service.bookdrop.BookdropMetadataService;
@@ -23,7 +25,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDate;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 @Slf4j
 @Service
@@ -123,7 +127,59 @@ public class BookdropDeliveryService {
                 .isbn10(normalizeIsbn10(result.getIsbn()))
                 .language(result.getLanguage())
                 .externalUrl(result.getDetailsUrl())
+                .categories(categoriesFor(result.getContentKind()))
+                .tags(tagsFor(result.getContentKind()))
+                .comicMetadata(comicMetadataFor(result))
                 .build();
+    }
+
+    private Set<String> categoriesFor(DownloadContentKind contentKind) {
+        if (contentKind == null || contentKind == DownloadContentKind.BOOK || contentKind == DownloadContentKind.AUTO) {
+            return null;
+        }
+        LinkedHashSet<String> categories = new LinkedHashSet<>();
+        switch (contentKind) {
+            case MANGA -> {
+                categories.add("Manga");
+                categories.add("Comics & Graphic Novels");
+            }
+            case COMIC -> categories.add("Comics & Graphic Novels");
+            case WEBTOON -> {
+                categories.add("Webtoon");
+                categories.add("Comics & Graphic Novels");
+            }
+            default -> {
+            }
+        }
+        return categories.isEmpty() ? null : categories;
+    }
+
+    private Set<String> tagsFor(DownloadContentKind contentKind) {
+        if (contentKind == null || contentKind == DownloadContentKind.BOOK || contentKind == DownloadContentKind.AUTO) {
+            return null;
+        }
+        return Set.of(contentKind.name().toLowerCase());
+    }
+
+    private ComicMetadata comicMetadataFor(NormalizedDownloadResult result) {
+        DownloadContentKind contentKind = result.getContentKind();
+        if (contentKind == null || !contentKind.isSequentialArt()) {
+            return null;
+        }
+        return ComicMetadata.builder()
+                .issueNumber(result.getSeriesNumber() == null ? null : formatNumber(result.getSeriesNumber()))
+                .volumeName(result.getSeriesName())
+                .format(contentKind == DownloadContentKind.WEBTOON ? "Webtoon" : contentKind == DownloadContentKind.MANGA ? "Manga" : "Comic")
+                .manga(contentKind == DownloadContentKind.MANGA)
+                .webLink(result.getDetailsUrl())
+                .build();
+    }
+
+    private String formatNumber(Float value) {
+        if (value == null) {
+            return null;
+        }
+        return value % 1 == 0 ? String.valueOf(value.intValue()) : value.toString();
     }
 
     private String normalizeIsbn13(String isbn) {

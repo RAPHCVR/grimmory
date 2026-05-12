@@ -188,7 +188,7 @@
             </td>
             <td>
               <div class="result-title">
-                <strong>{{ result.title }}</strong>
+                <strong>{{ displayTitle(result) }}</strong>
                 @if (resultMeta(result)) {
                   <span>{{ resultMeta(result) }}</span>
                 }
@@ -205,8 +205,11 @@
             </td>
             <td>
               <div class="kind-stack">
-                <span>{{ result.contentKind }}</span>
-                <small>{{ result.format }} · {{ result.acquisitionType }}</small>
+                <p-tag
+                  [value]="contentKindLabel(result.contentKind)"
+                  [severity]="contentKindSeverity(result.contentKind)">
+                </p-tag>
+                <small>{{ result.format }} · {{ acquisitionLabel(result.acquisitionType) }}</small>
               </div>
             </td>
             <td>{{ formatBytes(result.sizeBytes) }}</td>
@@ -222,8 +225,7 @@
                 size="small"
                 severity="success"
                 [loading]="acquiringResultIds.has(result.id)"
-                [disabled]="acquiringResultIds.has(result.id) || autoFinalizeTargetMissing"
-                [pTooltip]="autoFinalizeTargetMissing ? t('search.autoFinalizeTargetRequired') : ''"
+                [disabled]="acquiringResultIds.has(result.id)"
                 (onClick)="acquire(result)">
               </p-button>
             </td>

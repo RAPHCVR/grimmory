@@ -190,6 +190,138 @@ class AnnasArchiveApiAdapterTest {
     }
 
     @Test
+    void search_queriesAllPreferredFormatsAndParsesSequentialArtMetadata() throws Exception {
+        List<String> requestedUrls = new ArrayList<>();
+        HttpServer flareSolverr = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        flareSolverr.createContext("/v1", exchange -> {
+            var body = objectMapper.readTree(exchange.getRequestBody());
+            String requestedUrl = body.path("url").asText();
+            requestedUrls.add(requestedUrl);
+
+            String html = requestedUrl.contains("ext=pdf")
+                    ? """
+                    <html>
+                      <body>
+                        <div>
+                          <a href="/md5/0123456789abcdef0123456789abcdef" class="js-vim-focus font-semibold">
+                            Wakfu Manga - Tome 1: La Quête des Dofus Eliatropes
+                          </a>
+                          <a href="/search?q=Tot">
+                            <span class="icon-[mdi--user-edit]"></span>
+                            Tot
+                          </a>
+                          <span>zlib/Comics & Graphic Novels/Anime & Manga/Tot/Wakfu Manga - Tome 1: La Quête des Dofus Eliatropes_121004469.pdf French 2012, Wakfu, 1, 2012</span>
+                        </div>
+                      </body>
+                    </html>
+                    """
+                    : "<html><body>No matching files</body></html>";
+            byte[] response = objectMapper.writeValueAsBytes(Map.of(
+                    "status", "ok",
+                    "solution", Map.of("response", html)
+            ));
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        flareSolverr.start();
+
+        try {
+            String flareSolverrBaseUrl = "http://127.0.0.1:" + flareSolverr.getAddress().getPort();
+            DownloadSourceEntity source = DownloadSourceEntity.builder()
+                    .name("Anna HTML")
+                    .type(DownloadSourceType.ANNAS_ARCHIVE_API)
+                    .configJson(objectMapper.writeValueAsString(Map.of(
+                            "annasArchiveApi", Map.of(
+                                    "baseUrl", "https://annas-archive.li",
+                                    "useDefaultFallbacks", false
+                            ),
+                            "flareSolverr", Map.of("baseUrl", flareSolverrBaseUrl)
+                    )))
+                    .build();
+
+            var results = adapter().search(source, DownloadSearchCriteria.builder()
+                    .query("Wakfu Manga - Tome")
+                    .contentKind(DownloadContentKind.AUTO)
+                    .preferredFormats(List.of(DownloadFormat.EPUB, DownloadFormat.PDF))
+                    .maxResults(10)
+                    .build());
+
+            assertEquals(2, requestedUrls.size());
+            assertEquals("epub", queryParams(URI.create(requestedUrls.get(0)).getRawQuery()).get("ext"));
+            assertEquals("pdf", queryParams(URI.create(requestedUrls.get(1)).getRawQuery()).get("ext"));
+            assertEquals(1, results.size());
+            var result = results.getFirst();
+            assertEquals(DownloadFormat.PDF, result.getFormat());
+            assertEquals(DownloadContentKind.MANGA, result.getContentKind());
+            assertEquals("Wakfu Manga", result.getSeriesName());
+            assertEquals(1F, result.getSeriesNumber());
+            assertEquals("La Quête des Dofus Eliatropes", result.getTitle());
+            assertEquals(List.of("Tot"), result.getAuthors());
+            assertEquals("fr", result.getLanguage());
+        } finally {
+            flareSolverr.stop(0);
+        }
+    }
+
+    @Test
+    void search_interleavesResultsAcrossPreferredFormatsBeforeApplyingLimit() throws Exception {
+        HttpServer flareSolverr = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        flareSolverr.createContext("/v1", exchange -> {
+            var body = objectMapper.readTree(exchange.getRequestBody());
+            String requestedUrl = body.path("url").asText();
+
+            String html = requestedUrl.contains("ext=pdf")
+                    ? "<html><div><a href=\"/md5/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\" class=\"js-vim-focus font-semibold\">Les Fourmis PDF</a><span>Bernard Werber French PDF 1991</span></div></html>"
+                    : """
+                    <html>
+                      <div><a href="/md5/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" class="js-vim-focus font-semibold">Les Fourmis EPUB</a><span>Bernard Werber French EPUB 1991</span></div>
+                      <div><a href="/md5/cccccccccccccccccccccccccccccccc" class="js-vim-focus font-semibold">Les Thanatonautes EPUB</a><span>Bernard Werber French EPUB 1994</span></div>
+                    </html>
+                    """;
+            byte[] response = objectMapper.writeValueAsBytes(Map.of(
+                    "status", "ok",
+                    "solution", Map.of("response", html)
+            ));
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        flareSolverr.start();
+
+        try {
+            String flareSolverrBaseUrl = "http://127.0.0.1:" + flareSolverr.getAddress().getPort();
+            DownloadSourceEntity source = DownloadSourceEntity.builder()
+                    .name("Anna HTML")
+                    .type(DownloadSourceType.ANNAS_ARCHIVE_API)
+                    .configJson(objectMapper.writeValueAsString(Map.of(
+                            "annasArchiveApi", Map.of(
+                                    "baseUrl", "https://annas-archive.li",
+                                    "useDefaultFallbacks", false
+                            ),
+                            "flareSolverr", Map.of("baseUrl", flareSolverrBaseUrl)
+                    )))
+                    .build();
+
+            var results = adapter().search(source, DownloadSearchCriteria.builder()
+                    .query("Bernard Werber")
+                    .contentKind(DownloadContentKind.BOOK)
+                    .preferredFormats(List.of(DownloadFormat.EPUB, DownloadFormat.PDF))
+                    .maxResults(3)
+                    .build());
+
+            assertEquals(3, results.size());
+            assertEquals(DownloadFormat.EPUB, results.get(0).getFormat());
+            assertEquals(DownloadFormat.PDF, results.get(1).getFormat());
+            assertEquals(DownloadFormat.EPUB, results.get(2).getFormat());
+        } finally {
+            flareSolverr.stop(0);
+        }
+    }
+
+    @Test
     void search_whenHtmlContainsNoMd5Links_returnsNoResults() throws Exception {
         HttpServer flareSolverr = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         flareSolverr.createContext("/v1", exchange -> {
@@ -233,7 +365,8 @@ class AnnasArchiveApiAdapterTest {
         return new AnnasArchiveApiAdapter(
                 new FlareSolverrClient(HttpClient.newHttpClient(), objectMapper, configReader),
                 objectMapper,
-                configReader
+                configReader,
+                new DownloadContentClassifier()
         );
     }
 

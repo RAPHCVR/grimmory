@@ -69,7 +69,7 @@ class ProwlarrTorznabAdapterTest {
                     .maxResults(5)
                     .build();
 
-            ProwlarrTorznabAdapter adapter = new ProwlarrTorznabAdapter(HttpClient.newHttpClient(), new ObjectMapper());
+            ProwlarrTorznabAdapter adapter = adapter();
             List<NormalizedDownloadResult> results = adapter.search(source, criteria);
 
             assertEquals(1, results.size());
@@ -85,5 +85,61 @@ class ProwlarrTorznabAdapterTest {
         } finally {
             server.stop(0);
         }
+    }
+
+    @Test
+    void search_autoMode_infersMangaFromNyaaVolumeRelease() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/api/v1/search", exchange -> {
+            byte[] body = """
+                    [
+                      {
+                        "guid": "one-piece-100",
+                        "infoHash": "abcdefabcdefabcdefabcdefabcdefabcdefabcd",
+                        "title": "[ENG] One Piece - Vol. 100 (FULL COLOR Digital Colored Comics)",
+                        "indexer": "Nyaa",
+                        "size": 159593264,
+                        "downloadUrl": "magnet:?xt=urn:btih:abcdefabcdefabcdefabcdefabcdefabcdefabcd",
+                        "protocol": "torrent"
+                      }
+                    ]
+                    """.getBytes();
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+
+        try {
+            String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+            DownloadSourceEntity source = DownloadSourceEntity.builder()
+                    .name("Prowlarr Local")
+                    .type(DownloadSourceType.PROWLARR_TORZNAB)
+                    .credentialsJson("""
+                            {
+                              "baseUrl": "%s",
+                              "apiKey": "secret",
+                              "timeoutSeconds": 5
+                            }
+                            """.formatted(baseUrl))
+                    .build();
+
+            List<NormalizedDownloadResult> results = adapter().search(source, DownloadSearchCriteria.builder()
+                    .query("One Piece 100")
+                    .contentKind(DownloadContentKind.AUTO)
+                    .maxResults(5)
+                    .build());
+
+            assertEquals(1, results.size());
+            assertEquals(DownloadContentKind.MANGA, results.getFirst().getContentKind());
+            assertEquals(DownloadAcquisitionType.TORRENT, results.getFirst().getAcquisitionType());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    private ProwlarrTorznabAdapter adapter() {
+        return new ProwlarrTorznabAdapter(HttpClient.newHttpClient(), new ObjectMapper(), new DownloadContentClassifier());
     }
 }
