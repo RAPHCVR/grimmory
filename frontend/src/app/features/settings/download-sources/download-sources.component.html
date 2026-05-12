@@ -8,7 +8,7 @@
       <p class="settings-description">{{ t('description') }}</p>
     </div>
 
-    @if ((userService.userState$ | async)?.user?.permissions?.admin) {
+    @if (userService.currentUser()?.permissions?.admin) {
       <div class="settings-card">
         <div class="section-header">
           <div>

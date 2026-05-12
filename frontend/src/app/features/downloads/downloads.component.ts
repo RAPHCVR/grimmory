@@ -1,4 +1,4 @@
-import {Component, inject, OnDestroy, OnInit} from '@angular/core';
+import {Component, effect, inject, OnDestroy, OnInit} from '@angular/core';
 import {DatePipe} from '@angular/common';
 import {FormsModule} from '@angular/forms';
 import {Button} from 'primeng/button';
@@ -92,24 +92,25 @@ export class DownloadsComponent implements OnInit, OnDestroy {
   formatOptions: SelectOption<DownloadFormat>[] = DOWNLOAD_FORMATS.map(value => ({label: value, value}));
 
   private pollSub?: Subscription;
-  private librarySub?: Subscription;
 
-  ngOnInit(): void {
-    this.pageTitle.setPageTitle('Downloads');
-    this.librarySub = this.libraryService.libraryState$.subscribe(state => {
-      this.libraries = state.libraries ?? [];
+  constructor() {
+    effect(() => {
+      this.libraries = this.libraryService.libraries();
       this.ensureValidTargetSelection();
       if (this.autoFinalize) {
         this.applyDefaultTargetIfSingle();
       }
     });
+  }
+
+  ngOnInit(): void {
+    this.pageTitle.setPageTitle('Downloads');
     this.loadJobs();
     this.pollSub = interval(5000).subscribe(() => this.loadJobs(false));
   }
 
   ngOnDestroy(): void {
     this.pollSub?.unsubscribe();
-    this.librarySub?.unsubscribe();
   }
 
   search(): void {

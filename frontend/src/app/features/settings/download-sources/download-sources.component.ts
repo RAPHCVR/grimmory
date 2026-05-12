@@ -1,5 +1,4 @@
 import {Component, inject, OnInit} from '@angular/core';
-import {AsyncPipe} from '@angular/common';
 import {FormBuilder, FormsModule, ReactiveFormsModule, Validators} from '@angular/forms';
 import {Button} from 'primeng/button';
 import {InputText} from 'primeng/inputtext';
@@ -35,7 +34,6 @@ interface SourceTypeOption {
     Textarea,
     Tooltip,
     ConfirmDialog,
-    AsyncPipe,
     FormsModule,
     ReactiveFormsModule,
     TranslocoDirective,

@@ -1,20 +1,17 @@
 import {inject} from '@angular/core';
-import {CanActivateFn, Router} from '@angular/router';
+import {ActivatedRouteSnapshot, CanActivateFn, Router, RouterStateSnapshot} from '@angular/router';
 import {UserService} from '../../../features/settings/user-management/user.service';
-import {filter, map, take} from 'rxjs/operators';
 
-export const AdminGuard: CanActivateFn = () => {
+export const AdminGuard: CanActivateFn = (route: ActivatedRouteSnapshot, state: RouterStateSnapshot) => {
+  void route;
+  void state;
   const userService = inject(UserService);
   const router = inject(Router);
+  const user = userService.currentUser();
 
-  return userService.userState$.pipe(
-    filter(state => state.loaded),
-    take(1),
-    map(state => {
-      if (state.user?.permissions.admin) {
-        return true;
-      }
-      return router.createUrlTree(['/dashboard']);
-    })
-  );
+  if (user?.permissions.admin) {
+    return true;
+  }
+  router.navigate(['/dashboard']);
+  return false;
 };
