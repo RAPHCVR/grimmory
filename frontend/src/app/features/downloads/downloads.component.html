@@ -88,8 +88,40 @@
         </div>
         <div class="field toggle-field">
           <label for="download-auto-finalize">{{ t('search.autoFinalize') }}</label>
-          <p-toggleswitch inputId="download-auto-finalize" [(ngModel)]="autoFinalize"></p-toggleswitch>
+          <p-toggleswitch
+            inputId="download-auto-finalize"
+            [(ngModel)]="autoFinalize"
+            (ngModelChange)="onAutoFinalizeChange($event)">
+          </p-toggleswitch>
         </div>
+        @if (autoFinalize) {
+          <div class="field">
+            <label for="download-target-library">{{ t('search.targetLibrary') }}</label>
+            <p-select
+              inputId="download-target-library"
+              [options]="targetLibraryOptions"
+              [(ngModel)]="targetLibraryId"
+              optionLabel="label"
+              optionValue="value"
+              [placeholder]="t('search.targetLibraryPlaceholder')"
+              [appendTo]="'body'"
+              (onChange)="onTargetLibraryChange()">
+            </p-select>
+          </div>
+          <div class="field">
+            <label for="download-target-path">{{ t('search.targetPath') }}</label>
+            <p-select
+              inputId="download-target-path"
+              [options]="targetPathOptions"
+              [(ngModel)]="targetLibraryPathId"
+              optionLabel="label"
+              optionValue="value"
+              [placeholder]="t('search.targetPathPlaceholder')"
+              [disabled]="!targetLibraryId"
+              [appendTo]="'body'">
+            </p-select>
+          </div>
+        }
       </div>
 
       <div class="advanced-grid secondary-grid">
@@ -190,7 +222,8 @@
                 size="small"
                 severity="success"
                 [loading]="acquiringResultIds.has(result.id)"
-                [disabled]="acquiringResultIds.has(result.id)"
+                [disabled]="acquiringResultIds.has(result.id) || autoFinalizeTargetMissing"
+                [pTooltip]="autoFinalizeTargetMissing ? t('search.autoFinalizeTargetRequired') : ''"
                 (onClick)="acquire(result)">
               </p-button>
             </td>

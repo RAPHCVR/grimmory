@@ -3,7 +3,7 @@
   "description": "Configure acquisition adapters used by the automated downloads pipeline.",
   "sources": {
     "sectionTitle": "Sources",
-    "sectionDesc": "Add Prowlarr, MangaDex, OPDS, direct URL, or custom plugin sources."
+    "sectionDesc": "Add Prowlarr, MangaDex, Anna API, OPDS, direct URL, or custom plugin sources."
   },
   "actions": {
     "addSource": "Add Source",
@@ -47,6 +47,7 @@
     "PROWLARR_TORZNAB": "Prowlarr / Torznab",
     "DIRECT_URL": "Direct URL",
     "MANGADEX": "MangaDex",
+    "ANNAS_ARCHIVE_API": "Anna API bridge",
     "CUSTOM_WEB_PLUGIN": "Custom Web Plugin"
   },
   "delete": {

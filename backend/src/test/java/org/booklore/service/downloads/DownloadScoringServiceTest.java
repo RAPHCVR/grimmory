@@ -1,5 +1,6 @@
 package org.booklore.service.downloads;
 
+import org.booklore.model.enums.DownloadAcquisitionType;
 import org.booklore.model.enums.DownloadContentKind;
 import org.booklore.model.enums.DownloadFormat;
 import org.booklore.service.downloads.dto.DownloadSearchCriteria;
@@ -65,5 +66,84 @@ class DownloadScoringServiceTest {
         assertTrue(score.getScore() < 30);
         assertTrue(score.getReasons().contains("-50 wrong format"));
         assertTrue(score.getReasons().contains("-35 title weak match"));
+    }
+
+    @Test
+    void score_releaseTitleWithExtraWords_stillMatchesQueryTokens() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("One Piece 100")
+                .contentKind(DownloadContentKind.MANGA)
+                .preferredFormats(List.of(DownloadFormat.CBZ))
+                .build();
+
+        NormalizedDownloadResult result = NormalizedDownloadResult.builder()
+                .title("[ENG] One Piece - Vol. 100 (FULL COLOR Digital Colored Comics)")
+                .format(DownloadFormat.UNKNOWN)
+                .contentKind(DownloadContentKind.MANGA)
+                .downloadUrl("http://localhost:9696/1/download?file=one-piece-100")
+                .sizeBytes(159_593_264L)
+                .build();
+
+        var score = service.score(criteria, result);
+
+        assertTrue(score.getScore() >= 50);
+        assertTrue(score.getReasons().contains("+35 title strong match"));
+        assertTrue(score.getReasons().contains("+20 requested volume/chapter number match"));
+    }
+
+    @Test
+    void score_numberedRelease_ranksExactVolumeAboveBundleRange() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("One Piece 100")
+                .contentKind(DownloadContentKind.MANGA)
+                .preferredFormats(List.of(DownloadFormat.CBZ))
+                .build();
+
+        NormalizedDownloadResult exactVolume = NormalizedDownloadResult.builder()
+                .title("[ENG] One Piece - Vol. 100 (FULL COLOR Digital Colored Comics)")
+                .format(DownloadFormat.UNKNOWN)
+                .contentKind(DownloadContentKind.MANGA)
+                .downloadUrl("http://localhost:9696/1/download?file=one-piece-100")
+                .sizeBytes(159_593_264L)
+                .build();
+
+        NormalizedDownloadResult bundleRange = NormalizedDownloadResult.builder()
+                .title("One Piece v001-100 (Digital HD)")
+                .format(DownloadFormat.UNKNOWN)
+                .contentKind(DownloadContentKind.MANGA)
+                .downloadUrl("http://localhost:9696/1/download?file=one-piece-001-100")
+                .sizeBytes(31_245_887_488L)
+                .build();
+
+        var exactScore = service.score(criteria, exactVolume);
+        var bundleScore = service.score(criteria, bundleRange);
+
+        assertTrue(exactScore.getScore() > bundleScore.getScore());
+        assertTrue(bundleScore.getReasons().contains("-5 bundled range contains requested number"));
+    }
+
+    @Test
+    void score_directGalleryDlUrl_acceptsInferredVisualContentKind() {
+        String url = "https://www.webtoons.com/fr/fantasy/tower-of-god/saison-3-ep-235/viewer?title_no=1832&episode_no=652";
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .directUrl(url)
+                .preferredFormats(List.of(DownloadFormat.CBZ))
+                .build();
+
+        NormalizedDownloadResult result = NormalizedDownloadResult.builder()
+                .title("Saison 3 Ep 235")
+                .seriesName("Tower of God")
+                .seriesNumber(235f)
+                .contentKind(DownloadContentKind.WEBTOON)
+                .format(DownloadFormat.CBZ)
+                .acquisitionType(DownloadAcquisitionType.CLI_GALLERY_DL)
+                .downloadUrl(url)
+                .build();
+
+        var score = service.score(criteria, result);
+
+        assertTrue(score.getScore() >= 90);
+        assertTrue(score.getReasons().contains("+80 direct URL exact match"));
+        assertTrue(score.getReasons().contains("+10 content kind inferred from direct URL"));
     }
 }

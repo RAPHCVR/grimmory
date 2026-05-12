@@ -183,11 +183,12 @@ public class ProwlarrTorznabAdapter implements DownloadSourceAdapter {
             String downloadUrl = firstNonBlank(item.path("downloadUrl").asText(null), item.path("magnetUrl").asText(null));
             String detailsUrl = firstNonBlank(item.path("infoUrl").asText(null), item.path("commentUrl").asText(null));
             String guid = firstNonBlank(item.path("guid").asText(null), downloadUrl, title);
+            String sourceResultId = firstNonBlank(item.path("infoHash").asText(null), guid);
             String protocol = item.path("protocol").asText(null);
             DownloadFormat format = DownloadFormat.fromFileName(title).orElse(DownloadFormat.UNKNOWN);
 
             results.add(NormalizedDownloadResult.builder()
-                    .sourceResultId(guid)
+                    .sourceResultId(sourceResultId)
                     .title(title == null || title.isBlank() ? "Untitled" : title)
                     .authors(List.of())
                     .publishedYear(yearFromIsoDate(item.path("publishDate").asText(null)))

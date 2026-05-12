@@ -242,4 +242,34 @@ class LibraryServiceIconTest {
         assertEquals("book", saved.getIcon());
         assertEquals(IconType.PRIME_NG, saved.getIconType());
     }
+
+    @Test
+    void createLibrary_withPaths_shouldSetOwningLibraryOnEachPath() {
+        CreateLibraryRequest request = CreateLibraryRequest.builder()
+                .name("Library With Paths")
+                .paths(List.of(
+                        LibraryPath.builder().path("C:/books").build(),
+                        LibraryPath.builder().path("C:/manga").build()
+                ))
+                .watch(false)
+                .build();
+
+        when(authenticationService.getAuthenticatedUser()).thenReturn(user);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(userEntity));
+        when(libraryRepository.save(any(LibraryEntity.class))).thenAnswer(invocation -> {
+            LibraryEntity entity = invocation.getArgument(0);
+            entity.setId(1L);
+            return entity;
+        });
+        when(libraryMapper.toLibrary(any(LibraryEntity.class))).thenReturn(Library.builder().name("Library With Paths").build());
+
+        libraryService.createLibrary(request);
+
+        ArgumentCaptor<LibraryEntity> captor = ArgumentCaptor.forClass(LibraryEntity.class);
+        verify(libraryRepository).save(captor.capture());
+
+        LibraryEntity saved = captor.getValue();
+        assertEquals(2, saved.getLibraryPaths().size());
+        saved.getLibraryPaths().forEach(path -> assertSame(saved, path.getLibrary()));
+    }
 }

@@ -31,6 +31,7 @@ class ProwlarrTorznabAdapterTest {
                     [
                       {
                         "guid": "release-guid",
+                        "infoHash": "0123456789abcdef0123456789abcdef01234567",
                         "title": "Example Book EPUB",
                         "size": 12345,
                         "publishDate": "2024-01-02T03:04:05Z",
@@ -77,6 +78,7 @@ class ProwlarrTorznabAdapterTest {
             assertTrue(requestPath.get().contains("indexerIds=1"));
             assertTrue(requestPath.get().contains("indexerIds=2"));
             assertEquals("Example Book EPUB", results.getFirst().getTitle());
+            assertEquals("0123456789abcdef0123456789abcdef01234567", results.getFirst().getSourceResultId());
             assertEquals(DownloadAcquisitionType.TORRENT, results.getFirst().getAcquisitionType());
             assertEquals(12345L, results.getFirst().getSizeBytes());
             assertEquals(2024, results.getFirst().getPublishedYear());

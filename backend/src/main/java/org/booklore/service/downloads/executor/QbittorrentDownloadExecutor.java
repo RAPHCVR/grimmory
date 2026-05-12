@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.booklore.model.entity.DownloadJobEntity;
 import org.booklore.model.enums.BookFileExtension;
 import org.booklore.model.enums.DownloadAcquisitionType;
+import org.booklore.model.enums.DownloadContentKind;
 import org.booklore.repository.DownloadJobRepository;
 import org.booklore.service.downloads.client.QbittorrentClient;
 import org.booklore.service.downloads.dto.DownloadProgressSink;
@@ -63,14 +64,12 @@ public class QbittorrentDownloadExecutor implements DownloadExecutor {
                     progressSink.onProgress(percent);
                 }
                 if (lastInfo.complete()) {
-                    copyCompletedPayload(lastInfo, localSavePath, request.getTargetPartFile());
+                    Path downloadedFile = copyCompletedPayload(lastInfo, localSavePath, request);
                     if (progressSink != null) {
                         progressSink.onProgress(100);
                     }
-                    if (config.deleteTorrentOnComplete()) {
-                        qbittorrentClient.deleteTorrent(config, lastInfo.hash(), false);
-                    }
-                    return request.getTargetPartFile();
+                    cleanupTorrentTask(config, lastInfo.hash(), localSavePath, request.getStagingDir());
+                    return downloadedFile;
                 }
             }
             sleep(config.pollIntervalSeconds());
@@ -79,10 +78,13 @@ public class QbittorrentDownloadExecutor implements DownloadExecutor {
         throw new DownloadSourceException("Torrent did not complete before timeout: " + state);
     }
 
-    private void copyCompletedPayload(QbittorrentClient.TorrentInfo info, Path localSavePath, Path targetPartFile) {
+    private Path copyCompletedPayload(QbittorrentClient.TorrentInfo info, Path localSavePath, DownloadExecutionRequest request) {
         try {
-            Path payload = resolvePayloadPath(info, localSavePath);
-            Files.copy(payload, targetPartFile, StandardCopyOption.REPLACE_EXISTING);
+            Path payload = resolvePayloadPath(info, localSavePath, request.getResult().getContentKind());
+            Path targetFile = targetFileForPayload(request.getTargetPartFile(), payload, request.getResult().getContentKind());
+            Files.createDirectories(targetFile.getParent());
+            Files.copy(payload, targetFile, StandardCopyOption.REPLACE_EXISTING);
+            return targetFile;
         } catch (IOException e) {
             throw new DownloadSourceException("Failed to copy completed torrent payload into staging: " + e.getMessage(), e);
         }
@@ -94,26 +96,43 @@ public class QbittorrentDownloadExecutor implements DownloadExecutor {
         jobRepository.save(job);
     }
 
-    private Path resolvePayloadPath(QbittorrentClient.TorrentInfo info, Path localSavePath) throws IOException {
+    private void cleanupTorrentTask(QbittorrentClient.QbittorrentConfig config, String hash, Path localSavePath, Path stagingDir) {
+        if (!config.deleteTorrentOnComplete()) {
+            return;
+        }
+        boolean deleteFiles = config.deleteFilesOnComplete() && isSameOrChild(localSavePath, stagingDir);
+        qbittorrentClient.deleteTorrent(config, hash, deleteFiles);
+    }
+
+    private boolean isSameOrChild(Path candidate, Path parent) {
+        if (candidate == null || parent == null) {
+            return false;
+        }
+        Path normalizedCandidate = candidate.toAbsolutePath().normalize();
+        Path normalizedParent = parent.toAbsolutePath().normalize();
+        return normalizedCandidate.equals(normalizedParent) || normalizedCandidate.startsWith(normalizedParent);
+    }
+
+    private Path resolvePayloadPath(QbittorrentClient.TorrentInfo info, Path localSavePath, DownloadContentKind contentKind) throws IOException {
         Path contentPath = info.contentPath() == null || info.contentPath().isBlank() ? null : Path.of(info.contentPath());
         if (contentPath != null && Files.exists(contentPath)) {
-            return supportedPayload(contentPath);
+            return supportedPayload(contentPath, contentKind);
         }
 
         Path fallback = info.name() == null || info.name().isBlank() ? localSavePath : localSavePath.resolve(info.name());
         if (Files.exists(fallback)) {
-            return supportedPayload(fallback);
+            return supportedPayload(fallback, contentKind);
         }
 
         if (Files.exists(localSavePath)) {
-            return supportedPayload(localSavePath);
+            return supportedPayload(localSavePath, contentKind);
         }
         throw new DownloadSourceException("Completed torrent payload is not visible from BookLore at " + localSavePath);
     }
 
-    private Path supportedPayload(Path path) throws IOException {
+    private Path supportedPayload(Path path, DownloadContentKind contentKind) throws IOException {
         if (Files.isRegularFile(path)) {
-            if (BookFileExtension.fromFileName(path.getFileName().toString()).isPresent()) {
+            if (isSupportedPayload(path, contentKind)) {
                 return path;
             }
             throw new DownloadSourceException("Torrent completed with unsupported file type: " + path.getFileName());
@@ -124,10 +143,56 @@ public class QbittorrentDownloadExecutor implements DownloadExecutor {
         try (var stream = Files.walk(path)) {
             return stream
                     .filter(Files::isRegularFile)
-                    .filter(candidate -> BookFileExtension.fromFileName(candidate.getFileName().toString()).isPresent())
+                    .filter(candidate -> isSupportedPayload(candidate, contentKind))
                     .max(Comparator.comparingLong(this::safeSize))
                     .orElseThrow(() -> new DownloadSourceException("Torrent completed without a supported BookLore file inside " + path));
         }
+    }
+
+    private Path targetFileForPayload(Path targetPartFile, Path payload, DownloadContentKind contentKind) throws IOException {
+        String extension = BookFileExtension.fromFileName(payload.getFileName().toString())
+                .map(BookFileExtension::getExtension)
+                .orElseGet(() -> isComicZipPayload(payload, contentKind) ? "cbz" : null);
+        if (extension == null || extension.isBlank()) {
+            return targetPartFile;
+        }
+        String baseName = targetPartFile.getFileName().toString();
+        if (baseName.endsWith(".part")) {
+            baseName = baseName.substring(0, baseName.length() - ".part".length());
+        }
+        return targetPartFile.getParent().resolve(baseName + "." + extension);
+    }
+
+    private boolean isSupportedPayload(Path path, DownloadContentKind contentKind) {
+        String fileName = path.getFileName().toString();
+        return BookFileExtension.fromFileName(fileName).isPresent() || isComicZipPayload(path, contentKind);
+    }
+
+    private boolean isComicZipPayload(Path path, DownloadContentKind contentKind) {
+        if (!isSequentialArt(contentKind) || !path.getFileName().toString().toLowerCase().endsWith(".zip")) {
+            return false;
+        }
+        try {
+            byte[] signature = new byte[4];
+            int read;
+            try (var in = Files.newInputStream(path)) {
+                read = in.read(signature);
+            }
+            return signature.length >= 4
+                    && read == 4
+                    && signature[0] == 'P'
+                    && signature[1] == 'K'
+                    && (signature[2] == 3 || signature[2] == 5 || signature[2] == 7)
+                    && (signature[3] == 4 || signature[3] == 6 || signature[3] == 8);
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    private boolean isSequentialArt(DownloadContentKind contentKind) {
+        return contentKind == DownloadContentKind.MANGA
+                || contentKind == DownloadContentKind.COMIC
+                || contentKind == DownloadContentKind.WEBTOON;
     }
 
     private long safeSize(Path path) {

@@ -272,6 +272,8 @@ export class BookdropFileReviewComponent implements OnInit {
   }
 
   copyMetadata(): void {
+    let copiedCount = 0;
+
     this.getSelectedFiles().forEach(fileUi => {
       const cachedfUi = this.fileUiCache[fileUi.file.id];
       const fetched = cachedfUi.file.fetchedMetadata;
@@ -286,7 +288,16 @@ export class BookdropFileReviewComponent implements OnInit {
         }
       }
       this.onMetadataCopied(cachedfUi.file.id, true);
+      copiedCount++;
     });
+
+    if (copiedCount === 0) {
+      this.messageService.add({
+        severity: 'info',
+        summary: this.t.translate('common.info'),
+        detail: this.t.translate('bookdrop.fileReview.noMetadataTooltip'),
+      });
+    }
   }
 
 

@@ -1,6 +1,7 @@
 package org.booklore.service.downloads;
 
 import org.booklore.model.enums.DownloadFormat;
+import org.booklore.model.enums.DownloadContentKind;
 import org.booklore.service.downloads.dto.DownloadScoreBreakdown;
 import org.booklore.service.downloads.dto.DownloadSearchCriteria;
 import org.booklore.service.downloads.dto.NormalizedDownloadResult;
@@ -14,15 +15,22 @@ import java.util.regex.Pattern;
 public class DownloadScoringService {
 
     private static final Pattern NON_ALNUM = Pattern.compile("[^a-z0-9]+");
+    private static final Pattern NUMBER_RANGE = Pattern.compile("(?<!\\d)0*(\\d{1,5})\\s*[-–]\\s*0*(\\d{1,5})(?!\\d)");
     private static final int MIN_REASONABLE_SIZE_BYTES = 2 * 1024;
 
     public DownloadScoreBreakdown score(DownloadSearchCriteria criteria, NormalizedDownloadResult result) {
         int score = 0;
         List<String> reasons = new ArrayList<>();
+        boolean directUrlMatch = directUrlMatches(criteria, result);
 
         if (isBlank(result.getDownloadUrl())) {
             score -= 100;
             reasons.add("-100 missing download URL");
+        }
+
+        if (directUrlMatch) {
+            score += 80;
+            reasons.add("+80 direct URL exact match");
         }
 
         if (!isBlank(criteria.getIsbn()) && !isBlank(result.getIsbn())) {
@@ -51,6 +59,7 @@ public class DownloadScoringService {
                 score -= 35;
                 reasons.add("-35 title weak match");
             }
+            score += scoreRequestedNumber(expectedTitle, result, reasons);
         }
 
         if (!isBlank(criteria.getAuthor()) && result.getAuthors() != null && !result.getAuthors().isEmpty()) {
@@ -101,6 +110,9 @@ public class DownloadScoringService {
         if (result.getContentKind() == criteria.getContentKind()) {
             score += 10;
             reasons.add("+10 content kind match");
+        } else if (directUrlMatch && criteria.getContentKind() == DownloadContentKind.BOOK) {
+            score += 10;
+            reasons.add("+10 content kind inferred from direct URL");
         } else {
             score -= 30;
             reasons.add("-30 content kind mismatch");
@@ -145,6 +157,66 @@ public class DownloadScoringService {
         return -50;
     }
 
+    private int scoreRequestedNumber(String expectedTitle, NormalizedDownloadResult result, List<String> reasons) {
+        OptionalInt requestedNumber = trailingNumber(expectedTitle);
+        if (requestedNumber.isEmpty() || isBlank(result.getTitle())) {
+            return 0;
+        }
+
+        int number = requestedNumber.getAsInt();
+        String title = result.getTitle();
+        if (hasExactNumberMarker(title, number)) {
+            reasons.add("+20 requested volume/chapter number match");
+            return 20;
+        }
+        if (hasRangeContaining(title, number)) {
+            reasons.add("-5 bundled range contains requested number");
+            return -5;
+        }
+        if (hasNumberToken(title, number)) {
+            reasons.add("+5 requested number token present");
+            return 5;
+        }
+        return 0;
+    }
+
+    private OptionalInt trailingNumber(String value) {
+        String normalized = normalize(value);
+        if (normalized.isBlank()) {
+            return OptionalInt.empty();
+        }
+        String[] tokens = normalized.split(" ");
+        String last = tokens[tokens.length - 1];
+        if (!last.matches("\\d{1,5}")) {
+            return OptionalInt.empty();
+        }
+        return OptionalInt.of(Integer.parseInt(last));
+    }
+
+    private boolean hasExactNumberMarker(String title, int number) {
+        String markerPattern = "(?iu)(?:\\bvol(?:ume)?\\b|\\bv\\b|\\btome\\b|\\bch(?:apter)?\\b|\\bchapitre\\b|#)\\s*\\.?\\s*0*" + number + "\\b";
+        return Pattern.compile(markerPattern).matcher(title).find();
+    }
+
+    private boolean hasRangeContaining(String title, int number) {
+        var matcher = NUMBER_RANGE.matcher(title);
+        while (matcher.find()) {
+            int start = Integer.parseInt(matcher.group(1));
+            int end = Integer.parseInt(matcher.group(2));
+            if (Math.min(start, end) <= number && number <= Math.max(start, end)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean hasNumberToken(String title, int number) {
+        return tokens(normalize(title)).stream()
+                .filter(token -> token.matches("\\d{1,5}"))
+                .mapToInt(Integer::parseInt)
+                .anyMatch(value -> value == number);
+    }
+
     private double similarity(String left, String right) {
         String a = normalize(left);
         String b = normalize(right);
@@ -152,17 +224,25 @@ public class DownloadScoringService {
         if (a.equals(b)) return 1;
         if (a.contains(b) || b.contains(a)) return 0.88;
 
-        Set<String> leftTokens = new LinkedHashSet<>(Arrays.asList(a.split(" ")));
-        Set<String> rightTokens = new LinkedHashSet<>(Arrays.asList(b.split(" ")));
-        leftTokens.remove("");
-        rightTokens.remove("");
+        Set<String> leftTokens = tokens(a);
+        Set<String> rightTokens = tokens(b);
         if (leftTokens.isEmpty() || rightTokens.isEmpty()) return 0;
+
+        if (leftTokens.size() >= 2 && rightTokens.containsAll(leftTokens)) {
+            return 0.86;
+        }
 
         Set<String> intersection = new HashSet<>(leftTokens);
         intersection.retainAll(rightTokens);
         Set<String> union = new HashSet<>(leftTokens);
         union.addAll(rightTokens);
         return (double) intersection.size() / (double) union.size();
+    }
+
+    private Set<String> tokens(String normalized) {
+        Set<String> tokens = new LinkedHashSet<>(Arrays.asList(normalized.split(" ")));
+        tokens.remove("");
+        return tokens;
     }
 
     private String normalize(String value) {
@@ -182,6 +262,19 @@ public class DownloadScoringService {
             if (!isBlank(value)) return value;
         }
         return null;
+    }
+
+    private boolean directUrlMatches(DownloadSearchCriteria criteria, NormalizedDownloadResult result) {
+        if (criteria == null || isBlank(criteria.getDirectUrl()) || result == null) {
+            return false;
+        }
+        String directUrl = normalizeUrlForComparison(criteria.getDirectUrl());
+        return directUrl.equals(normalizeUrlForComparison(result.getDownloadUrl()))
+                || directUrl.equals(normalizeUrlForComparison(result.getDetailsUrl()));
+    }
+
+    private String normalizeUrlForComparison(String value) {
+        return value == null ? "" : value.trim();
     }
 
     private boolean isBlank(String value) {

@@ -311,6 +311,11 @@ export class DownloadSourcesComponent implements OnInit {
           searchUrlTemplate: '',
           timeoutSeconds: 20
         };
+      case 'ANNAS_ARCHIVE_API':
+        return {
+          baseUrl: '',
+          apiKey: ''
+        };
       default:
         return {};
     }
@@ -335,7 +340,8 @@ export class DownloadSourcesComponent implements OnInit {
             localSavePath: '{stagingDir}',
             pollIntervalSeconds: 10,
             timeoutMinutes: 180,
-            deleteTorrentOnComplete: false
+            deleteTorrentOnComplete: true,
+            deleteFilesOnComplete: true
           },
           flareSolverr
         };
@@ -352,11 +358,45 @@ export class DownloadSourcesComponent implements OnInit {
           }
         };
       case 'DIRECT_URL':
-        return {flareSolverr};
+        return {
+          acquisitionType: 'DIRECT_FILE',
+          galleryDl: {
+            enabled: false,
+            binaryPath: 'gallery-dl',
+            timeoutMinutes: 30,
+            extraArgs: []
+          },
+          flareSolverr
+        };
+      case 'ANNAS_ARCHIVE_API':
+        return {
+          annasArchiveApi: {
+            queryParam: 'q',
+            formatParam: 'ext',
+            limitParam: 'limit',
+            defaultFormat: 'epub',
+            timeoutSeconds: 30,
+            maxResults: 50,
+            resultsPath: 'results',
+            requiresFlareSolverr: true,
+            apiKeyHeader: 'X-API-Key',
+            downloadUrlFields: ['downloadUrl', 'download_url', 'directUrl', 'direct_url', 'url', 'href', 'link', 'mirror'],
+            titleFields: ['title', 'name'],
+            authorFields: ['authors', 'author'],
+            detailsUrlFields: ['detailsUrl', 'details_url', 'sourceUrl', 'source_url', 'pageUrl', 'page']
+          },
+          flareSolverr
+        };
       case 'CUSTOM_WEB_PLUGIN':
         return {
           pluginClassName: '',
           pluginJarPath: '',
+          galleryDl: {
+            enabled: false,
+            binaryPath: 'gallery-dl',
+            timeoutMinutes: 30,
+            extraArgs: []
+          },
           flareSolverr
         };
       default:

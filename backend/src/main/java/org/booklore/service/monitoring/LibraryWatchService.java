@@ -5,6 +5,7 @@ import org.booklore.model.dto.Library;
 import org.booklore.model.enums.BookFileExtension;
 import org.booklore.service.watcher.LibraryFileEventProcessor;
 import org.springframework.context.SmartLifecycle;
+import org.booklore.util.FileUtils;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -165,7 +166,9 @@ public class LibraryWatchService implements SmartLifecycle {
             Path rootPath = Paths.get(libraryPath.getPath());
             if (Files.isDirectory(rootPath)) {
                 try (Stream<Path> pathStream = Files.walk(rootPath)) {
-                    pathStream.filter(Files::isDirectory).forEach(path -> {
+                    pathStream.filter(Files::isDirectory)
+                            .filter(path -> !FileUtils.shouldIgnore(path))
+                            .forEach(path -> {
                         if (registerPath(path, library.getId())) {
                             count[0]++;
                         }
@@ -196,6 +199,10 @@ public class LibraryWatchService implements SmartLifecycle {
     public boolean registerPath(Path path, long libraryId) {
         if (!Files.exists(path)) {
             log.warn("Cannot register path that does not exist: {}", path);
+            return false;
+        }
+        if (FileUtils.shouldIgnore(path)) {
+            log.debug("Skipping ignored library watch path: {}", path);
             return false;
         }
         if (!Files.isDirectory(path)) {
@@ -235,6 +242,7 @@ public class LibraryWatchService implements SmartLifecycle {
     private void registerRecursive(Path root, long libraryId) {
         try (Stream<Path> stream = Files.walk(root)) {
             stream.filter(Files::isDirectory)
+                    .filter(path -> !FileUtils.shouldIgnore(path))
                     .forEach(p -> registerPath(p, libraryId));
         } catch (IOException e) {
             log.warn("Failed to register paths under: {}", root, e);
@@ -261,6 +269,7 @@ public class LibraryWatchService implements SmartLifecycle {
             try (var stream = Files.walk(libraryRoot)) {
                 stream.filter(Files::isDirectory)
                         .filter(path -> !path.equals(libraryRoot))
+                        .filter(path -> !FileUtils.shouldIgnore(path))
                         .forEach(path -> registerPath(path, libraryId));
             }
         } catch (Exception e) {
@@ -269,7 +278,7 @@ public class LibraryWatchService implements SmartLifecycle {
     }
 
     public boolean isRelevantBookFile(Path path) {
-        return BookFileExtension.fromFileName(path.getFileName().toString()).isPresent();
+        return !FileUtils.shouldIgnore(path) && BookFileExtension.fromFileName(path.getFileName().toString()).isPresent();
     }
 
     public boolean isPathMonitored(Path path) {

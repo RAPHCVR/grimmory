@@ -16,6 +16,8 @@ import {TranslocoDirective, TranslocoService} from '@jsverse/transloco';
 import {finalize, switchMap} from 'rxjs/operators';
 import {interval, Subscription} from 'rxjs';
 import {PageTitleService} from '../../shared/service/page-title.service';
+import {LibraryService} from '../book/service/library.service';
+import {Library} from '../book/model/library.model';
 import {DownloadsService} from './downloads.service';
 import {
   DOWNLOAD_CONTENT_KINDS,
@@ -55,6 +57,7 @@ interface SelectOption<T> {
 })
 export class DownloadsComponent implements OnInit, OnDestroy {
   private readonly downloadsService = inject(DownloadsService);
+  private readonly libraryService = inject(LibraryService);
   private readonly messageService = inject(MessageService);
   private readonly pageTitle = inject(PageTitleService);
   private readonly t = inject(TranslocoService);
@@ -71,9 +74,12 @@ export class DownloadsComponent implements OnInit, OnDestroy {
   maxResults = 25;
   autoFinalize = false;
   confidenceThreshold = 90;
+  targetLibraryId: number | null = null;
+  targetLibraryPathId: number | null = null;
 
   results: DownloadResult[] = [];
   jobs: DownloadJob[] = [];
+  libraries: Library[] = [];
   searchId: number | null = null;
   searchError: string | null = null;
   loadingResults = false;
@@ -86,15 +92,24 @@ export class DownloadsComponent implements OnInit, OnDestroy {
   formatOptions: SelectOption<DownloadFormat>[] = DOWNLOAD_FORMATS.map(value => ({label: value, value}));
 
   private pollSub?: Subscription;
+  private librarySub?: Subscription;
 
   ngOnInit(): void {
     this.pageTitle.setPageTitle('Downloads');
+    this.librarySub = this.libraryService.libraryState$.subscribe(state => {
+      this.libraries = state.libraries ?? [];
+      this.ensureValidTargetSelection();
+      if (this.autoFinalize) {
+        this.applyDefaultTargetIfSingle();
+      }
+    });
     this.loadJobs();
     this.pollSub = interval(5000).subscribe(() => this.loadJobs(false));
   }
 
   ngOnDestroy(): void {
     this.pollSub?.unsubscribe();
+    this.librarySub?.unsubscribe();
   }
 
   search(): void {
@@ -138,10 +153,21 @@ export class DownloadsComponent implements OnInit, OnDestroy {
 
   acquire(result: DownloadResult): void {
     if (this.acquiringResultIds.has(result.id)) return;
+    if (this.autoFinalize && !this.hasAutoFinalizeTarget()) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: this.t.translate('downloads.toast.targetRequiredSummary'),
+        detail: this.t.translate('downloads.toast.targetRequiredDetail')
+      });
+      return;
+    }
+
     this.acquiringResultIds.add(result.id);
     this.downloadsService.queueSelectedResult(result.id, {
       autoFinalize: this.autoFinalize,
-      confidenceThreshold: this.confidenceThreshold
+      confidenceThreshold: this.confidenceThreshold,
+      targetLibraryId: this.targetLibraryId,
+      targetLibraryPathId: this.targetLibraryPathId
     }).pipe(
       switchMap(job => {
         this.processingJobIds.add(job.id);
@@ -302,6 +328,34 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     return this.t.translate(`downloads.statuses.${status}`);
   }
 
+  get targetLibraryOptions(): SelectOption<number>[] {
+    return this.libraries
+      .filter(lib => lib.id != null)
+      .map(lib => ({label: lib.name, value: Number(lib.id)}));
+  }
+
+  get targetPathOptions(): SelectOption<number>[] {
+    const selected = this.libraries.find(lib => lib.id === this.targetLibraryId);
+    return selected?.paths
+      ?.filter(path => path.id != null)
+      .map(path => ({label: path.path, value: Number(path.id)})) ?? [];
+  }
+
+  get autoFinalizeTargetMissing(): boolean {
+    return this.autoFinalize && !this.hasAutoFinalizeTarget();
+  }
+
+  onAutoFinalizeChange(enabled: boolean): void {
+    if (enabled) {
+      this.applyDefaultTargetIfSingle();
+    }
+  }
+
+  onTargetLibraryChange(): void {
+    const paths = this.targetPathOptions;
+    this.targetLibraryPathId = paths.length === 1 ? paths[0].value : null;
+  }
+
   scoreLabel(score?: number | null): string {
     return score == null ? '-' : `${score}/100`;
   }
@@ -348,6 +402,35 @@ export class DownloadsComponent implements OnInit, OnDestroy {
   private clean(value: string): string | null {
     const trimmed = value?.trim();
     return trimmed ? trimmed : null;
+  }
+
+  private hasAutoFinalizeTarget(): boolean {
+    return this.targetLibraryId != null && this.targetLibraryPathId != null;
+  }
+
+  private applyDefaultTargetIfSingle(): void {
+    if (!this.targetLibraryId && this.targetLibraryOptions.length === 1) {
+      this.targetLibraryId = this.targetLibraryOptions[0].value;
+    }
+
+    if (this.targetLibraryId && !this.targetLibraryPathId) {
+      const paths = this.targetPathOptions;
+      if (paths.length === 1) {
+        this.targetLibraryPathId = paths[0].value;
+      }
+    }
+  }
+
+  private ensureValidTargetSelection(): void {
+    if (this.targetLibraryId && !this.libraries.some(lib => lib.id === this.targetLibraryId)) {
+      this.targetLibraryId = null;
+      this.targetLibraryPathId = null;
+      return;
+    }
+
+    if (this.targetLibraryPathId && !this.targetPathOptions.some(path => path.value === this.targetLibraryPathId)) {
+      this.targetLibraryPathId = null;
+    }
   }
 
   private showJobToast(job: DownloadJob): void {

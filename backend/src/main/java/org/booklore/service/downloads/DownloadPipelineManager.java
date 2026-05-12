@@ -52,6 +52,7 @@ public class DownloadPipelineManager {
     private final DownloadExecutorRegistry executorRegistry;
     private final DownloadScoringService scoringService;
     private final DownloadNamingService namingService;
+    private final DownloadedCbxMetadataService downloadedCbxMetadataService;
     private final BookdropDeliveryService bookdropDeliveryService;
     private final ObjectMapper objectMapper;
 
@@ -166,17 +167,23 @@ public class DownloadPipelineManager {
             job.setLastProgressAt(Instant.now());
             jobRepository.save(job);
 
-            executor.download(DownloadExecutionRequest.builder()
+            Path downloadedFile = executor.download(DownloadExecutionRequest.builder()
                     .job(job)
                     .source(job.getSource())
                     .result(result)
                     .stagingDir(stagingDir)
                     .targetPartFile(partFile)
                     .build(), percent -> updateProgress(job.getId(), percent));
+            if (downloadedFile != null && !downloadedFile.equals(partFile)) {
+                partFile = downloadedFile;
+                job.setPartFilePath(partFile.toString());
+                jobRepository.save(job);
+            }
 
             updateJob(job, DownloadJobStatus.VALIDATING, 100, null);
             DownloadFormat detectedFormat = validateDownloadedFile(partFile, result);
             String finalFileName = namingService.buildFinalFileName(result, detectedFormat);
+            downloadedCbxMetadataService.embedIfApplicable(partFile, result, detectedFormat);
             Path stagedFile = stagingDir.resolve(finalFileName + ".staged");
             Files.move(partFile, stagedFile, StandardCopyOption.REPLACE_EXISTING);
             job.setStagedFilePath(stagedFile.toString());
@@ -187,7 +194,7 @@ public class DownloadPipelineManager {
             job.setDeliveredFilePath(deliveryResult.finalPath().toString());
             job.setCompletedAt(Instant.now());
             updateJob(job, deliveryResult.autoFinalized() ? DownloadJobStatus.COMPLETED : DownloadJobStatus.PENDING_REVIEW, 100, null);
-            cleanupEmptyDirectory(stagingDir);
+            cleanupEmptyStagingDirectories(stagingDir);
             return jobRepository.save(job);
         } catch (Exception e) {
             log.error("Download job {} failed: {}", jobId, e.getMessage(), e);
@@ -217,14 +224,14 @@ public class DownloadPipelineManager {
         return DownloadResultEntity.builder()
                 .search(search)
                 .source(source)
-                .externalId(result.getSourceResultId())
-                .title(result.getTitle() == null || result.getTitle().isBlank() ? "Untitled" : result.getTitle())
+                .externalId(DownloadPersistenceSanitizer.externalId(result.getSourceResultId()))
+                .title(DownloadPersistenceSanitizer.requiredText(result.getTitle(), "Untitled", DownloadPersistenceSanitizer.TITLE_MAX_LENGTH))
                 .authorsJson(writeJson(result.getAuthors()))
-                .seriesName(result.getSeriesName())
+                .seriesName(DownloadPersistenceSanitizer.optionalText(result.getSeriesName(), DownloadPersistenceSanitizer.SERIES_NAME_MAX_LENGTH))
                 .seriesNumber(result.getSeriesNumber())
                 .publishedYear(result.getPublishedYear())
-                .isbn(result.getIsbn())
-                .language(result.getLanguage())
+                .isbn(DownloadPersistenceSanitizer.optionalText(result.getIsbn(), DownloadPersistenceSanitizer.ISBN_MAX_LENGTH))
+                .language(DownloadPersistenceSanitizer.optionalText(result.getLanguage(), DownloadPersistenceSanitizer.LANGUAGE_MAX_LENGTH))
                 .format(result.getFormat())
                 .contentKind(result.getContentKind())
                 .acquisitionType(result.getAcquisitionType())
@@ -279,7 +286,9 @@ public class DownloadPipelineManager {
 
         DownloadFormat format = result.getFormat();
         if (format == null || format == DownloadFormat.UNKNOWN) {
-            format = DownloadFormat.fromFileName(result.getDownloadUrl()).orElse(DownloadFormat.UNKNOWN);
+            format = DownloadFormat.fromFileName(partFile.getFileName().toString())
+                    .or(() -> DownloadFormat.fromFileName(result.getDownloadUrl()))
+                    .orElse(DownloadFormat.UNKNOWN);
         }
         if (format == DownloadFormat.UNKNOWN || format.extension().isBlank()) {
             throw new DownloadValidationException("Unsupported or unknown downloaded format");
@@ -306,11 +315,21 @@ public class DownloadPipelineManager {
         jobRepository.save(job);
     }
 
-    private void cleanupEmptyDirectory(Path stagingDir) {
-        try {
-            Files.deleteIfExists(stagingDir);
+    private void cleanupEmptyStagingDirectories(Path stagingDir) {
+        try (var paths = Files.walk(stagingDir)) {
+            paths.sorted(Comparator.reverseOrder())
+                    .filter(Files::isDirectory)
+                    .forEach(this::deleteEmptyDirectoryQuietly);
         } catch (IOException e) {
-            log.debug("Staging directory {} was not empty or could not be deleted", stagingDir);
+            log.debug("Staging directory {} could not be scanned for cleanup", stagingDir, e);
+        }
+    }
+
+    private void deleteEmptyDirectoryQuietly(Path directory) {
+        try {
+            Files.deleteIfExists(directory);
+        } catch (IOException e) {
+            log.debug("Staging directory {} was not empty or could not be deleted", directory);
         }
     }
 

@@ -27,6 +27,7 @@ import org.booklore.service.audit.AuditService;
 import org.booklore.service.monitoring.LibraryWatchService;
 import org.booklore.task.options.RescanLibraryContext;
 import org.booklore.util.FileService;
+import org.booklore.util.FileUtils;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.boot.sql.init.dependency.DependsOnDatabaseInitialization;
 import org.springframework.context.event.EventListener;
@@ -160,13 +161,7 @@ public class LibraryService {
         // relationship fields
         LibraryEntity libraryEntity = LibraryEntity.builder()
                 .name(request.getName())
-                .libraryPaths(
-                        request.getPaths() == null || request.getPaths().isEmpty() ?
-                                Collections.emptyList() :
-                                new ArrayList<>(request.getPaths().stream()
-                                        .map(path -> LibraryPathEntity.builder().path(path.getPath()).build())
-                                        .toList())
-                )
+                .libraryPaths(new ArrayList<>())
                 .icon(request.getIcon())
                 .iconType(request.getIconType())
                 .watch(request.isWatch())
@@ -177,8 +172,16 @@ public class LibraryService {
                 .users(new HashSet<>(Set.of(userEntity)))
                 .build();
 
-        for (LibraryPathEntity p : libraryEntity.getLibraryPaths()) {
-            p.setLibrary(libraryEntity);
+        if (request.getPaths() != null) {
+            for (LibraryPath path : request.getPaths()) {
+                LibraryPathEntity pathEntity = LibraryPathEntity.builder()
+                        .path(path.getPath())
+                        .build();
+                pathEntity.setLibrary(libraryEntity);
+                if (!libraryEntity.getLibraryPaths().contains(pathEntity)) {
+                    libraryEntity.getLibraryPaths().add(pathEntity);
+                }
+            }
         }
 
         libraryEntity = libraryRepository.save(libraryEntity);
@@ -302,6 +305,9 @@ public class LibraryService {
                 : null;
         for (LibraryPath libraryPath : request.getPaths()) {
             Path path = Paths.get(libraryPath.getPath());
+            if (FileUtils.shouldIgnore(path)) {
+                continue;
+            }
             if (!Files.exists(path)) {
                 log.warn("Path does not exist: {}", path);
                 continue;
@@ -319,6 +325,9 @@ public class LibraryService {
         int count = 0;
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(directory)) {
             for (Path entry : stream) {
+                if (FileUtils.shouldIgnore(entry)) {
+                    continue;
+                }
                 if (Files.isDirectory(entry)) {
                     count += scanDirectory(entry, allowedFormats);
                 } else if (Files.isRegularFile(entry) && isProcessableFile(entry, allowedFormats)) {

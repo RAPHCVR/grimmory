@@ -50,7 +50,8 @@ public class QbittorrentClient {
         String localSavePath = node.path("localSavePath").asText(null);
         int pollIntervalSeconds = Math.max(2, node.path("pollIntervalSeconds").asInt(DEFAULT_POLL_SECONDS));
         int timeoutMinutes = Math.max(1, node.path("timeoutMinutes").asInt(DEFAULT_TIMEOUT_MINUTES));
-        boolean deleteTorrentOnComplete = node.path("deleteTorrentOnComplete").asBoolean(false);
+        boolean deleteTorrentOnComplete = node.path("deleteTorrentOnComplete").asBoolean(true);
+        boolean deleteFilesOnComplete = node.path("deleteFilesOnComplete").asBoolean(true);
         return new QbittorrentConfig(
                 trimTrailingSlash(baseUrl),
                 username,
@@ -61,7 +62,8 @@ public class QbittorrentClient {
                 localSavePath,
                 pollIntervalSeconds,
                 timeoutMinutes,
-                deleteTorrentOnComplete
+                deleteTorrentOnComplete,
+                deleteFilesOnComplete
         );
     }
 
@@ -280,7 +282,8 @@ public class QbittorrentClient {
                                     String localSavePath,
                                     int pollIntervalSeconds,
                                     int timeoutMinutes,
-                                    boolean deleteTorrentOnComplete) {
+                                    boolean deleteTorrentOnComplete,
+                                    boolean deleteFilesOnComplete) {
         public String resolveRemoteSavePath(Path stagingDir, Long jobId) {
             return resolvePath(remoteSavePath, stagingDir, jobId);
         }

@@ -167,6 +167,10 @@ public class LibraryFileEventProcessor implements SmartLifecycle {
     private void handleEvent(FileEvent event) {
         Path path = event.fullPath();
         String fileName = path.getFileName().toString();
+        if (FileUtils.shouldIgnore(path)) {
+            log.debug("[SKIP] Ignored internal or hidden library path '{}'", path);
+            return;
+        }
         log.info("[PROCESS] '{}' event for '{}'{}", event.eventKind().name(), fileName,
                 event.isDirectory() ? " (directory)" : "");
 
@@ -537,7 +541,7 @@ public class LibraryFileEventProcessor implements SmartLifecycle {
     private boolean isUnderIgnoredDirectory(Path filePath, Path root) {
         Path parent = filePath.getParent();
         while (parent != null && !parent.equals(root)) {
-            if (Files.exists(parent.resolve(".ignore"))) {
+            if (FileUtils.shouldIgnore(parent) || Files.exists(parent.resolve(".ignore"))) {
                 return true;
             }
             parent = parent.getParent();

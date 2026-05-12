@@ -400,7 +400,11 @@ public class FileUtils {
             return true;
         }
         for (Path part : path) {
-            if (systemDirs.contains(part.toString())) {
+            String name = part.toString();
+            if (!name.isEmpty() && name.charAt(0) == '.') {
+                return true;
+            }
+            if (systemDirs.contains(name)) {
                 return true;
             }
         }

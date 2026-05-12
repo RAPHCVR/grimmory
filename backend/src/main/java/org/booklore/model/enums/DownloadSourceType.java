@@ -5,5 +5,6 @@ public enum DownloadSourceType {
     PROWLARR_TORZNAB,
     DIRECT_URL,
     MANGADEX,
+    ANNAS_ARCHIVE_API,
     CUSTOM_WEB_PLUGIN
 }

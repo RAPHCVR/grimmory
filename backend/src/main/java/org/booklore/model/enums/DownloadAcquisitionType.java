@@ -7,6 +7,7 @@ public enum DownloadAcquisitionType {
     OPDS_ACQUISITION,
     MANGADEX_CHAPTER,
     IMAGE_SEQUENCE_CBZ,
+    CLI_GALLERY_DL,
     WEB_PLUGIN,
     UNKNOWN
 }

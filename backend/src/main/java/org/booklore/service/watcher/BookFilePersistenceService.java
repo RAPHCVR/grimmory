@@ -71,11 +71,12 @@ public class BookFilePersistenceService {
     }
 
     String findMatchingLibraryPath(LibraryEntity libraryEntity, Path filePath) {
+        Path fullPath = filePath.toAbsolutePath().normalize();
         return libraryEntity.getLibraryPaths().stream()
-                .map(lp -> Paths.get(lp.getPath()).toAbsolutePath().normalize())
-                .filter(base -> filePath.toAbsolutePath().normalize().startsWith(base))
-                .map(Path::toString)
-                .findFirst()
+                .map(lp -> Map.entry(lp.getPath(), Paths.get(lp.getPath()).toAbsolutePath().normalize()))
+                .filter(entry -> fullPath.startsWith(entry.getValue()))
+                .max(Comparator.comparingInt(entry -> entry.getValue().getNameCount()))
+                .map(Map.Entry::getKey)
                 .orElseThrow(() -> ApiError.LIBRARY_NOT_FOUND.createException("No matching libraryPath for: " + filePath));
     }
 

@@ -143,6 +143,18 @@ class FileUtilsTest {
     }
 
     @Test
+    void testShouldIgnore_fileUnderHiddenDirectory_returnsTrue() {
+        Path hiddenDirFile = tempDir.resolve(".booklore-backups").resolve("book.cbz");
+        assertTrue(FileUtils.shouldIgnore(hiddenDirFile));
+    }
+
+    @Test
+    void testShouldIgnore_fileUnderNestedHiddenDirectory_returnsTrue() {
+        Path hiddenDirFile = tempDir.resolve("library").resolve(".downloads").resolve("job").resolve("book.epub");
+        assertTrue(FileUtils.shouldIgnore(hiddenDirFile));
+    }
+
+    @Test
     void testShouldIgnore_normalFile_returnsFalse() {
         Path normalFile = tempDir.resolve("normal.txt");
         assertFalse(FileUtils.shouldIgnore(normalFile));
