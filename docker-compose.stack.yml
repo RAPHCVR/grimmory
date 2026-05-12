@@ -1,0 +1,148 @@
+services:
+  grimmory:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: grimmory-stack:local
+    container_name: grimmory
+    restart: unless-stopped
+    depends_on:
+      grimmory-db:
+        condition: service_healthy
+      flaresolverr:
+        condition: service_started
+      qbittorrent:
+        condition: service_started
+      stacks:
+        condition: service_started
+    environment:
+      USER_ID: ${APP_USER_ID:-1000}
+      GROUP_ID: ${APP_GROUP_ID:-1000}
+      TZ: ${TZ:-Europe/Paris}
+      BOOKLORE_PORT: 6060
+      DATABASE_URL: jdbc:mariadb://grimmory-db:3306/grimmory?createDatabaseIfNotExist=true&connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true
+      DATABASE_USERNAME: ${GRIMMORY_DB_USER:-grimmory}
+      DATABASE_PASSWORD: ${GRIMMORY_DB_PASSWORD:-grimmory}
+      API_DOCS_ENABLED: ${API_DOCS_ENABLED:-true}
+      DISK_TYPE: LOCAL
+      ALLOWED_ORIGINS: ${GRIMMORY_ALLOWED_ORIGINS:-http://localhost:6060}
+      FORCE_DISABLE_OIDC: ${FORCE_DISABLE_OIDC:-false}
+    ports:
+      - "${GRIMMORY_PORT:-6060}:6060"
+    volumes:
+      - ./shared/data:/app/data
+      - ./shared/books:/books
+      - ./shared/bookdrop:/bookdrop
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:6060/api/v1/healthcheck >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    networks:
+      - grimmory-stack
+
+  grimmory-db:
+    image: mariadb:11.4
+    container_name: grimmory-db
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${GRIMMORY_DB_ROOT_PASSWORD:-grimmory-root}
+      MARIADB_DATABASE: grimmory
+      MARIADB_USER: ${GRIMMORY_DB_USER:-grimmory}
+      MARIADB_PASSWORD: ${GRIMMORY_DB_PASSWORD:-grimmory}
+      TZ: ${TZ:-Europe/Paris}
+    volumes:
+      - grimmory-db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mariadb-admin", "ping", "-h", "localhost", "-uroot", "-p${GRIMMORY_DB_ROOT_PASSWORD:-grimmory-root}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - grimmory-stack
+
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: flaresolverr
+    restart: unless-stopped
+    environment:
+      LOG_LEVEL: ${FLARESOLVERR_LOG_LEVEL:-info}
+      LOG_HTML: ${FLARESOLVERR_LOG_HTML:-false}
+      CAPTCHA_SOLVER: ${FLARESOLVERR_CAPTCHA_SOLVER:-none}
+      TZ: ${TZ:-Europe/Paris}
+    ports:
+      - "127.0.0.1:${FLARESOLVERR_PORT:-8191}:8191"
+    networks:
+      - grimmory-stack
+
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:latest
+    container_name: prowlarr
+    restart: unless-stopped
+    depends_on:
+      - flaresolverr
+      - qbittorrent
+    environment:
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      TZ: ${TZ:-Europe/Paris}
+    volumes:
+      - ./shared/prowlarr:/config
+    ports:
+      - "${PROWLARR_PORT:-9696}:9696"
+    networks:
+      - grimmory-stack
+
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    restart: unless-stopped
+    environment:
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      TZ: ${TZ:-Europe/Paris}
+      WEBUI_PORT: 8080
+      TORRENTING_PORT: ${QBITTORRENT_TORRENT_PORT:-6881}
+    volumes:
+      - ./shared/qbittorrent:/config
+      - ./shared/bookdrop:/bookdrop
+    ports:
+      - "${QBITTORRENT_WEBUI_PORT:-8080}:8080"
+      - "${QBITTORRENT_TORRENT_PORT:-6881}:6881"
+      - "${QBITTORRENT_TORRENT_PORT:-6881}:6881/udp"
+    networks:
+      - grimmory-stack
+
+  stacks:
+    image: zelest/stacks:latest
+    container_name: stacks
+    stop_signal: SIGTERM
+    stop_grace_period: 30s
+    restart: unless-stopped
+    depends_on:
+      - flaresolverr
+    user: "${PUID:-1000}:${PGID:-1000}"
+    environment:
+      TZ: ${TZ:-Europe/Paris}
+      USERNAME: ${STACKS_USERNAME:-admin}
+      PASSWORD: ${STACKS_PASSWORD:-stacks}
+      SOLVERR_URL: http://flaresolverr:8191
+      FLARESOLVERR_URL: http://flaresolverr:8191
+    volumes:
+      - ./shared/stacks/config:/opt/stacks/config
+      - ./shared/stacks/logs:/opt/stacks/logs
+      - ./shared/bookdrop:/bookdrop
+      - ./shared/bookdrop:/opt/stacks/download
+    ports:
+      - "${STACKS_PORT:-7788}:7788"
+    networks:
+      - grimmory-stack
+
+volumes:
+  grimmory-db-data:
+
+networks:
+  grimmory-stack:
+    name: grimmory-stack

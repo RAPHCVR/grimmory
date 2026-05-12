@@ -85,7 +85,9 @@ ENV JAVA_TOOL_OPTIONS="-XX:+UseShenandoahGC \
     --enable-native-access=ALL-UNNAMED \
     --enable-preview"
 
-RUN apk add --no-cache su-exec libstdc++ libgcc libarchive && \
+RUN apk add --no-cache su-exec libstdc++ libgcc libarchive python3 py3-pip && \
+    python3 -m pip install --no-cache-dir --break-system-packages --root-user-action=ignore gallery-dl && \
+    gallery-dl --version && \
     mkdir -p /bookdrop
 
 # Manually link `libarchive.so.13` so java and other libraries can see it
