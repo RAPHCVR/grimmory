@@ -52,6 +52,12 @@ public class ProwlarrTorznabAdapter implements DownloadSourceAdapter {
             return List.of();
         }
 
+        return config.nativeProwlarrApi()
+                ? searchProwlarrNative(config, term, criteria)
+                : searchTorznab(config, term, criteria);
+    }
+
+    private List<NormalizedDownloadResult> searchTorznab(TorznabConfig config, String term, DownloadSearchCriteria criteria) {
         URI uri = UriComponentsBuilder.fromUriString(config.baseUrl())
                 .pathSegment("api", "v2.0", "indexers", config.indexer(), "results", "torznab", "api")
                 .queryParam("apikey", config.apiKey())
@@ -82,6 +88,43 @@ public class ProwlarrTorznabAdapter implements DownloadSourceAdapter {
                 throw sourceException;
             }
             throw new DownloadSourceException("Torznab search failed: " + e.getMessage(), e);
+        }
+    }
+
+    private List<NormalizedDownloadResult> searchProwlarrNative(TorznabConfig config, String term, DownloadSearchCriteria criteria) {
+        UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(config.baseUrl())
+                .pathSegment("api", "v1", "search")
+                .queryParam("apikey", config.apiKey())
+                .queryParam("query", term)
+                .queryParam("type", config.function())
+                .queryParam("limit", Math.max(1, criteria.getMaxResults()))
+                .queryParamIfPresent("categories", Optional.ofNullable(config.categories()).filter(s -> !s.isBlank()));
+
+        for (String indexerId : splitCsv(config.indexerIds())) {
+            builder.queryParam("indexerIds", indexerId);
+        }
+
+        URI uri = builder.build().toUri();
+        try {
+            HttpRequest request = HttpRequest.newBuilder(uri)
+                    .timeout(Duration.ofSeconds(config.timeoutSeconds()))
+                    .header("Accept", "application/json")
+                    .header("User-Agent", "BookLore-Downloads")
+                    .GET()
+                    .build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() < 200 || response.statusCode() > 299) {
+                throw new DownloadSourceException("Prowlarr search failed with HTTP status " + response.statusCode());
+            }
+            return parseProwlarrResults(response.body(), criteria);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new DownloadSourceException("Prowlarr search interrupted", e);
+        } catch (Exception e) {
+            if (e instanceof DownloadSourceException sourceException) {
+                throw sourceException;
+            }
+            throw new DownloadSourceException("Prowlarr search failed: " + e.getMessage(), e);
         }
     }
 
@@ -128,6 +171,38 @@ public class ProwlarrTorznabAdapter implements DownloadSourceAdapter {
         return results;
     }
 
+    private List<NormalizedDownloadResult> parseProwlarrResults(String json, DownloadSearchCriteria criteria) throws Exception {
+        JsonNode root = objectMapper.readTree(json);
+        if (!root.isArray()) {
+            throw new DownloadSourceException("Prowlarr search response is not an array");
+        }
+
+        List<NormalizedDownloadResult> results = new ArrayList<>();
+        for (JsonNode item : root) {
+            String title = item.path("title").asText(null);
+            String downloadUrl = firstNonBlank(item.path("downloadUrl").asText(null), item.path("magnetUrl").asText(null));
+            String detailsUrl = firstNonBlank(item.path("infoUrl").asText(null), item.path("commentUrl").asText(null));
+            String guid = firstNonBlank(item.path("guid").asText(null), downloadUrl, title);
+            String protocol = item.path("protocol").asText(null);
+            DownloadFormat format = DownloadFormat.fromFileName(title).orElse(DownloadFormat.UNKNOWN);
+
+            results.add(NormalizedDownloadResult.builder()
+                    .sourceResultId(guid)
+                    .title(title == null || title.isBlank() ? "Untitled" : title)
+                    .authors(List.of())
+                    .publishedYear(yearFromIsoDate(item.path("publishDate").asText(null)))
+                    .format(format)
+                    .contentKind(criteria.getContentKind())
+                    .acquisitionType(inferProwlarrAcquisitionType(downloadUrl, protocol))
+                    .sizeBytes(positiveLong(item.path("size").asLong(0L)))
+                    .downloadUrl(downloadUrl)
+                    .detailsUrl(detailsUrl)
+                    .rawJson(objectMapper.writeValueAsString(item))
+                    .build());
+        }
+        return results;
+    }
+
     private TorznabConfig readConfig(DownloadSourceEntity source) {
         try {
             JsonNode root = objectMapper.readTree(source.getCredentialsJson() == null ? "{}" : source.getCredentialsJson());
@@ -140,10 +215,12 @@ public class ProwlarrTorznabAdapter implements DownloadSourceAdapter {
                 throw new DownloadSourceException("Prowlarr/Torznab source requires credentials_json.apiKey");
             }
             String indexer = root.path("indexer").asText(DEFAULT_INDEXER);
+            String indexerIds = root.path("indexerIds").asText(null);
             String function = root.path("function").asText("search");
             String categories = root.path("categories").asText(null);
+            String apiMode = root.path("apiMode").asText("PROWLARR");
             int timeout = Math.max(3, root.path("timeoutSeconds").asInt(DEFAULT_TIMEOUT_SECONDS));
-            return new TorznabConfig(trimTrailingSlash(baseUrl), apiKey, indexer, function, categories, timeout);
+            return new TorznabConfig(trimTrailingSlash(baseUrl), apiKey, indexer, indexerIds, function, categories, timeout, apiMode);
         } catch (DownloadSourceException e) {
             throw e;
         } catch (Exception e) {
@@ -194,6 +271,19 @@ public class ProwlarrTorznabAdapter implements DownloadSourceAdapter {
         return DownloadAcquisitionType.DIRECT_FILE;
     }
 
+    private DownloadAcquisitionType inferProwlarrAcquisitionType(String link, String protocol) {
+        if (protocol != null) {
+            String normalized = protocol.trim().toLowerCase(Locale.ROOT);
+            if ("torrent".equals(normalized) || "2".equals(normalized)) {
+                return DownloadAcquisitionType.TORRENT;
+            }
+            if ("usenet".equals(normalized) || "1".equals(normalized)) {
+                return DownloadAcquisitionType.NZB;
+            }
+        }
+        return inferAcquisitionType(link);
+    }
+
     private String firstNonBlank(String... values) {
         for (String value : values) {
             if (value != null && !value.isBlank()) {
@@ -242,6 +332,30 @@ public class ProwlarrTorznabAdapter implements DownloadSourceAdapter {
                 .toList();
     }
 
+    private List<String> splitCsv(String value) {
+        if (value == null || value.isBlank()) return List.of();
+        return Arrays.stream(value.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isBlank())
+                .distinct()
+                .toList();
+    }
+
+    private Long positiveLong(long value) {
+        return value > 0 ? value : null;
+    }
+
+    private Integer yearFromIsoDate(String value) {
+        if (value == null || value.length() < 4) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(value.substring(0, 4));
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
     private String trimTrailingSlash(String value) {
         while (value.endsWith("/")) {
             value = value.substring(0, value.length() - 1);
@@ -249,6 +363,16 @@ public class ProwlarrTorznabAdapter implements DownloadSourceAdapter {
         return value;
     }
 
-    private record TorznabConfig(String baseUrl, String apiKey, String indexer, String function, String categories, int timeoutSeconds) {
+    private record TorznabConfig(String baseUrl,
+                                 String apiKey,
+                                 String indexer,
+                                 String indexerIds,
+                                 String function,
+                                 String categories,
+                                 int timeoutSeconds,
+                                 String apiMode) {
+        boolean nativeProwlarrApi() {
+            return !"TORZNAB".equalsIgnoreCase(apiMode);
+        }
     }
 }

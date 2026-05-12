@@ -1,7 +1,15 @@
 export type DownloadSourceType = 'OPDS' | 'PROWLARR_TORZNAB' | 'DIRECT_URL' | 'MANGADEX' | 'CUSTOM_WEB_PLUGIN';
 export type DownloadContentKind = 'BOOK' | 'MANGA' | 'COMIC' | 'WEBTOON';
 export type DownloadFormat = 'EPUB' | 'PDF' | 'CBZ' | 'CBR' | 'CB7' | 'MOBI' | 'AZW' | 'AZW3' | 'FB2' | 'UNKNOWN';
-export type DownloadAcquisitionType = 'DIRECT_FILE' | 'TORRENT' | 'NZB' | 'OPDS_ACQUISITION' | 'MANGADEX_CHAPTER' | 'UNKNOWN';
+export type DownloadAcquisitionType =
+  | 'DIRECT_FILE'
+  | 'TORRENT'
+  | 'NZB'
+  | 'OPDS_ACQUISITION'
+  | 'MANGADEX_CHAPTER'
+  | 'IMAGE_SEQUENCE_CBZ'
+  | 'WEB_PLUGIN'
+  | 'UNKNOWN';
 export type DownloadSearchStatus = 'RUNNING' | 'COMPLETED' | 'FAILED';
 export type DownloadJobStatus =
   | 'QUEUED'
