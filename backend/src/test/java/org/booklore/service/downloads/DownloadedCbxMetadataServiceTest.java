@@ -2,11 +2,11 @@ package org.booklore.service.downloads;
 
 import org.booklore.model.enums.DownloadContentKind;
 import org.booklore.model.enums.DownloadFormat;
-import org.booklore.service.ArchiveService;
 import org.booklore.service.downloads.dto.NormalizedDownloadResult;
-import org.booklore.service.metadata.extractor.CbxMetadataExtractor;
+import org.booklore.util.SecureXmlUtils;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.w3c.dom.Document;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -26,7 +26,6 @@ class DownloadedCbxMetadataServiceTest {
     Path tempDir;
 
     private final DownloadedCbxMetadataService service = new DownloadedCbxMetadataService();
-    private final CbxMetadataExtractor extractor = new CbxMetadataExtractor(new ArchiveService());
 
     @Test
     void embedIfApplicable_addsComicInfoXmlThatBookLoreCanExtract() throws Exception {
@@ -48,19 +47,17 @@ class DownloadedCbxMetadataServiceTest {
         service.embedIfApplicable(cbz, result, DownloadFormat.CBZ);
 
         assertTrue(containsComicInfo(cbz));
-        var metadata = extractor.extractMetadata(cbz.toFile());
-        assertEquals("Saison 3 Ep 235", metadata.getTitle());
-        assertEquals("Tower of God", metadata.getSeriesName());
-        assertEquals(235f, metadata.getSeriesNumber());
-        assertEquals("fr", metadata.getLanguage());
-        assertEquals("Tower description", metadata.getDescription());
-        assertEquals(161, metadata.getPageCount());
-        assertEquals(List.of("SIU"), metadata.getAuthors());
-        assertTrue(metadata.getCategories().contains("fantasy"));
-        assertEquals(url, metadata.getExternalUrl());
-        assertNotNull(metadata.getComicMetadata());
-        assertEquals("Webcomic", metadata.getComicMetadata().getFormat());
-        assertEquals(url, metadata.getComicMetadata().getWebLink());
+        Document comicInfo = readComicInfo(cbz);
+        assertElementText(comicInfo, "Title", "Saison 3 Ep 235");
+        assertElementText(comicInfo, "Series", "Tower of God");
+        assertElementText(comicInfo, "Number", "235");
+        assertElementText(comicInfo, "LanguageISO", "fr");
+        assertElementText(comicInfo, "Summary", "Tower description");
+        assertElementText(comicInfo, "PageCount", "161");
+        assertElementText(comicInfo, "Writer", "SIU");
+        assertElementText(comicInfo, "Genre", "fantasy");
+        assertElementText(comicInfo, "Format", "Webcomic");
+        assertElementText(comicInfo, "Web", url);
     }
 
     private void createCbz(Path cbz) throws Exception {
@@ -76,5 +73,19 @@ class DownloadedCbxMetadataServiceTest {
         try (ZipFile zipFile = new ZipFile(cbz.toFile())) {
             return zipFile.stream().anyMatch(entry -> "ComicInfo.xml".equals(entry.getName()));
         }
+    }
+
+    private Document readComicInfo(Path cbz) throws Exception {
+        try (ZipFile zipFile = new ZipFile(cbz.toFile())) {
+            ZipEntry entry = zipFile.getEntry("ComicInfo.xml");
+            assertNotNull(entry);
+            try (var input = zipFile.getInputStream(entry)) {
+                return SecureXmlUtils.createSecureDocumentBuilder(true).parse(input);
+            }
+        }
+    }
+
+    private void assertElementText(Document document, String elementName, String expected) {
+        assertEquals(expected, document.getElementsByTagName(elementName).item(0).getTextContent());
     }
 }
