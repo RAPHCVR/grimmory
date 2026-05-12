@@ -20,6 +20,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AnnasArchiveApiAdapterTest {
@@ -103,6 +104,64 @@ class AnnasArchiveApiAdapterTest {
             assertTrue(result.isRequiresFlareSolverr());
             assertEquals(1_572_864L, result.getSizeBytes());
             assertEquals("9782253063336", result.getIsbn());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void search_whenConfiguredForStacks_allowsMd5OnlyResults() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/search", exchange -> {
+            byte[] body = """
+                    {
+                      "results": [
+                        {
+                          "md5": "def456",
+                          "title": "Le Père de nos pères",
+                          "authors": "Bernard Werber",
+                          "extension": "epub"
+                        }
+                      ]
+                    }
+                    """.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+
+        try {
+            String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort() + "/search";
+            DownloadSourceEntity source = DownloadSourceEntity.builder()
+                    .name("Anna Stacks bridge")
+                    .type(DownloadSourceType.ANNAS_ARCHIVE_API)
+                    .credentialsJson(objectMapper.writeValueAsString(Map.of("baseUrl", baseUrl)))
+                    .configJson(objectMapper.writeValueAsString(Map.of(
+                            "annasArchiveApi", Map.of(
+                                    "resultsPath", "results",
+                                    "acquisitionType", "EXTERNAL_STACKS"
+                            )
+                    )))
+                    .build();
+            AnnasArchiveApiAdapter adapter = new AnnasArchiveApiAdapter(
+                    HttpClient.newHttpClient(),
+                    objectMapper,
+                    new DownloadSourceConfigReader(objectMapper)
+            );
+
+            var results = adapter.search(source, DownloadSearchCriteria.builder()
+                    .query("Bernard Werber")
+                    .contentKind(DownloadContentKind.BOOK)
+                    .maxResults(10)
+                    .build());
+
+            assertEquals(1, results.size());
+            var result = results.getFirst();
+            assertEquals("def456", result.getSourceResultId());
+            assertEquals(DownloadAcquisitionType.EXTERNAL_STACKS, result.getAcquisitionType());
+            assertNull(result.getDownloadUrl());
         } finally {
             server.stop(0);
         }

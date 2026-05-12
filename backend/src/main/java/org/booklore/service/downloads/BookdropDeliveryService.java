@@ -52,12 +52,15 @@ public class BookdropDeliveryService {
             bookdropMonitoringService.pauseMonitoring();
             moveAtomically(stagedFile, finalPath);
 
+            BookMetadata downloadMetadata = toBookMetadata(result);
+            String downloadMetadataJson = objectMapper.writeValueAsString(downloadMetadata);
             BookdropFileEntity bookdropFile = bookdropFileRepository.save(BookdropFileEntity.builder()
                     .filePath(finalPath.toString())
                     .fileName(finalFileName)
                     .fileSize(Files.size(finalPath))
                     .status(BookdropFileEntity.Status.PENDING_REVIEW)
-                    .originalMetadata(objectMapper.writeValueAsString(toBookMetadata(result)))
+                    .originalMetadata(downloadMetadataJson)
+                    .fetchedMetadata(downloadMetadataJson)
                     .build());
 
             if (autoFinalize) {

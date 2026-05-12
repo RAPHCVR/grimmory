@@ -371,6 +371,7 @@ export class DownloadSourcesComponent implements OnInit {
       case 'ANNAS_ARCHIVE_API':
         return {
           annasArchiveApi: {
+            acquisitionType: 'EXTERNAL_STACKS',
             queryParam: 'q',
             formatParam: 'ext',
             limitParam: 'limit',
@@ -384,6 +385,15 @@ export class DownloadSourcesComponent implements OnInit {
             titleFields: ['title', 'name'],
             authorFields: ['authors', 'author'],
             detailsUrlFields: ['detailsUrl', 'details_url', 'sourceUrl', 'source_url', 'pageUrl', 'page']
+          },
+          stacks: {
+            apiUrl: 'http://localhost:7788/api/download',
+            apiKey: '',
+            authorizationScheme: 'Bearer',
+            remoteStagingPath: '{stagingDir}',
+            pollIntervalSeconds: 10,
+            timeoutMinutes: 180,
+            requestTimeoutSeconds: 30
           },
           flareSolverr
         };

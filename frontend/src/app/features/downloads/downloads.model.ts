@@ -9,6 +9,7 @@ export type DownloadAcquisitionType =
   | 'MANGADEX_CHAPTER'
   | 'IMAGE_SEQUENCE_CBZ'
   | 'CLI_GALLERY_DL'
+  | 'EXTERNAL_STACKS'
   | 'WEB_PLUGIN'
   | 'UNKNOWN';
 export type DownloadSearchStatus = 'RUNNING' | 'COMPLETED' | 'FAILED';

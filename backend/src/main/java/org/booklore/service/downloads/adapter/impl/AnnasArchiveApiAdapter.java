@@ -140,7 +140,10 @@ public class AnnasArchiveApiAdapter implements DownloadSourceAdapter {
                         .replace("{md5}", id)
                         .replace("{hash}", id);
             }
-            if (downloadUrl == null || downloadUrl.isBlank()) {
+            if ((downloadUrl == null || downloadUrl.isBlank()) && config.acquisitionType() != DownloadAcquisitionType.EXTERNAL_STACKS) {
+                continue;
+            }
+            if (config.acquisitionType() == DownloadAcquisitionType.EXTERNAL_STACKS && firstNonBlank(id, downloadUrl) == null) {
                 continue;
             }
 
@@ -155,7 +158,7 @@ public class AnnasArchiveApiAdapter implements DownloadSourceAdapter {
                     .language(firstText(item, config.languageFields()))
                     .format(format)
                     .contentKind(Optional.ofNullable(criteria.getContentKind()).orElse(DownloadContentKind.BOOK))
-                    .acquisitionType(DownloadAcquisitionType.DIRECT_FILE)
+                    .acquisitionType(config.acquisitionType())
                     .sizeBytes(firstSize(item, config.sizeFields()))
                     .downloadUrl(downloadUrl)
                     .detailsUrl(firstText(item, config.detailsUrlFields()))
@@ -221,6 +224,7 @@ public class AnnasArchiveApiAdapter implements DownloadSourceAdapter {
                 blankToNull(node.path("limitParam").asText("limit")),
                 blankToNull(node.path("resultsPath").asText(null)),
                 node.path("requiresFlareSolverr").asBoolean(true),
+                acquisitionType(node),
                 blankToNull(node.path("downloadUrlTemplate").asText(null)),
                 stringList(node.path("downloadUrlFields"), DEFAULT_DOWNLOAD_URL_FIELDS),
                 stringList(node.path("titleFields"), DEFAULT_TITLE_FIELDS),
@@ -233,6 +237,21 @@ public class AnnasArchiveApiAdapter implements DownloadSourceAdapter {
                 stringList(node.path("yearFields"), DEFAULT_YEAR_FIELDS),
                 stringList(node.path("sizeFields"), DEFAULT_SIZE_FIELDS)
         );
+    }
+
+    private DownloadAcquisitionType acquisitionType(JsonNode node) {
+        if (node.path("useStacks").asBoolean(false)) {
+            return DownloadAcquisitionType.EXTERNAL_STACKS;
+        }
+        String value = blankToNull(node.path("acquisitionType").asText(null));
+        if (value == null) {
+            return DownloadAcquisitionType.DIRECT_FILE;
+        }
+        try {
+            return DownloadAcquisitionType.valueOf(value.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ignored) {
+            return DownloadAcquisitionType.DIRECT_FILE;
+        }
     }
 
     private DownloadFormat preferredFormat(DownloadSearchCriteria criteria, DownloadFormat defaultFormat) {
@@ -407,6 +426,7 @@ public class AnnasArchiveApiAdapter implements DownloadSourceAdapter {
                                          String limitParam,
                                          String resultsPath,
                                          boolean requiresFlareSolverr,
+                                         DownloadAcquisitionType acquisitionType,
                                          String downloadUrlTemplate,
                                          List<String> downloadUrlFields,
                                          List<String> titleFields,
