@@ -7,7 +7,6 @@ import org.booklore.model.enums.DownloadSourceType;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 
 class DownloadContentClassifierTest {
 
@@ -61,7 +60,41 @@ class DownloadContentClassifierTest {
                 "{\"indexer\":\"Nyaa\"}"
         );
 
-        assertNull(kind);
+        assertEquals(DownloadContentKind.BOOK, kind);
+    }
+
+    @Test
+    void infer_prowlarrSubbedEpisodeWithoutExtensionDoesNotBecomeManga() {
+        DownloadContentKind kind = classifier.infer(
+                DownloadSourceType.PROWLARR_TORZNAB,
+                "Prowlarr",
+                "DBF - Dragon Ball Super #24 FULLHD - Sub-Ita -",
+                null,
+                null,
+                "magnet:?xt=urn:btih:abcdef",
+                DownloadFormat.UNKNOWN,
+                DownloadAcquisitionType.TORRENT,
+                "{\"indexer\":\"Nyaa\"}"
+        );
+
+        assertEquals(DownloadContentKind.BOOK, kind);
+    }
+
+    @Test
+    void infer_prowlarrTvAnimeCategoryDoesNotBecomeManga() {
+        DownloadContentKind kind = classifier.infer(
+                DownloadSourceType.PROWLARR_TORZNAB,
+                "Prowlarr",
+                "Dragon Ball Super - 24 - ¡Impacto! ¡Freezer contra Son Goku! ¡El Resultado del Entrenamiento! [Castellano]",
+                null,
+                "https://nyaa.si/view/914292",
+                "magnet:?xt=urn:btih:abcdef",
+                DownloadFormat.UNKNOWN,
+                DownloadAcquisitionType.TORRENT,
+                "{\"categories\":[{\"id\":5070,\"name\":\"TV/Anime\"},{\"id\":2020,\"name\":\"Movies/Other\"}]}"
+        );
+
+        assertEquals(DownloadContentKind.BOOK, kind);
     }
 
     @Test

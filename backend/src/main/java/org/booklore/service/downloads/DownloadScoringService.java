@@ -17,6 +17,9 @@ public class DownloadScoringService {
 
     private static final Pattern NON_ALNUM = Pattern.compile("[^a-z0-9]+");
     private static final Pattern NUMBER_RANGE = Pattern.compile("(?<!\\d)0*(\\d{1,5})\\s*[-–]\\s*0*(\\d{1,5})(?!\\d)");
+    private static final Pattern COMPACT_NUMBER_MARKER = Pattern.compile("(?iu)\\b(vol(?:ume)?|v|t(?:ome|omo)?|ch(?:apter)?|chapitre)\\.?\\s*0*(\\d{1,5})\\b");
+    private static final Pattern ANY_NUMBER_MARKER = Pattern.compile("(?iu)(?:\\b(?:vol(?:ume)?|v|t(?:ome|omo)?|ch(?:apter)?|chapitre)\\.?\\s*0*\\d{1,5}\\b|#\\s*0*\\d{1,5}\\b)");
+    private static final Pattern UNSUPPORTED_MEDIA_MARKER = Pattern.compile("(?i)(?:\\bmp4\\b|\\bmkv\\b|\\bavi\\b|\\bmov\\b|\\bwmv\\b|\\bflac\\b|\\bmp3\\b|\\baac\\b|\\bopus\\b|\\b480p\\b|\\b720p\\b|\\b1080p\\b|\\b2160p\\b|\\bfullhd\\b|\\bbdrip\\b|\\bwebrip\\b|\\bhdtv\\b|\\bbluray\\b|\\bblu ray\\b|\\bx264\\b|\\bx265\\b|\\bhevc\\b|\\bh\\s?264\\b|\\bh\\s?265\\b|\\b10bit\\b|\\bdual audio\\b|\\bsubbed\\b|\\bsoftsubs?\\b|\\bvostfr\\b|\\bsub ita\\b|\\bsub esp\\b|\\bsoundtrack\\b|\\bost\\b|\\bs\\d{1,2}\\s?e\\d{1,3}\\b|\\bepisode\\b|\\bcapitulo\\b|\\btv anime\\b|\\bmovies other\\b)");
     private static final int MIN_REASONABLE_SIZE_BYTES = 2 * 1024;
 
     public DownloadScoreBreakdown score(DownloadSearchCriteria criteria, NormalizedDownloadResult result) {
@@ -65,6 +68,8 @@ public class DownloadScoringService {
             }
             score += scoreRequestedNumber(expectedTitle, result, reasons);
         }
+
+        score += scoreUnsupportedMedia(result, reasons);
 
         if (!isBlank(criteria.getAuthor()) && result.getAuthors() != null && !result.getAuthors().isEmpty()) {
             double bestAuthor = result.getAuthors().stream()
@@ -238,25 +243,44 @@ public class DownloadScoringService {
 
     private int scoreRequestedNumber(String expectedTitle, NormalizedDownloadResult result, List<String> reasons) {
         OptionalInt requestedNumber = trailingNumber(expectedTitle);
-        if (requestedNumber.isEmpty() || isBlank(result.getTitle())) {
+        if (requestedNumber.isEmpty() || (isBlank(result.getTitle()) && isBlank(result.getSeriesName()))) {
             return 0;
         }
 
         int number = requestedNumber.getAsInt();
-        String title = result.getTitle();
-        if (hasExactNumberMarker(title, number)) {
+        String evidence = String.join(" ", safe(result.getTitle()), safe(result.getSeriesName()));
+        if (hasExactNumberMarker(evidence, number)) {
             reasons.add("+20 requested volume/chapter number match");
             return 20;
         }
-        if (hasRangeContaining(title, number)) {
+        if (hasRangeContaining(evidence, number)) {
             reasons.add("-5 bundled range contains requested number");
             return -5;
         }
-        if (hasNumberToken(title, number)) {
+        if (result.getSeriesNumber() != null && result.getContentKind() != null && result.getContentKind().isSequentialArt()) {
+            if (matchesSeriesNumber(result.getSeriesNumber(), number)) {
+                reasons.add("+10 requested chapter/series number match");
+                return 10;
+            }
+            reasons.add("-20 requested volume/chapter number mismatch");
+            return -20;
+        }
+        if (hasLooseNumberToken(evidence, number)) {
             reasons.add("+5 requested number token present");
             return 5;
         }
+        if (result.getContentKind() != null && result.getContentKind().isSequentialArt() && hasAnyNumberMarker(evidence)) {
+            reasons.add("-20 requested volume/chapter number mismatch");
+            return -20;
+        }
         return 0;
+    }
+
+    private boolean matchesSeriesNumber(Float seriesNumber, int requestedNumber) {
+        if (seriesNumber == null) {
+            return false;
+        }
+        return Math.abs(seriesNumber - requestedNumber) < 0.01f;
     }
 
     private OptionalInt trailingNumber(String value) {
@@ -273,7 +297,7 @@ public class DownloadScoringService {
     }
 
     private boolean hasExactNumberMarker(String title, int number) {
-        String markerPattern = "(?iu)(?:\\bvol(?:ume)?\\b|\\bv\\b|\\btome\\b|\\bch(?:apter)?\\b|\\bchapitre\\b|#)\\s*\\.?\\s*0*" + number + "\\b";
+        String markerPattern = "(?iu)(?:\\b(?:vol(?:ume)?|v|t(?:ome|omo)?|ch(?:apter)?|chapitre)\\.?\\s*0*" + number + "\\b|#\\s*0*" + number + "\\b)";
         return Pattern.compile(markerPattern).matcher(title).find();
     }
 
@@ -289,11 +313,38 @@ public class DownloadScoringService {
         return false;
     }
 
-    private boolean hasNumberToken(String title, int number) {
-        return tokens(normalize(title)).stream()
-                .filter(token -> token.matches("\\d{1,5}"))
-                .mapToInt(Integer::parseInt)
-                .anyMatch(value -> value == number);
+    private boolean hasLooseNumberToken(String title, int number) {
+        String pattern = "(?<![\\d./\\\\])0*" + number + "(?![\\d./\\\\])";
+        return Pattern.compile(pattern).matcher(title).find();
+    }
+
+    private boolean hasAnyNumberMarker(String title) {
+        return ANY_NUMBER_MARKER.matcher(title).find();
+    }
+
+    private int scoreUnsupportedMedia(NormalizedDownloadResult result, List<String> reasons) {
+        if (!looksLikeUnsupportedMedia(result)) {
+            return 0;
+        }
+        reasons.add("-90 unsupported media payload");
+        return -90;
+    }
+
+    private boolean looksLikeUnsupportedMedia(NormalizedDownloadResult result) {
+        DownloadAcquisitionType acquisitionType = result.getAcquisitionType();
+        boolean externalPayload = acquisitionType == DownloadAcquisitionType.TORRENT || acquisitionType == DownloadAcquisitionType.NZB;
+        boolean unknownFormat = result.getFormat() == null || result.getFormat() == DownloadFormat.UNKNOWN;
+        if (!externalPayload && !unknownFormat) {
+            return false;
+        }
+        String evidence = normalize(String.join(" ",
+                safe(result.getTitle()),
+                safe(result.getSeriesName()),
+                safe(result.getDownloadUrl()),
+                safe(result.getDetailsUrl()),
+                safe(result.getRawJson())
+        ));
+        return UNSUPPORTED_MEDIA_MARKER.matcher(evidence).find();
     }
 
     private double similarity(String left, String right) {
@@ -343,6 +394,7 @@ public class DownloadScoringService {
         String normalized = Normalizer.normalize(value, Normalizer.Form.NFD)
                 .replaceAll("\\p{M}", "")
                 .toLowerCase(Locale.ROOT);
+        normalized = COMPACT_NUMBER_MARKER.matcher(normalized).replaceAll("$1 $2");
         return NON_ALNUM.matcher(normalized).replaceAll(" ").trim().replaceAll("\\s+", " ");
     }
 
@@ -372,5 +424,9 @@ public class DownloadScoringService {
 
     private boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    private String safe(String value) {
+        return value == null ? "" : value;
     }
 }

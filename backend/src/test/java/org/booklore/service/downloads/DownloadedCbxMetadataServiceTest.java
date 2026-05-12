@@ -2,6 +2,7 @@ package org.booklore.service.downloads;
 
 import org.booklore.model.enums.DownloadContentKind;
 import org.booklore.model.enums.DownloadFormat;
+import org.booklore.service.ArchiveService;
 import org.booklore.service.downloads.dto.NormalizedDownloadResult;
 import org.booklore.service.metadata.extractor.CbxMetadataExtractor;
 import org.junit.jupiter.api.Test;
@@ -25,7 +26,7 @@ class DownloadedCbxMetadataServiceTest {
     Path tempDir;
 
     private final DownloadedCbxMetadataService service = new DownloadedCbxMetadataService();
-    private final CbxMetadataExtractor extractor = new CbxMetadataExtractor();
+    private final CbxMetadataExtractor extractor = new CbxMetadataExtractor(new ArchiveService());
 
     @Test
     void embedIfApplicable_addsComicInfoXmlThatBookLoreCanExtract() throws Exception {

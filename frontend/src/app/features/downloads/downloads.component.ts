@@ -130,7 +130,9 @@ export class DownloadsComponent implements OnInit, OnDestroy {
         this.loadingResults = false;
         this.searchId = response.id;
         this.searchError = response.errorMessage ?? null;
-        this.results = [...(response.results ?? [])].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+        this.results = [...(response.results ?? [])]
+          .filter(result => (result.score ?? 0) >= 50)
+          .sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
         if (!this.results.length) {
           this.messageService.add({
             severity: this.searchError ? 'warn' : 'info',

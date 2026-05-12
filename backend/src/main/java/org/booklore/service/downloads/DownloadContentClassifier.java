@@ -16,6 +16,7 @@ public class DownloadContentClassifier {
 
     private static final Pattern NON_ALNUM = Pattern.compile("[^a-z0-9]+");
     private static final Pattern MANGA_RELEASE_MARKER = Pattern.compile("(?i)(?:\\bvol(?:ume)?\\b|\\bv0?\\d{2,4}\\b|\\btom[eo]\\b|\\bch(?:apter)?\\b|\\bchapitre\\b|digital colored comics|one[- ]?shot|tankou?bon)");
+    private static final Pattern UNSUPPORTED_MEDIA_MARKER = Pattern.compile("(?i)(?:\\bmp4\\b|\\bmkv\\b|\\bavi\\b|\\bmov\\b|\\bwmv\\b|\\bflac\\b|\\bmp3\\b|\\baac\\b|\\bopus\\b|\\b480p\\b|\\b720p\\b|\\b1080p\\b|\\b2160p\\b|\\bfullhd\\b|\\bbdrip\\b|\\bwebrip\\b|\\bhdtv\\b|\\bbluray\\b|\\bblu ray\\b|\\bx264\\b|\\bx265\\b|\\bhevc\\b|\\bh\\s?264\\b|\\bh\\s?265\\b|\\b10bit\\b|\\bdual audio\\b|\\bsubbed\\b|\\bsoftsubs?\\b|\\bvostfr\\b|\\bsub ita\\b|\\bsub esp\\b|\\bsoundtrack\\b|\\bost\\b|\\bs\\d{1,2}\\s?e\\d{1,3}\\b|\\bepisode\\b|\\bcapitulo\\b|\\btv anime\\b|\\bmovies other\\b)");
 
     public DownloadContentKind resolve(DownloadContentKind requested,
                                        DownloadContentKind inferred,
@@ -76,6 +77,10 @@ public class DownloadContentClassifier {
 
         if (sourceType == DownloadSourceType.MANGADEX) {
             return DownloadContentKind.MANGA;
+        }
+
+        if (isUnsupportedMediaEvidence(evidence, acquisitionType, format)) {
+            return DownloadContentKind.BOOK;
         }
 
         if (containsAny(evidence, "webtoon", "webtoons", "webcomic", "tapas")) {
@@ -155,6 +160,12 @@ public class DownloadContentClassifier {
                 || format == DownloadFormat.AZW
                 || format == DownloadFormat.AZW3
                 || format == DownloadFormat.FB2;
+    }
+
+    private boolean isUnsupportedMediaEvidence(String evidence, DownloadAcquisitionType acquisitionType, DownloadFormat format) {
+        boolean externalPayload = acquisitionType == DownloadAcquisitionType.TORRENT || acquisitionType == DownloadAcquisitionType.NZB;
+        boolean unknownFormat = format == null || format == DownloadFormat.UNKNOWN;
+        return (externalPayload || unknownFormat) && UNSUPPORTED_MEDIA_MARKER.matcher(evidence).find();
     }
 
     private boolean containsAny(String value, String... needles) {

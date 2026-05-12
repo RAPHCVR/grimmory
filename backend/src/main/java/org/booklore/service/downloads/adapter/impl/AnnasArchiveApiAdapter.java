@@ -50,8 +50,11 @@ public class AnnasArchiveApiAdapter implements DownloadSourceAdapter {
     private static final Pattern YEAR_PATTERN = Pattern.compile("\\b(1[5-9]\\d{2}|20\\d{2})\\b");
     private static final Pattern SIZE_PATTERN = Pattern.compile("(?i)\\b(\\d+(?:[\\.,]\\d+)?)\\s*(kb|kib|mb|mib|gb|gib)\\b");
     private static final Pattern FILE_EXTENSION_PATTERN = Pattern.compile("(?i)\\.\\s*(epub|pdf|cbz|cbr|cb7|mobi|azw3?|fb2)(?:\\b|[_?&#])");
+    private static final Pattern FILE_NAME_EXTENSION_PATTERN = Pattern.compile("(?i)\\.(?:epub|pdf|cbz|cbr|cb7|mobi|azw3?|fb2)\\b");
+    private static final Pattern FILE_EXTENSION_SUFFIX_PATTERN = Pattern.compile("(?i)\\.(?:epub|pdf|cbz|cbr|cb7|mobi|azw3?|fb2)\\b.*$");
     private static final Pattern SEQUENTIAL_TOME_TITLE_PATTERN = Pattern.compile("(?iu)^(.+?)\\s+-\\s+(?:tome|volume|vol\\.?|v)\\s*(\\d+(?:[\\.,]\\d+)?)\\s*[:\\-]?\\s*(.+)$");
     private static final Pattern SEQUENTIAL_VOLUME_TITLE_PATTERN = Pattern.compile("(?iu)^(.+?)\\s+(?:tome|volume|vol\\.?|v)\\s*(\\d+(?:[\\.,]\\d+)?)\\s*[:\\-]?\\s*(.*)$");
+    private static final Pattern SEQUENTIAL_DASH_NUMBER_TITLE_PATTERN = Pattern.compile("(?iu)^(.+?)\\s+-\\s*0*(\\d{1,4})(?:\\s*[-:]\\s*(.+))?$");
     private static final Pattern RAW_SERIES_TRAILER_PATTERN = Pattern.compile("(?iu),\\s*([^,]{2,120}),\\s*(\\d+(?:[\\.,]\\d+)?),\\s*(?:1[5-9]\\d{2}|20\\d{2})\\s*$");
 
     private final FlareSolverrClient flareSolverrClient;
@@ -174,7 +177,7 @@ public class AnnasArchiveApiAdapter implements DownloadSourceAdapter {
 
             String detailsUrl = absoluteUrl(link, href, siteBaseUrl);
             String rawText = resultText(link);
-            String rawTitle = firstNonBlank(titleFrom(link, rawText), rawText, md5);
+            String rawTitle = cleanDisplayTitle(firstNonBlank(titleFrom(link, rawText), rawText, md5));
             DownloadFormat resultFormat = formatFromText(rawText, preferredFormat);
             DownloadContentKind contentKind = contentClassifier.resolve(
                     criteria.getContentKind(),
@@ -341,10 +344,10 @@ public class AnnasArchiveApiAdapter implements DownloadSourceAdapter {
         for (String line : textLines(link)) {
             String candidate = compact(line);
             if (!candidate.isBlank() && !looksLikeMetadata(candidate)) {
-                return candidate;
+                return cleanDisplayTitle(candidate);
             }
         }
-        return fallbackText;
+        return cleanDisplayTitle(fallbackText);
     }
 
     private List<String> textLines(Element element) {
@@ -449,7 +452,8 @@ public class AnnasArchiveApiAdapter implements DownloadSourceAdapter {
             return new ParsedSequentialMetadata(null, null, null);
         }
 
-        Matcher titleMatcher = SEQUENTIAL_TOME_TITLE_PATTERN.matcher(compact(title));
+        String cleanTitle = cleanDisplayTitle(title);
+        Matcher titleMatcher = SEQUENTIAL_TOME_TITLE_PATTERN.matcher(cleanTitle);
         if (titleMatcher.matches()) {
             return new ParsedSequentialMetadata(
                     compact(titleMatcher.group(3)),
@@ -458,7 +462,17 @@ public class AnnasArchiveApiAdapter implements DownloadSourceAdapter {
             );
         }
 
-        titleMatcher = SEQUENTIAL_VOLUME_TITLE_PATTERN.matcher(compact(title));
+        titleMatcher = SEQUENTIAL_VOLUME_TITLE_PATTERN.matcher(cleanTitle);
+        if (titleMatcher.matches()) {
+            String parsedTitle = compact(titleMatcher.group(3));
+            return new ParsedSequentialMetadata(
+                    parsedTitle.isBlank() ? null : parsedTitle,
+                    compact(titleMatcher.group(1)),
+                    parseFloat(titleMatcher.group(2))
+            );
+        }
+
+        titleMatcher = SEQUENTIAL_DASH_NUMBER_TITLE_PATTERN.matcher(cleanTitle);
         if (titleMatcher.matches()) {
             String parsedTitle = compact(titleMatcher.group(3));
             return new ParsedSequentialMetadata(
@@ -555,6 +569,37 @@ public class AnnasArchiveApiAdapter implements DownloadSourceAdapter {
 
     private String compact(String value) {
         return value == null ? "" : value.replace('\u00a0', ' ').replaceAll("\\s+", " ").trim();
+    }
+
+    private String cleanDisplayTitle(String value) {
+        String title = compact(value);
+        if (title.isBlank()) {
+            return title;
+        }
+        String fileName = firstFileNameCandidate(title);
+        if (fileName != null) {
+            title = fileName;
+        }
+        title = FILE_EXTENSION_SUFFIX_PATTERN.matcher(title).replaceAll("");
+        title = title
+                .replace('_', ' ')
+                .replaceAll("(?<=[\\p{L}\\d])\\.(?=[\\p{L}\\d])", " ")
+                .replaceAll("(?iu)^manga\\s+fr\\s*[-_:]\\s*", "")
+                .replaceAll("\\s+", " ");
+        return compact(title);
+    }
+
+    private String firstFileNameCandidate(String value) {
+        String normalized = compact(value).replace('\\', '/');
+        Matcher matcher = FILE_NAME_EXTENSION_PATTERN.matcher(normalized);
+        if (!matcher.find()) {
+            return null;
+        }
+        String filePath = normalized.substring(0, matcher.end());
+        int slash = filePath.lastIndexOf('/');
+        String fileName = slash >= 0 ? filePath.substring(slash + 1) : filePath;
+        fileName = compact(fileName);
+        return fileName.length() < 5 ? null : fileName;
     }
 
     private String truncate(String value, int maxLength) {

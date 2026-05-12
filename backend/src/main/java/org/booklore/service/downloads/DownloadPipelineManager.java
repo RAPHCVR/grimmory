@@ -43,6 +43,7 @@ public class DownloadPipelineManager {
 
     private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() {};
     private static final String DOWNLOADS_DIR = ".downloads";
+    private static final int MIN_DOWNLOADABLE_SCORE = 50;
 
     private final AppProperties appProperties;
     private final DownloadSourceRepository sourceRepository;
@@ -109,6 +110,9 @@ public class DownloadPipelineManager {
                 .stream()
                 .max(Comparator.comparing(DownloadResultEntity::getScore, Comparator.nullsFirst(Integer::compareTo)))
                 .orElseThrow(() -> new DownloadException("No downloadable result found for query: " + criteria.effectiveQuery()));
+        if (best.getScore() == null || best.getScore() < MIN_DOWNLOADABLE_SCORE) {
+            throw new DownloadException("No confident downloadable result found for query: " + criteria.effectiveQuery());
+        }
         DownloadTargetResolver.ResolvedTarget target = targetResolver.resolve(targetLibraryId, targetLibraryPathId, autoFinalize, best.getFormat());
 
         DownloadJobEntity job = DownloadJobEntity.builder()

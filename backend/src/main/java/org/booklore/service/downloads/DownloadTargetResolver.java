@@ -24,8 +24,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 @Slf4j
 @Service
@@ -137,7 +139,7 @@ public class DownloadTargetResolver {
                         .watch(true)
                         .libraryPaths(new ArrayList<>())
                         .bookEntities(new ArrayList<>())
-                        .users(new ArrayList<>())
+                        .users(new HashSet<>())
                         .formatPriority(new ArrayList<>(List.of(BookFileType.EPUB, BookFileType.CBX, BookFileType.PDF, BookFileType.AZW3, BookFileType.MOBI, BookFileType.FB2)))
                         .allowedFormats(new ArrayList<>(DOWNLOAD_LIBRARY_FORMATS))
                         .organizationMode(LibraryOrganizationMode.BOOK_PER_FILE)
@@ -181,14 +183,14 @@ public class DownloadTargetResolver {
     private void assignDefaultLibraryToAdminUsers(LibraryEntity library) {
         List<BookLoreUserEntity> admins = userRepository.findAll().stream()
                 .filter(user -> user.getPermissions() != null && user.getPermissions().isPermissionAdmin())
-                .filter(user -> Optional.ofNullable(user.getLibraries()).orElse(List.of()).stream()
+                .filter(user -> Optional.ofNullable(user.getLibraries()).orElseGet(Set::of).stream()
                         .noneMatch(existing -> existing.getId().equals(library.getId())))
                 .toList();
         if (admins.isEmpty()) {
             return;
         }
         admins.forEach(user -> {
-            List<LibraryEntity> libraries = new ArrayList<>(Optional.ofNullable(user.getLibraries()).orElse(List.of()));
+            Set<LibraryEntity> libraries = new HashSet<>(Optional.ofNullable(user.getLibraries()).orElseGet(Set::of));
             libraries.add(library);
             user.setLibraries(libraries);
         });

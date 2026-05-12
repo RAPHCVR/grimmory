@@ -187,7 +187,8 @@ public class QbittorrentClient {
                     .POST(HttpRequest.BodyPublishers.ofString(body))
                     .build();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() < 200 || response.statusCode() > 299 || !"Ok.".equals(response.body() == null ? "" : response.body().trim())) {
+            String responseBody = response.body() == null ? "" : response.body().trim();
+            if (response.statusCode() < 200 || response.statusCode() > 299 || (!responseBody.isBlank() && !"Ok.".equals(responseBody))) {
                 throw new DownloadSourceException("qBittorrent login failed with HTTP status " + response.statusCode());
             }
             return response.headers().firstValue("set-cookie")

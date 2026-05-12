@@ -17,6 +17,7 @@ import org.springframework.data.domain.Sort;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 
@@ -62,7 +63,7 @@ class DownloadTargetResolverTest {
         verify(libraryRepository).saveAndFlush(any(LibraryEntity.class));
         verify(userRepository).saveAll(any());
         assertEquals(1, admin.getLibraries().size());
-        assertTrue(admin.getLibraries().getFirst().getAllowedFormats().contains(BookFileType.CBX));
+        assertTrue(admin.getLibraries().iterator().next().getAllowedFormats().contains(BookFileType.CBX));
     }
 
     @Test
@@ -130,7 +131,7 @@ class DownloadTargetResolverTest {
         BookLoreUserEntity user = BookLoreUserEntity.builder()
                 .id(1L)
                 .username("admin")
-                .libraries(new ArrayList<>())
+                .libraries(new HashSet<>())
                 .build();
         user.setPermissions(UserPermissionsEntity.builder()
                 .permissionAdmin(true)

@@ -123,6 +123,172 @@ class DownloadScoringServiceTest {
     }
 
     @Test
+    void score_compactVolumeMarkerMatchesRequestedNumber() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("Dragon Ball Super 24")
+                .contentKind(DownloadContentKind.MANGA)
+                .preferredFormats(List.of(DownloadFormat.CBZ))
+                .build();
+
+        NormalizedDownloadResult result = NormalizedDownloadResult.builder()
+                .title("Dragon Ball Super - Digital Colored Comics v24 (2026)")
+                .format(DownloadFormat.UNKNOWN)
+                .contentKind(DownloadContentKind.MANGA)
+                .acquisitionType(DownloadAcquisitionType.TORRENT)
+                .downloadUrl("magnet:?xt=urn:btih:abcdef")
+                .sizeBytes(530_000_000L)
+                .build();
+
+        var score = service.score(criteria, result);
+
+        assertTrue(score.getScore() >= 70);
+        assertTrue(score.getReasons().contains("+35 title strong match"));
+        assertTrue(score.getReasons().contains("+20 requested volume/chapter number match"));
+    }
+
+    @Test
+    void score_mangaDexChapterNumberMismatchIsPenalized() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("Dragon Ball Super 24")
+                .contentKind(DownloadContentKind.MANGA)
+                .preferredFormats(List.of(DownloadFormat.CBZ))
+                .build();
+
+        NormalizedDownloadResult result = NormalizedDownloadResult.builder()
+                .title("The God of Destruction's Prophetic Dream")
+                .seriesName("Dragon Ball Super #1")
+                .format(DownloadFormat.CBZ)
+                .contentKind(DownloadContentKind.MANGA)
+                .acquisitionType(DownloadAcquisitionType.MANGADEX_CHAPTER)
+                .downloadUrl("chapter-1")
+                .build();
+
+        var score = service.score(criteria, result);
+
+        assertTrue(score.getScore() < 50);
+        assertTrue(score.getReasons().contains("-20 requested volume/chapter number mismatch"));
+    }
+
+    @Test
+    void score_mangaDexSeriesNumberMismatchIsPenalized() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("Dragon Ball Super 24")
+                .contentKind(DownloadContentKind.MANGA)
+                .preferredFormats(List.of(DownloadFormat.CBZ))
+                .build();
+
+        NormalizedDownloadResult result = NormalizedDownloadResult.builder()
+                .title("The God of Destruction's Prophetic Dream")
+                .seriesName("Dragon Ball Super")
+                .seriesNumber(1f)
+                .format(DownloadFormat.CBZ)
+                .contentKind(DownloadContentKind.MANGA)
+                .acquisitionType(DownloadAcquisitionType.MANGADEX_CHAPTER)
+                .downloadUrl("chapter-1")
+                .build();
+
+        var score = service.score(criteria, result);
+
+        assertTrue(score.getScore() < 50);
+        assertTrue(score.getReasons().contains("-20 requested volume/chapter number mismatch"));
+    }
+
+    @Test
+    void score_mangaDexSeriesNumberMatchGetsMeasuredBonus() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("Dragon Ball Super 24")
+                .contentKind(DownloadContentKind.MANGA)
+                .preferredFormats(List.of(DownloadFormat.CBZ))
+                .build();
+
+        NormalizedDownloadResult result = NormalizedDownloadResult.builder()
+                .title("Son Goku's Evolution")
+                .seriesName("Dragon Ball Super")
+                .seriesNumber(24f)
+                .format(DownloadFormat.CBZ)
+                .contentKind(DownloadContentKind.MANGA)
+                .acquisitionType(DownloadAcquisitionType.MANGADEX_CHAPTER)
+                .downloadUrl("chapter-24")
+                .build();
+
+        var score = service.score(criteria, result);
+
+        assertTrue(score.getScore() >= 70);
+        assertTrue(score.getReasons().contains("+10 requested chapter/series number match"));
+    }
+
+    @Test
+    void score_pathDateDoesNotCountAsRequestedNumber() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("Dragon Ball Super 24")
+                .contentKind(DownloadContentKind.MANGA)
+                .preferredFormats(List.of(DownloadFormat.CBZ))
+                .build();
+
+        NormalizedDownloadResult result = NormalizedDownloadResult.builder()
+                .title("lgli/I:\\comics3\\emule\\2020.05.24\\Dragon Ball Super T05 (Toriyama-Toyotaro) [Manga FR].cbz")
+                .format(DownloadFormat.CBZ)
+                .contentKind(DownloadContentKind.MANGA)
+                .acquisitionType(DownloadAcquisitionType.EXTERNAL_STACKS)
+                .detailsUrl("https://annas-archive.test/md5/example")
+                .build();
+
+        var score = service.score(criteria, result);
+
+        assertTrue(score.getScore() < 65);
+        assertTrue(score.getReasons().contains("-20 requested volume/chapter number mismatch"));
+    }
+
+    @Test
+    void score_videoTorrentForMangaQueryScoresZero() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("Dragon Ball Super 24")
+                .contentKind(DownloadContentKind.MANGA)
+                .preferredFormats(List.of(DownloadFormat.CBZ))
+                .build();
+
+        NormalizedDownloadResult result = NormalizedDownloadResult.builder()
+                .title("[DeadFish] Dragon Ball Super - 24 [720p][AAC].mp4")
+                .format(DownloadFormat.UNKNOWN)
+                .contentKind(DownloadContentKind.BOOK)
+                .acquisitionType(DownloadAcquisitionType.TORRENT)
+                .downloadUrl("magnet:?xt=urn:btih:abcdef")
+                .sizeBytes(392_000_000L)
+                .build();
+
+        var score = service.score(criteria, result);
+
+        assertEquals(0, score.getScore());
+        assertTrue(score.getReasons().contains("-90 unsupported media payload"));
+        assertTrue(score.getReasons().contains("-30 content kind mismatch"));
+    }
+
+    @Test
+    void score_tvAnimeCategoryTorrentForMangaQueryScoresZero() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("Dragon Ball Super 24")
+                .contentKind(DownloadContentKind.MANGA)
+                .preferredFormats(List.of(DownloadFormat.CBZ))
+                .build();
+
+        NormalizedDownloadResult result = NormalizedDownloadResult.builder()
+                .title("Dragon Ball Super - 24 - ¡Impacto! ¡Freezer contra Son Goku! ¡El Resultado del Entrenamiento! [Castellano]")
+                .format(DownloadFormat.UNKNOWN)
+                .contentKind(DownloadContentKind.BOOK)
+                .acquisitionType(DownloadAcquisitionType.TORRENT)
+                .downloadUrl("magnet:?xt=urn:btih:abcdef")
+                .rawJson("{\"categories\":[{\"id\":5070,\"name\":\"TV/Anime\"},{\"id\":2020,\"name\":\"Movies/Other\"}]}")
+                .sizeBytes(570_215_616L)
+                .build();
+
+        var score = service.score(criteria, result);
+
+        assertEquals(0, score.getScore());
+        assertTrue(score.getReasons().contains("-90 unsupported media payload"));
+        assertTrue(score.getReasons().contains("-30 content kind mismatch"));
+    }
+
+    @Test
     void score_directGalleryDlUrl_acceptsInferredVisualContentKind() {
         String url = "https://www.webtoons.com/fr/fantasy/tower-of-god/saison-3-ep-235/viewer?title_no=1832&episode_no=652";
         DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()

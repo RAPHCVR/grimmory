@@ -266,6 +266,68 @@ class AnnasArchiveApiAdapterTest {
     }
 
     @Test
+    void search_cleansPathBackedComicTitlesAndParsesDashNumberMetadata() throws Exception {
+        HttpServer flareSolverr = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        flareSolverr.createContext("/v1", exchange -> {
+            exchange.getRequestBody().readAllBytes();
+            String html = """
+                    <html>
+                      <body>
+                        <div>
+                          <a href="/md5/0123456789abcdef0123456789abcdef" class="js-vim-focus font-semibold">
+                            lgli/I:\\comics3\\emule\\2020.05.24\\Manga Fr - Dragon Ball Super - 01 - Les Guerriers De L'univers - (Toriyama-Toyotarô) -.cbz
+                            Manga Fr - Dragon Ball Super - 01 - Les Guerriers De L'univers - (Toriyama-Toyotarô) -.cbz
+                          </a>
+                          <span>French CBZ 2020</span>
+                        </div>
+                      </body>
+                    </html>
+                    """;
+            byte[] response = objectMapper.writeValueAsBytes(Map.of(
+                    "status", "ok",
+                    "solution", Map.of("response", html)
+            ));
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        flareSolverr.start();
+
+        try {
+            String flareSolverrBaseUrl = "http://127.0.0.1:" + flareSolverr.getAddress().getPort();
+            DownloadSourceEntity source = DownloadSourceEntity.builder()
+                    .name("Anna HTML")
+                    .type(DownloadSourceType.ANNAS_ARCHIVE_API)
+                    .configJson(objectMapper.writeValueAsString(Map.of(
+                            "annasArchiveApi", Map.of(
+                                    "baseUrl", "https://annas-archive.li",
+                                    "useDefaultFallbacks", false
+                            ),
+                            "flareSolverr", Map.of("baseUrl", flareSolverrBaseUrl)
+                    )))
+                    .build();
+
+            var results = adapter().search(source, DownloadSearchCriteria.builder()
+                    .query("Dragon Ball Super 24")
+                    .contentKind(DownloadContentKind.MANGA)
+                    .preferredFormats(List.of(DownloadFormat.CBZ))
+                    .maxResults(10)
+                    .build());
+
+            assertEquals(1, results.size());
+            var result = results.getFirst();
+            assertEquals("Les Guerriers De L'univers - (Toriyama-Toyotarô) -", result.getTitle());
+            assertEquals("Dragon Ball Super", result.getSeriesName());
+            assertEquals(1F, result.getSeriesNumber());
+            assertEquals(DownloadFormat.CBZ, result.getFormat());
+            assertEquals(DownloadContentKind.MANGA, result.getContentKind());
+        } finally {
+            flareSolverr.stop(0);
+        }
+    }
+
+    @Test
     void search_interleavesResultsAcrossPreferredFormatsBeforeApplyingLimit() throws Exception {
         HttpServer flareSolverr = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         flareSolverr.createContext("/v1", exchange -> {
