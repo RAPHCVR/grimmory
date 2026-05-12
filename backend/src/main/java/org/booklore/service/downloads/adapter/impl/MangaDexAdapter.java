@@ -22,9 +22,11 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Component
 @RequiredArgsConstructor
@@ -44,6 +46,9 @@ public class MangaDexAdapter implements DownloadSourceAdapter {
 
     @Override
     public List<NormalizedDownloadResult> search(DownloadSourceEntity source, DownloadSearchCriteria criteria) {
+        if (!supports(criteria.getContentKind())) {
+            return List.of();
+        }
         MangaDexConfig config = readConfig(source);
         String term = criteria.getSeriesName() != null && !criteria.getSeriesName().isBlank()
                 ? criteria.getSeriesName()
@@ -71,11 +76,13 @@ public class MangaDexAdapter implements DownloadSourceAdapter {
             return List.of();
         }
         JsonNode mangaAttributes = manga.path("attributes");
-        String mangaTitle = localizedText(mangaAttributes.path("title"), config.language());
+        String mangaTitle = localizedMangaTitle(mangaAttributes, config.language());
         List<String> authors = relationshipNames(manga, "author");
 
         List<NormalizedDownloadResult> results = new ArrayList<>();
-        for (JsonNode chapter : mangaFeed(config, mangaId, config.chapterLimitPerManga())) {
+        Set<String> seenChapters = new HashSet<>();
+        int feedLimit = Math.min(100, Math.max(config.chapterLimitPerManga(), remainingSlots) * 5);
+        for (JsonNode chapter : mangaFeed(config, mangaId, feedLimit)) {
             JsonNode attributes = chapter.path("attributes");
             Float chapterNumber = parseFloat(attributes.path("chapter").asText(null));
             if (criteria.getSeriesNumber() != null && chapterNumber != null
@@ -88,6 +95,10 @@ public class MangaDexAdapter implements DownloadSourceAdapter {
 
             String chapterId = chapter.path("id").asText(null);
             if (chapterId == null || chapterId.isBlank()) {
+                continue;
+            }
+            String chapterKey = chapterKey(attributes, chapterId);
+            if (!seenChapters.add(chapterKey)) {
                 continue;
             }
             String chapterTitle = attributes.path("title").asText(null);
@@ -127,6 +138,8 @@ public class MangaDexAdapter implements DownloadSourceAdapter {
                 .queryParam("limit", limit)
                 .queryParam("includes[]", "author")
                 .queryParam("includes[]", "artist")
+                .queryParam("availableTranslatedLanguage[]", config.language())
+                .queryParam("order[relevance]", "desc")
                 .queryParam("contentRating[]", "safe")
                 .queryParam("contentRating[]", "suggestive")
                 .queryParam("contentRating[]", "erotica")
@@ -195,20 +208,65 @@ public class MangaDexAdapter implements DownloadSourceAdapter {
         return names;
     }
 
+    private String localizedMangaTitle(JsonNode attributes, String preferredLanguage) {
+        JsonNode titles = attributes.path("title");
+        for (String language : List.of(preferredLanguage, "en")) {
+            String directTitle = textForLanguage(titles, language);
+            if (directTitle != null) {
+                return directTitle;
+            }
+        }
+
+        JsonNode altTitles = attributes.path("altTitles");
+        if (altTitles.isArray()) {
+            for (String language : List.of(preferredLanguage, "en")) {
+                for (JsonNode altTitle : altTitles) {
+                    String directAltTitle = textForLanguage(altTitle, language);
+                    if (directAltTitle != null) {
+                        return directAltTitle;
+                    }
+                }
+            }
+        }
+
+        String title = localizedText(titles, preferredLanguage);
+        if (title != null) {
+            return title;
+        }
+        if (altTitles.isArray()) {
+            for (JsonNode altTitle : altTitles) {
+                String localizedAltTitle = localizedText(altTitle, preferredLanguage);
+                if (localizedAltTitle != null) {
+                    return localizedAltTitle;
+                }
+            }
+        }
+        return "MangaDex";
+    }
+
+    private String textForLanguage(JsonNode localized, String language) {
+        String value = localized.path(language).asText(null);
+        return value == null || value.isBlank() ? null : value;
+    }
+
     private String localizedText(JsonNode localized, String preferredLanguage) {
-        for (String lang : List.of(preferredLanguage, "en", "ja-ro", "ja", "ko", "zh")) {
+        for (String lang : List.of(preferredLanguage, "en", "ja-ro", "ko-ro", "zh-ro", "ja", "ko", "zh")) {
             String value = localized.path(lang).asText(null);
             if (value != null && !value.isBlank()) {
                 return value;
             }
         }
-        return "MangaDex";
+        return null;
     }
 
     private DownloadContentKind contentKind(DownloadContentKind requested) {
         return requested == DownloadContentKind.MANGA || requested == DownloadContentKind.WEBTOON || requested == DownloadContentKind.COMIC
                 ? requested
                 : DownloadContentKind.MANGA;
+    }
+
+    private boolean supports(DownloadContentKind requested) {
+        return requested == DownloadContentKind.MANGA || requested == DownloadContentKind.WEBTOON || requested == DownloadContentKind.COMIC;
     }
 
     private MangaDexConfig readConfig(DownloadSourceEntity source) {
@@ -255,6 +313,15 @@ public class MangaDexAdapter implements DownloadSourceAdapter {
             value = value.substring(0, value.length() - 1);
         }
         return value;
+    }
+
+    private String chapterKey(JsonNode attributes, String chapterId) {
+        String volume = attributes.path("volume").asText("");
+        String chapter = attributes.path("chapter").asText("");
+        if (!chapter.isBlank()) {
+            return volume + ":" + chapter;
+        }
+        return chapterId;
     }
 
     private record MangaDexConfig(String apiBaseUrl,
