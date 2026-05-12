@@ -119,6 +119,38 @@ public class DownloadPipelineManager {
         return processQueuedJob(job.getId());
     }
 
+    @Transactional
+    public DownloadJobEntity queueResult(Long resultId,
+                                         Long targetLibraryId,
+                                         Long targetLibraryPathId,
+                                         boolean autoFinalize,
+                                         int confidenceThreshold) {
+        DownloadResultEntity result = resultRepository.findWithSearchAndSourceById(resultId)
+                .orElseThrow(() -> new DownloadException("Download result not found: " + resultId));
+
+        DownloadJobEntity job = DownloadJobEntity.builder()
+                .search(result.getSearch())
+                .result(result)
+                .source(result.getSource())
+                .status(DownloadJobStatus.QUEUED)
+                .confidenceScore(result.getScore())
+                .autoFinalize(autoFinalize)
+                .confidenceThreshold(confidenceThreshold)
+                .targetLibraryId(targetLibraryId)
+                .targetLibraryPathId(targetLibraryPathId)
+                .build();
+        return jobRepository.save(job);
+    }
+
+    public DownloadJobEntity acquireResult(Long resultId,
+                                           Long targetLibraryId,
+                                           Long targetLibraryPathId,
+                                           boolean autoFinalize,
+                                           int confidenceThreshold) {
+        DownloadJobEntity job = queueResult(resultId, targetLibraryId, targetLibraryPathId, autoFinalize, confidenceThreshold);
+        return processQueuedJob(job.getId());
+    }
+
     public DownloadJobEntity processQueuedJob(Long jobId) {
         DownloadJobEntity job = jobRepository.findWithSearchAndResultAndSourceById(jobId)
                 .orElseThrow(() -> new DownloadException("Download job not found: " + jobId));

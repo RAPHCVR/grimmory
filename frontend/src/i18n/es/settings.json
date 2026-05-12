@@ -9,6 +9,7 @@
     "email": "Correo",
     "patterns": "Patrones",
     "authentication": "OIDC",
+    "downloadSources": "Download Sources",
     "tasks": "Tareas",
     "auditLogs": "Auditoría",
     "opds": "OPDS",

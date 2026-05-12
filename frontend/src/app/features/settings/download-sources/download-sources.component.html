@@ -1,0 +1,240 @@
+<ng-container *transloco="let t; prefix: 'settingsDownloadSources'">
+  <div class="main-container">
+    <div class="settings-header">
+      <h2 class="settings-title">
+        <i class="pi pi-download"></i>
+        {{ t('title') }}
+      </h2>
+      <p class="settings-description">{{ t('description') }}</p>
+    </div>
+
+    @if ((userService.userState$ | async)?.user?.permissions?.admin) {
+      <div class="settings-card">
+        <div class="section-header">
+          <div>
+            <h3 class="section-title">
+              <i class="pi pi-server"></i>
+              {{ t('sources.sectionTitle') }}
+            </h3>
+            <p class="section-description">{{ t('sources.sectionDesc') }}</p>
+          </div>
+          <p-button
+            icon="pi pi-plus"
+            [label]="t('actions.addSource')"
+            severity="success"
+            size="small"
+            [outlined]="true"
+            (onClick)="openCreateDialog()">
+          </p-button>
+        </div>
+
+        <div class="section-body">
+          <p-table
+            [value]="sources"
+            [loading]="loading"
+            styleClass="p-datatable-sm"
+            [tableStyle]="{'min-width': '860px'}">
+            <ng-template pTemplate="header">
+              <tr>
+                <th>{{ t('table.name') }}</th>
+                <th>{{ t('table.type') }}</th>
+                <th>{{ t('table.status') }}</th>
+                <th>{{ t('table.priority') }}</th>
+                <th>{{ t('table.flareSolverr') }}</th>
+                <th class="actions-col">{{ t('table.actions') }}</th>
+              </tr>
+            </ng-template>
+            <ng-template pTemplate="body" let-source>
+              <tr>
+                <td>
+                  <div class="source-name">
+                    <span>{{ source.name }}</span>
+                    <small>#{{ source.id }}</small>
+                  </div>
+                </td>
+                <td>{{ typeLabel(source.type) }}</td>
+                <td>
+                  <span class="status-pill" [class.enabled]="source.enabled">
+                    {{ source.enabled ? t('status.enabled') : t('status.disabled') }}
+                  </span>
+                </td>
+                <td>{{ source.priority }}</td>
+                <td>
+                  <span class="json-hint">
+                    {{ source.configJson?.includes('flareSolverr') ? t('status.configured') : t('status.notConfigured') }}
+                  </span>
+                </td>
+                <td class="actions-cell">
+                  <p-button
+                    icon="pi pi-pencil"
+                    severity="info"
+                    size="small"
+                    [rounded]="true"
+                    [outlined]="true"
+                    (onClick)="openEditDialog(source)"
+                    [pTooltip]="t('actions.edit')">
+                  </p-button>
+                  <p-button
+                    icon="pi pi-trash"
+                    severity="danger"
+                    size="small"
+                    [rounded]="true"
+                    [outlined]="true"
+                    (onClick)="confirmDelete(source)"
+                    [pTooltip]="t('actions.delete')">
+                  </p-button>
+                </td>
+              </tr>
+            </ng-template>
+            <ng-template pTemplate="emptymessage">
+              <tr>
+                <td colspan="6" class="empty-message">
+                  <i class="pi pi-inbox"></i>
+                  <span>{{ t('empty') }}</span>
+                </td>
+              </tr>
+            </ng-template>
+          </p-table>
+        </div>
+      </div>
+
+      <p-dialog
+        [(visible)]="sourceDialogVisible"
+        [modal]="true"
+        [header]="editingSource ? t('dialog.editTitle') : t('dialog.createTitle')"
+        [style]="{width: 'min(960px, 96vw)'}"
+        [draggable]="false">
+        <form [formGroup]="sourceForm" class="source-form">
+          <div class="form-grid">
+            <div class="form-field">
+              <label for="download-source-name">{{ t('form.name') }}</label>
+              <input id="download-source-name" pInputText formControlName="name" autocomplete="off"/>
+            </div>
+
+            <div class="form-field">
+              <label for="download-source-type">{{ t('form.type') }}</label>
+              <p-select
+                id="download-source-type"
+                formControlName="type"
+                [options]="sourceTypeOptions"
+                optionValue="value"
+                [appendTo]="'body'"
+                (onChange)="onSourceTypeChanged($event.value)">
+                <ng-template pTemplate="selectedItem" let-selected>
+                  {{ selected.translationKey | transloco }}
+                </ng-template>
+                <ng-template pTemplate="item" let-option>
+                  {{ option.translationKey | transloco }}
+                </ng-template>
+              </p-select>
+            </div>
+
+            <div class="form-field compact">
+              <label for="download-source-priority">{{ t('form.priority') }}</label>
+              <p-inputnumber
+                inputId="download-source-priority"
+                formControlName="priority"
+                [min]="0"
+                [max]="9999"
+                [showButtons]="true">
+              </p-inputnumber>
+            </div>
+
+            <div class="form-field toggle-field">
+              <label>{{ t('form.enabled') }}</label>
+              <p-toggleswitch formControlName="enabled"></p-toggleswitch>
+            </div>
+          </div>
+
+          <div class="json-grid">
+            <div class="form-field">
+              <div class="field-header">
+                <label for="download-source-credentials">{{ t('form.credentialsJson') }}</label>
+                <p-button
+                  icon="pi pi-align-left"
+                  size="small"
+                  [text]="true"
+                  (onClick)="formatJsonInForm('credentialsJson')"
+                  [pTooltip]="t('actions.formatJson')">
+                </p-button>
+              </div>
+              <textarea
+                id="download-source-credentials"
+                pTextarea
+                formControlName="credentialsJson"
+                rows="14"
+                spellcheck="false"></textarea>
+            </div>
+
+            <div class="form-field">
+              <div class="field-header">
+                <label for="download-source-config">{{ t('form.configJson') }}</label>
+                <p-button
+                  icon="pi pi-align-left"
+                  size="small"
+                  [text]="true"
+                  (onClick)="formatJsonInForm('configJson')"
+                  [pTooltip]="t('actions.formatJson')">
+                </p-button>
+              </div>
+              <textarea
+                id="download-source-config"
+                pTextarea
+                formControlName="configJson"
+                rows="14"
+                spellcheck="false"></textarea>
+            </div>
+          </div>
+
+          <div class="flare-row">
+            <div class="flare-toggle">
+              <p-toggleswitch [(ngModel)]="flareSolverrEnabled" [ngModelOptions]="{standalone: true}"></p-toggleswitch>
+              <div>
+                <strong>{{ t('flareSolverr.label') }}</strong>
+                <span>{{ t('flareSolverr.description') }}</span>
+              </div>
+            </div>
+            <div class="form-field flare-url">
+              <label for="download-source-flare-url">{{ t('flareSolverr.baseUrl') }}</label>
+              <input
+                id="download-source-flare-url"
+                pInputText
+                [(ngModel)]="flareSolverrBaseUrl"
+                [ngModelOptions]="{standalone: true}"
+                autocomplete="off"/>
+            </div>
+          </div>
+        </form>
+
+        <ng-template pTemplate="footer">
+          <div class="dialog-actions">
+            <p-button
+              [label]="'common.cancel' | transloco"
+              severity="secondary"
+              [outlined]="true"
+              (onClick)="sourceDialogVisible = false">
+            </p-button>
+            <p-button
+              [label]="'common.save' | transloco"
+              icon="pi pi-save"
+              severity="success"
+              [loading]="saving"
+              [disabled]="sourceForm.invalid || saving"
+              (onClick)="saveSource()">
+            </p-button>
+          </div>
+        </ng-template>
+      </p-dialog>
+
+      <p-confirmDialog></p-confirmDialog>
+    } @else {
+      <div class="access-denied-card">
+        <i class="pi pi-lock"></i>
+        <div class="access-denied-content">
+          <h3>{{ t('accessRestricted') }}</h3>
+          <p>{{ t('accessDenied') }}</p>
+        </div>
+      </div>
+    }
+  </div>
+</ng-container>

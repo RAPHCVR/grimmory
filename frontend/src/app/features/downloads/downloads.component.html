@@ -1,0 +1,288 @@
+<ng-container *transloco="let t; prefix: 'downloads'">
+  <div class="downloads-page">
+    <div class="downloads-header">
+      <div>
+        <h1>
+          <i class="pi pi-download"></i>
+          {{ t('title') }}
+        </h1>
+        <p>{{ t('description') }}</p>
+      </div>
+      <div class="header-actions">
+        <p-button
+          icon="pi pi-refresh"
+          [label]="t('actions.refreshJobs')"
+          severity="secondary"
+          [outlined]="true"
+          size="small"
+          (onClick)="loadJobs()">
+        </p-button>
+        <p-button
+          icon="pi pi-trash"
+          [label]="t('actions.cleanup')"
+          severity="warn"
+          [outlined]="true"
+          size="small"
+          [loading]="cleanupRunning"
+          (onClick)="cleanup()">
+        </p-button>
+      </div>
+    </div>
+
+    <section class="panel search-panel">
+      <div class="search-main-row">
+        <div class="search-box">
+          <i class="pi pi-search"></i>
+          <input
+            pInputText
+            [(ngModel)]="query"
+            [placeholder]="t('search.placeholder')"
+            (keydown.enter)="search()"/>
+        </div>
+        <p-button
+          icon="pi pi-search"
+          [label]="t('actions.search')"
+          [loading]="loadingResults"
+          (onClick)="search()">
+        </p-button>
+        <p-button
+          icon="pi pi-times"
+          [label]="t('actions.reset')"
+          severity="secondary"
+          [outlined]="true"
+          (onClick)="resetSearch()">
+        </p-button>
+      </div>
+
+      <div class="advanced-grid">
+        <div class="field">
+          <label>{{ t('search.contentKind') }}</label>
+          <p-select
+            [options]="contentKindOptions"
+            [(ngModel)]="contentKind"
+            optionLabel="label"
+            optionValue="value"
+            [appendTo]="'body'">
+          </p-select>
+        </div>
+        <div class="field">
+          <label>{{ t('search.formats') }}</label>
+          <p-multiselect
+            [options]="formatOptions"
+            [(ngModel)]="preferredFormats"
+            optionLabel="label"
+            optionValue="value"
+            display="chip"
+            [appendTo]="'body'">
+          </p-multiselect>
+        </div>
+        <div class="field">
+          <label>{{ t('search.maxResults') }}</label>
+          <p-inputnumber [(ngModel)]="maxResults" [min]="1" [max]="100" [showButtons]="true"></p-inputnumber>
+        </div>
+        <div class="field">
+          <label>{{ t('search.confidenceThreshold') }}</label>
+          <p-inputnumber [(ngModel)]="confidenceThreshold" [min]="0" [max]="100" [showButtons]="true"></p-inputnumber>
+        </div>
+        <div class="field toggle-field">
+          <label>{{ t('search.autoFinalize') }}</label>
+          <p-toggleswitch [(ngModel)]="autoFinalize"></p-toggleswitch>
+        </div>
+      </div>
+
+      <div class="advanced-grid secondary-grid">
+        <div class="field">
+          <label>{{ t('search.title') }}</label>
+          <input pInputText [(ngModel)]="title"/>
+        </div>
+        <div class="field">
+          <label>{{ t('search.author') }}</label>
+          <input pInputText [(ngModel)]="author"/>
+        </div>
+        <div class="field">
+          <label>{{ t('search.isbn') }}</label>
+          <input pInputText [(ngModel)]="isbn"/>
+        </div>
+        <div class="field">
+          <label>{{ t('search.seriesName') }}</label>
+          <input pInputText [(ngModel)]="seriesName"/>
+        </div>
+        <div class="field">
+          <label>{{ t('search.seriesNumber') }}</label>
+          <p-inputnumber [(ngModel)]="seriesNumber" [min]="0" [maxFractionDigits]="2"></p-inputnumber>
+        </div>
+        <div class="field direct-url">
+          <label>{{ t('search.directUrl') }}</label>
+          <input pInputText [(ngModel)]="directUrl" placeholder="https://..."/>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel results-panel">
+      <div class="panel-header">
+        <div>
+          <h2>{{ t('results.title') }}</h2>
+          @if (searchId) {
+            <span>{{ t('results.searchId', {id: searchId}) }}</span>
+          }
+        </div>
+        @if (searchError) {
+          <span class="error-text">{{ searchError }}</span>
+        }
+      </div>
+
+      <p-table
+        [value]="results"
+        [loading]="loadingResults"
+        styleClass="p-datatable-sm"
+        [tableStyle]="{'min-width': '1080px'}">
+        <ng-template pTemplate="header">
+          <tr>
+            <th class="score-col">{{ t('results.score') }}</th>
+            <th>{{ t('results.titleCol') }}</th>
+            <th>{{ t('results.source') }}</th>
+            <th>{{ t('results.kind') }}</th>
+            <th>{{ t('results.size') }}</th>
+            <th>{{ t('results.reasons') }}</th>
+            <th class="actions-col">{{ t('results.actions') }}</th>
+          </tr>
+        </ng-template>
+        <ng-template pTemplate="body" let-result>
+          <tr>
+            <td>
+              <p-tag [value]="scoreLabel(result.score)" [severity]="scoreSeverity(result.score)"></p-tag>
+            </td>
+            <td>
+              <div class="result-title">
+                <strong>{{ result.title }}</strong>
+                @if (resultMeta(result)) {
+                  <span>{{ resultMeta(result) }}</span>
+                }
+                @if (result.isbn) {
+                  <small>ISBN {{ result.isbn }}</small>
+                }
+              </div>
+            </td>
+            <td>
+              <span class="source-label">{{ result.sourceName }}</span>
+              @if (result.requiresFlareSolverr) {
+                <span class="flare-badge">FlareSolverr</span>
+              }
+            </td>
+            <td>
+              <div class="kind-stack">
+                <span>{{ result.contentKind }}</span>
+                <small>{{ result.format }} · {{ result.acquisitionType }}</small>
+              </div>
+            </td>
+            <td>{{ formatBytes(result.sizeBytes) }}</td>
+            <td>
+              <span class="score-reasons" [pTooltip]="result.scoreReasons || ''" tooltipPosition="top">
+                {{ result.scoreReasons || '-' }}
+              </span>
+            </td>
+            <td>
+              <p-button
+                icon="pi pi-download"
+                [label]="t('actions.acquire')"
+                size="small"
+                severity="success"
+                [loading]="acquiringResultIds.has(result.id)"
+                [disabled]="acquiringResultIds.has(result.id)"
+                (onClick)="acquire(result)">
+              </p-button>
+            </td>
+          </tr>
+        </ng-template>
+        <ng-template pTemplate="emptymessage">
+          <tr>
+            <td colspan="7" class="empty-message">
+              <i class="pi pi-search"></i>
+              <span>{{ t('results.empty') }}</span>
+            </td>
+          </tr>
+        </ng-template>
+      </p-table>
+    </section>
+
+    <section class="panel jobs-panel">
+      <div class="panel-header">
+        <div>
+          <h2>{{ t('jobs.title') }}</h2>
+          <span>{{ t('jobs.description') }}</span>
+        </div>
+      </div>
+
+      <p-table
+        [value]="jobs"
+        [loading]="loadingJobs"
+        styleClass="p-datatable-sm"
+        [tableStyle]="{'min-width': '980px'}">
+        <ng-template pTemplate="header">
+          <tr>
+            <th class="job-id-col">{{ t('jobs.id') }}</th>
+            <th>{{ t('jobs.status') }}</th>
+            <th>{{ t('jobs.progress') }}</th>
+            <th>{{ t('jobs.confidence') }}</th>
+            <th>{{ t('jobs.paths') }}</th>
+            <th>{{ t('jobs.updated') }}</th>
+            <th class="actions-col">{{ t('jobs.actions') }}</th>
+          </tr>
+        </ng-template>
+        <ng-template pTemplate="body" let-job>
+          <tr [class.active-row]="isActiveJob(job)">
+            <td>#{{ job.id }}</td>
+            <td>
+              <p-tag [value]="statusLabel(job.status)" [severity]="jobSeverity(job.status)"></p-tag>
+              @if (job.errorMessage) {
+                <div class="job-error">{{ job.errorMessage }}</div>
+              }
+            </td>
+            <td>
+              <p-progressbar [value]="job.progressPercent || 0" [showValue]="true"></p-progressbar>
+            </td>
+            <td>{{ scoreLabel(job.confidenceScore) }}</td>
+            <td>
+              <div class="path-stack">
+                @if (job.deliveredFilePath) {
+                  <span [pTooltip]="job.deliveredFilePath">{{ job.deliveredFilePath }}</span>
+                } @else if (job.stagedFilePath) {
+                  <span [pTooltip]="job.stagedFilePath">{{ job.stagedFilePath }}</span>
+                } @else if (job.partFilePath) {
+                  <span [pTooltip]="job.partFilePath">{{ job.partFilePath }}</span>
+                } @else {
+                  <span>-</span>
+                }
+                @if (job.externalTaskType || job.externalTaskId) {
+                  <small>{{ job.externalTaskType || 'external' }} {{ job.externalTaskId || '' }}</small>
+                }
+              </div>
+            </td>
+            <td>{{ (job.updatedAt || job.createdAt) | date:'short' }}</td>
+            <td>
+              <p-button
+                icon="pi pi-play"
+                size="small"
+                severity="info"
+                [rounded]="true"
+                [outlined]="true"
+                [loading]="processingJobIds.has(job.id)"
+                [disabled]="!canProcess(job)"
+                (onClick)="processJob(job)"
+                [pTooltip]="t('actions.process')">
+              </p-button>
+            </td>
+          </tr>
+        </ng-template>
+        <ng-template pTemplate="emptymessage">
+          <tr>
+            <td colspan="7" class="empty-message">
+              <i class="pi pi-list"></i>
+              <span>{{ t('jobs.empty') }}</span>
+            </td>
+          </tr>
+        </ng-template>
+      </p-table>
+    </section>
+  </div>
+</ng-container>

@@ -9,6 +9,7 @@
     "email": "E-Mail",
     "patterns": "Muster",
     "authentication": "OIDC",
+    "downloadSources": "Download Sources",
     "tasks": "Aufgaben",
     "auditLogs": "Audit-Protokolle",
     "opds": "OPDS",

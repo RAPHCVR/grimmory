@@ -18,6 +18,7 @@ import {LibraryMetadataSettingsComponent} from './library-metadata-settings/libr
 import {PageTitleService} from "../../shared/service/page-title.service";
 import {EmailV2Component} from './email-v2/email-v2.component';
 import {TranslocoDirective} from '@jsverse/transloco';
+import {DownloadSourcesComponent} from './download-sources/download-sources.component';
 
 export enum SettingsTab {
   ViewPreferences = 'view',
@@ -30,6 +31,7 @@ export enum SettingsTab {
   LibraryMetadataSettings = 'metadata-library',
   ApplicationSettings = 'application',
   AuthenticationSettings = 'authentication',
+  DownloadSources = 'download-sources',
   OpdsV2 = 'opds',
   Tasks = 'task',
   AuditLogs = 'audit-logs',
@@ -56,6 +58,7 @@ export enum SettingsTab {
     TaskManagementComponent,
     AuditLogsComponent,
     EmailV2Component,
+    DownloadSourcesComponent,
     TranslocoDirective
   ],
   templateUrl: './settings.component.html',

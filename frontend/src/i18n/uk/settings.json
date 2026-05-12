@@ -9,6 +9,7 @@
     "email": "Email",
     "patterns": "Шаблони",
     "authentication": "OIDC",
+    "downloadSources": "Download Sources",
     "tasks": "Завдання",
     "auditLogs": "Журнали аудиту",
     "opds": "OPDS",

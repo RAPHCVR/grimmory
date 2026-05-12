@@ -9,6 +9,7 @@
     "email": "E-pošta",
     "patterns": "Vzorci",
     "authentication": "OIDC",
+    "downloadSources": "Download Sources",
     "tasks": "Opravila",
     "auditLogs": "Dnevniki revizije",
     "opds": "OPDS",

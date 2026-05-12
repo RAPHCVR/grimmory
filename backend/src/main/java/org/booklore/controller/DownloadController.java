@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.booklore.model.dto.request.downloads.DownloadAcquireRequest;
+import org.booklore.model.dto.request.downloads.DownloadResultAcquireRequest;
 import org.booklore.model.dto.request.downloads.DownloadSearchRequest;
 import org.booklore.model.dto.request.downloads.DownloadSourceRequest;
 import org.booklore.model.entity.DownloadJobEntity;
@@ -32,6 +33,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/v1/downloads")
 @RequiredArgsConstructor
+@PreAuthorize("@securityUtil.isAdmin()")
 public class DownloadController {
 
     private final DownloadSourceRepository sourceRepository;
@@ -43,7 +45,6 @@ public class DownloadController {
     @Operation(summary = "List download sources")
     @ApiResponse(responseCode = "200", description = "Download sources returned successfully")
     @GetMapping("/sources")
-    @PreAuthorize("@securityUtil.isAdmin()")
     public List<DownloadSourceResponse> listSources() {
         return sourceRepository.findAll(Sort.by(Sort.Order.asc("priority"), Sort.Order.asc("name")))
                 .stream()
@@ -54,7 +55,6 @@ public class DownloadController {
     @Operation(summary = "Create a download source")
     @ApiResponse(responseCode = "200", description = "Download source created successfully")
     @PostMapping("/sources")
-    @PreAuthorize("@securityUtil.isAdmin()")
     public DownloadSourceResponse createSource(@Parameter(description = "Download source request") @RequestBody @Valid DownloadSourceRequest request) {
         DownloadSourceEntity source = DownloadSourceEntity.builder()
                 .name(request.getName())
@@ -70,7 +70,6 @@ public class DownloadController {
     @Operation(summary = "Update a download source")
     @ApiResponse(responseCode = "200", description = "Download source updated successfully")
     @PutMapping("/sources/{sourceId}")
-    @PreAuthorize("@securityUtil.isAdmin()")
     public DownloadSourceResponse updateSource(@PathVariable Long sourceId,
                                                @Parameter(description = "Download source request") @RequestBody @Valid DownloadSourceRequest request) {
         DownloadSourceEntity source = sourceRepository.findById(sourceId)
@@ -87,7 +86,6 @@ public class DownloadController {
     @Operation(summary = "Search download sources")
     @ApiResponse(responseCode = "200", description = "Search completed")
     @PostMapping("/search")
-    @PreAuthorize("@securityUtil.isAdmin()")
     public DownloadSearchResponse search(@Parameter(description = "Download search request") @RequestBody DownloadSearchRequest request) {
         DownloadSearchEntity search = pipelineManager.search(toCriteria(request));
         List<DownloadResultResponse> results = resultRepository.findAllBySearchIdOrderByScoreDescIdAsc(search.getId())
@@ -106,7 +104,6 @@ public class DownloadController {
     @Operation(summary = "Queue best matching download result")
     @ApiResponse(responseCode = "200", description = "Download job queued")
     @PostMapping("/jobs")
-    @PreAuthorize("@securityUtil.isAdmin()")
     public DownloadJobResponse queueBestMatch(@Parameter(description = "Download acquisition request") @RequestBody DownloadAcquireRequest request) {
         return toJobResponse(pipelineManager.queueBestMatch(
                 toCriteria(request),
@@ -120,7 +117,6 @@ public class DownloadController {
     @Operation(summary = "Acquire best matching result synchronously")
     @ApiResponse(responseCode = "200", description = "Download job processed")
     @PostMapping("/acquire")
-    @PreAuthorize("@securityUtil.isAdmin()")
     public DownloadJobResponse acquireBestMatch(@Parameter(description = "Download acquisition request") @RequestBody DownloadAcquireRequest request) {
         return toJobResponse(pipelineManager.acquireBestMatch(
                 toCriteria(request),
@@ -131,10 +127,37 @@ public class DownloadController {
         ));
     }
 
+    @Operation(summary = "Queue a selected download result")
+    @ApiResponse(responseCode = "200", description = "Selected download job queued")
+    @PostMapping("/results/{resultId}/jobs")
+    public DownloadJobResponse queueResult(@PathVariable Long resultId,
+                                           @Parameter(description = "Selected result acquisition request") @RequestBody DownloadResultAcquireRequest request) {
+        return toJobResponse(pipelineManager.queueResult(
+                resultId,
+                request.getTargetLibraryId(),
+                request.getTargetLibraryPathId(),
+                Boolean.TRUE.equals(request.getAutoFinalize()),
+                request.getConfidenceThreshold() == null ? 90 : request.getConfidenceThreshold()
+        ));
+    }
+
+    @Operation(summary = "Acquire a selected download result synchronously")
+    @ApiResponse(responseCode = "200", description = "Selected download job processed")
+    @PostMapping("/results/{resultId}/acquire")
+    public DownloadJobResponse acquireResult(@PathVariable Long resultId,
+                                             @Parameter(description = "Selected result acquisition request") @RequestBody DownloadResultAcquireRequest request) {
+        return toJobResponse(pipelineManager.acquireResult(
+                resultId,
+                request.getTargetLibraryId(),
+                request.getTargetLibraryPathId(),
+                Boolean.TRUE.equals(request.getAutoFinalize()),
+                request.getConfidenceThreshold() == null ? 90 : request.getConfidenceThreshold()
+        ));
+    }
+
     @Operation(summary = "Process a queued download job")
     @ApiResponse(responseCode = "200", description = "Download job processed")
     @PostMapping("/jobs/{jobId}/process")
-    @PreAuthorize("@securityUtil.isAdmin()")
     public DownloadJobResponse processJob(@PathVariable Long jobId) {
         return toJobResponse(pipelineManager.processQueuedJob(jobId));
     }
@@ -142,7 +165,6 @@ public class DownloadController {
     @Operation(summary = "Get a download job")
     @ApiResponse(responseCode = "200", description = "Download job returned successfully")
     @GetMapping("/jobs/{jobId}")
-    @PreAuthorize("@securityUtil.isAdmin()")
     public DownloadJobResponse getJob(@PathVariable Long jobId) {
         return toJobResponse(jobRepository.findWithSearchAndResultAndSourceById(jobId)
                 .orElseThrow(() -> new IllegalArgumentException("Download job not found: " + jobId)));
@@ -151,7 +173,6 @@ public class DownloadController {
     @Operation(summary = "List download jobs")
     @ApiResponse(responseCode = "200", description = "Download jobs returned successfully")
     @GetMapping("/jobs")
-    @PreAuthorize("@securityUtil.isAdmin()")
     public List<DownloadJobResponse> listJobs(@RequestParam(required = false) DownloadJobStatus status) {
         List<DownloadJobEntity> jobs = status == null
                 ? jobRepository.findAll(Sort.by(Sort.Order.desc("createdAt")))
@@ -162,7 +183,6 @@ public class DownloadController {
     @Operation(summary = "Delete a download source")
     @ApiResponse(responseCode = "204", description = "Download source deleted successfully")
     @DeleteMapping("/sources/{sourceId}")
-    @PreAuthorize("@securityUtil.isAdmin()")
     public ResponseEntity<Void> deleteSource(@PathVariable Long sourceId) {
         sourceRepository.deleteById(sourceId);
         return ResponseEntity.noContent().build();
@@ -171,7 +191,6 @@ public class DownloadController {
     @Operation(summary = "Run download cleanup now")
     @ApiResponse(responseCode = "204", description = "Download cleanup triggered successfully")
     @PostMapping("/cleanup")
-    @PreAuthorize("@securityUtil.isAdmin()")
     public ResponseEntity<Void> cleanupNow() {
         cleanupService.cleanup();
         return ResponseEntity.noContent().build();

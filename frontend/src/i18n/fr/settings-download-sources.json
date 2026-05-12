@@ -1,0 +1,70 @@
+{
+    "title": "Sources de téléchargement",
+    "description": "Configurer les adaptateurs d'acquisition utilisés par le pipeline de téléchargements automatisés.",
+    "sources": {
+        "sectionTitle": "Sources",
+        "sectionDesc": "Ajouter des sources Prowlarr, MangaDex, OPDS, URL directe ou plugin personnalisé."
+    },
+    "actions": {
+        "addSource": "Ajouter une source",
+        "edit": "Modifier",
+        "delete": "Supprimer",
+        "formatJson": "Formater le JSON"
+    },
+    "table": {
+        "name": "Nom",
+        "type": "Type",
+        "status": "Statut",
+        "priority": "Priorité",
+        "flareSolverr": "FlareSolverr",
+        "actions": "Actions"
+    },
+    "status": {
+        "enabled": "Activée",
+        "disabled": "Désactivée",
+        "configured": "Configuré",
+        "notConfigured": "Non configuré"
+    },
+    "dialog": {
+        "createTitle": "Ajouter une source de téléchargement",
+        "editTitle": "Modifier la source de téléchargement"
+    },
+    "form": {
+        "name": "Nom",
+        "type": "Type",
+        "priority": "Priorité",
+        "enabled": "Activée",
+        "credentialsJson": "Credentials JSON",
+        "configJson": "Config JSON"
+    },
+    "flareSolverr": {
+        "label": "Faire passer le HTTP par FlareSolverr",
+        "description": "Stocke un bloc FlareSolverr normalisé dans la configuration pour les adaptateurs qui en ont besoin.",
+        "baseUrl": "URL FlareSolverr"
+    },
+    "types": {
+        "OPDS": "OPDS",
+        "PROWLARR_TORZNAB": "Prowlarr / Torznab",
+        "DIRECT_URL": "URL directe",
+        "MANGADEX": "MangaDex",
+        "CUSTOM_WEB_PLUGIN": "Plugin web personnalisé"
+    },
+    "delete": {
+        "header": "Supprimer la source",
+        "message": "Supprimer la source \"{{name}}\" ?"
+    },
+    "toast": {
+        "loadError": "Impossible de charger les sources de téléchargement.",
+        "created": "Source de téléchargement créée.",
+        "updated": "Source de téléchargement mise à jour.",
+        "saveError": "Impossible d'enregistrer la source de téléchargement.",
+        "deleted": "Source de téléchargement supprimée.",
+        "deleteError": "Impossible de supprimer la source de téléchargement.",
+        "invalidJsonSummary": "JSON invalide",
+        "invalidJsonDetail": "{{label}} doit contenir un JSON valide.",
+        "configObjectRequired": "Config JSON doit être un objet JSON."
+    },
+    "empty": "Aucune source de téléchargement configurée.",
+    "accessRestricted": "Accès administrateur requis",
+    "accessDenied": "La gestion des sources de téléchargement est réservée aux administrateurs de l'instance."
+}

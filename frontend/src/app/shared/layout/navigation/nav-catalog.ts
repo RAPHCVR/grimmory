@@ -52,6 +52,10 @@ function canAccessBookdrop(permissions: ShellNavPermissions): boolean {
   return !!permissions.admin || !!permissions.canAccessBookdrop;
 }
 
+function isAdmin(permissions: ShellNavPermissions): boolean {
+  return !!permissions.admin;
+}
+
 function canEditMetadata(permissions: ShellNavPermissions): boolean {
   return !!permissions.admin || !!permissions.canEditMetadata;
 }
@@ -87,6 +91,13 @@ const HOME_PAGE_DEFINITIONS: readonly PageDefinition[] = [
     icon: 'pi-users',
     routerLink: ['/authors'],
     type: 'authors',
+  },
+  {
+    id: 'downloads',
+    labelKey: 'layout.menu.downloads',
+    icon: 'pi-download',
+    routerLink: ['/downloads'],
+    isVisible: isAdmin,
   },
   {
     id: 'notebook',

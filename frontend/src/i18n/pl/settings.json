@@ -9,6 +9,7 @@
     "email": "E-mail",
     "patterns": "Wzorce",
     "authentication": "Uwierzytelnianie",
+    "downloadSources": "Download Sources",
     "tasks": "Zadania",
     "auditLogs": "Dziennik audytu",
     "opds": "OPDS",

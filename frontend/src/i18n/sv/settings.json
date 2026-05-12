@@ -9,6 +9,7 @@
     "email": "E-post",
     "patterns": "Mönster",
     "authentication": "OIDC",
+    "downloadSources": "Download Sources",
     "tasks": "Uppgifter",
     "auditLogs": "Granskningsloggar",
     "opds": "OPDS",

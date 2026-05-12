@@ -9,6 +9,7 @@
     "email": "メール",
     "patterns": "パターン",
     "authentication": "認証",
+    "downloadSources": "Download Sources",
     "tasks": "タスク",
     "auditLogs": "監査ログ",
     "opds": "OPDS",

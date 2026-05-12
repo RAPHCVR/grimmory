@@ -9,6 +9,7 @@
     "email": "Email",
     "patterns": "Patterns",
     "authentication": "OIDC",
+    "downloadSources": "Download Sources",
     "tasks": "Tasks",
     "auditLogs": "Audit Logs",
     "opds": "OPDS",

@@ -9,6 +9,7 @@
     "email": "邮件",
     "patterns": "命名模式",
     "authentication": "认证",
+    "downloadSources": "Download Sources",
     "tasks": "任务",
     "auditLogs": "审计日志",
     "opds": "OPDS",

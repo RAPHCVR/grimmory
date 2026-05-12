@@ -1,0 +1,80 @@
+{
+    "title": "Téléchargements",
+    "description": "Rechercher dans les sources configurées, classer les résultats et envoyer les acquisitions vers Bookdrop.",
+    "actions": {
+        "search": "Rechercher",
+        "reset": "Réinitialiser",
+        "acquire": "Acquérir",
+        "refreshJobs": "Actualiser les jobs",
+        "cleanup": "Nettoyer",
+        "process": "Traiter le job"
+    },
+    "search": {
+        "placeholder": "Rechercher par titre, auteur, ISBN, série, ou coller une URL directe ci-dessous",
+        "contentKind": "Contenu",
+        "formats": "Formats",
+        "maxResults": "Résultats max",
+        "confidenceThreshold": "Confiance",
+        "autoFinalize": "Finalisation auto",
+        "title": "Titre",
+        "author": "Auteur",
+        "isbn": "ISBN",
+        "seriesName": "Série",
+        "seriesNumber": "Numéro",
+        "directUrl": "URL directe"
+    },
+    "results": {
+        "title": "Résultats",
+        "searchId": "Recherche #{{id}}",
+        "score": "Score",
+        "titleCol": "Titre",
+        "source": "Source",
+        "kind": "Type",
+        "size": "Taille",
+        "reasons": "Raisons du score",
+        "actions": "Actions",
+        "empty": "Lance une recherche pour afficher les candidats classés."
+    },
+    "jobs": {
+        "title": "Jobs",
+        "description": "Jobs d'acquisition actifs et récents.",
+        "id": "ID",
+        "status": "Statut",
+        "progress": "Progression",
+        "confidence": "Confiance",
+        "paths": "Chemins",
+        "updated": "Mis à jour",
+        "actions": "Actions",
+        "empty": "Aucun job d'acquisition pour le moment."
+    },
+    "statuses": {
+        "QUEUED": "En file",
+        "SEARCHING": "Recherche",
+        "SCORING": "Scoring",
+        "DOWNLOADING": "Téléchargement",
+        "VALIDATING": "Validation",
+        "STAGED": "Stagé",
+        "DELIVERING": "Livraison",
+        "PENDING_REVIEW": "Revue manuelle",
+        "AUTO_FINALIZING": "Finalisation auto",
+        "COMPLETED": "Terminé",
+        "FAILED": "Échec",
+        "CANCELLED": "Annulé"
+    },
+    "toast": {
+        "searchRequiredSummary": "Recherche requise",
+        "searchRequiredDetail": "Renseigne d'abord une requête, un titre, un ISBN ou une URL directe.",
+        "noResultsSummary": "Aucun résultat",
+        "noResultsDetail": "Aucune source configurée n'a retourné de candidat.",
+        "searchError": "La recherche a échoué.",
+        "acquireError": "L'acquisition a échoué.",
+        "processError": "Le traitement du job a échoué.",
+        "cleanupDone": "Nettoyage des téléchargements terminé.",
+        "cleanupError": "Le nettoyage des téléchargements a échoué.",
+        "jobQueuedSummary": "Job en file",
+        "jobQueuedDetail": "Le job #{{id}} a été ajouté à la file.",
+        "jobFinishedSummary": "Job terminé",
+        "jobFinishedDetail": "Le job #{{id}} s'est terminé avec le statut {{status}}.",
+        "jobFailedSummary": "Job en échec"
+    }
+}

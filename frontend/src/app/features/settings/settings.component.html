@@ -40,6 +40,9 @@
               <p-tab [value]="SettingsTab.AuthenticationSettings">
                 <i class="pi pi-lock"></i> {{ t('authentication') }}
               </p-tab>
+              <p-tab [value]="SettingsTab.DownloadSources">
+                <i class="pi pi-download"></i> {{ t('downloadSources') }}
+              </p-tab>
             }
             @if (currentUser.permissions.admin || currentUser.permissions.canAccessTaskManager) {
               <p-tab [value]="SettingsTab.Tasks">
@@ -117,6 +120,11 @@
                 @if (visitedTabs().has(SettingsTab.AuthenticationSettings)) {
                   <app-authentication-settings></app-authentication-settings>
                 }
+              </p-tabpanel>
+              <p-tabpanel [value]="SettingsTab.DownloadSources">
+                <ng-template #content>
+                  <app-download-sources></app-download-sources>
+                </ng-template>
               </p-tabpanel>
             }
 

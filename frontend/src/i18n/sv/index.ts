@@ -18,6 +18,7 @@ import settingsAuditLogs from './settings-audit-logs.json';
 import settingsAuth from './settings-auth.json';
 import settingsDevice from './settings-device.json';
 import settingsProfile from './settings-profile.json';
+import settingsDownloadSources from './settings-download-sources.json';
 import app from './app.json';
 import shared from './shared.json';
 import layout from './layout.json';
@@ -34,6 +35,7 @@ import statsLibrary from './stats-library.json';
 import statsUser from './stats-user.json';
 import magicShelf from './magic-shelf.json';
 import seriesBrowser from './series-browser.json';
+import downloads from './downloads.json';
 
-const translations: Translation = {common, auth, nav, dashboard, settings, settingsEmail, settingsReader, settingsView, settingsMeta, settingsLibMeta, settingsApp, settingsUsers, settingsNaming, settingsOpds, settingsTasks, settingsAuditLogs, settingsAuth, settingsDevice, settingsProfile, app, shared, layout, libraryCreator, bookdrop, metadata, notebook, book, readerAudiobook, readerCbx, readerEbook, readerPdf, statsLibrary, statsUser, magicShelf, seriesBrowser};
+const translations: Translation = {common, auth, nav, dashboard, settings, settingsEmail, settingsReader, settingsView, settingsMeta, settingsLibMeta, settingsApp, settingsUsers, settingsNaming, settingsOpds, settingsTasks, settingsAuditLogs, settingsAuth, settingsDevice, settingsProfile, settingsDownloadSources, app, shared, layout, libraryCreator, bookdrop, metadata, notebook, book, readerAudiobook, readerCbx, readerEbook, readerPdf, statsLibrary, statsUser, magicShelf, seriesBrowser, downloads};
 export default translations;

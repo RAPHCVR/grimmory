@@ -14,6 +14,7 @@ import {BookdropGuard} from './core/security/guards/bookdrop.guard';
 import {LibraryStatsGuard} from './core/security/guards/library-stats.guard';
 import {UserStatsGuard} from './core/security/guards/user-stats.guard';
 import {EditMetadataGuard} from './core/security/guards/edit-metdata.guard';
+import {AdminGuard} from './core/security/guards/admin.guard';
 
 const loadBookBrowserComponent = () =>
   import('./features/book/components/book-browser/book-browser.component').then(m => m.BookBrowserComponent);
@@ -45,6 +46,7 @@ export const routes: Routes = [
       {path: 'series/:seriesName', loadComponent: () => import('./features/book/components/series-page/series-page.component').then(m => m.SeriesPageComponent), canActivate: [AuthGuard]},
       {path: 'authors', loadComponent: () => import('./features/author-browser/components/author-browser/author-browser.component').then(m => m.AuthorBrowserComponent), canActivate: [AuthGuard]},
       {path: 'author/:authorId', loadComponent: () => import('./features/author-browser/components/author-detail/author-detail.component').then(m => m.AuthorDetailComponent), canActivate: [AuthGuard]},
+      {path: 'downloads', loadComponent: () => import('./features/downloads/downloads.component').then(m => m.DownloadsComponent), canActivate: [AuthGuard, AdminGuard]},
       {path: 'magic-shelf/:magicShelfId/books', loadComponent: loadBookBrowserComponent, canActivate: [AuthGuard]},
       {path: 'book/:bookId', loadComponent: () => import('./features/metadata/component/book-metadata-center/book-metadata-center.component').then(m => m.BookMetadataCenterComponent), canActivate: [AuthGuard]},
       {path: 'bookdrop', loadComponent: () => import('./features/bookdrop/component/bookdrop-file-review/bookdrop-file-review.component').then(m => m.BookdropFileReviewComponent), canActivate: [BookdropGuard]},

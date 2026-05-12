@@ -9,6 +9,7 @@
     "email": "E-mail",
     "patterns": "Modèles",
     "authentication": "Authentification",
+    "downloadSources": "Sources de téléchargement",
     "tasks": "Tâches",
     "auditLogs": "Journaux d'audit",
     "opds": "OPDS",

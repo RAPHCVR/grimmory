@@ -1,0 +1,80 @@
+{
+  "title": "Downloads",
+  "description": "Search configured sources, rank results, and stage acquisitions through Bookdrop.",
+  "actions": {
+    "search": "Search",
+    "reset": "Reset",
+    "acquire": "Acquire",
+    "refreshJobs": "Refresh Jobs",
+    "cleanup": "Cleanup",
+    "process": "Process job"
+  },
+  "search": {
+    "placeholder": "Search by title, author, ISBN, series, or paste a direct URL below",
+    "contentKind": "Content",
+    "formats": "Formats",
+    "maxResults": "Max results",
+    "confidenceThreshold": "Confidence",
+    "autoFinalize": "Auto-finalize",
+    "title": "Title",
+    "author": "Author",
+    "isbn": "ISBN",
+    "seriesName": "Series",
+    "seriesNumber": "Number",
+    "directUrl": "Direct URL"
+  },
+  "results": {
+    "title": "Results",
+    "searchId": "Search #{{id}}",
+    "score": "Score",
+    "titleCol": "Title",
+    "source": "Source",
+    "kind": "Kind",
+    "size": "Size",
+    "reasons": "Score reasons",
+    "actions": "Actions",
+    "empty": "Run a search to display scored acquisition candidates."
+  },
+  "jobs": {
+    "title": "Jobs",
+    "description": "Active and recent acquisition jobs.",
+    "id": "ID",
+    "status": "Status",
+    "progress": "Progress",
+    "confidence": "Confidence",
+    "paths": "Paths",
+    "updated": "Updated",
+    "actions": "Actions",
+    "empty": "No acquisition job yet."
+  },
+  "statuses": {
+    "QUEUED": "Queued",
+    "SEARCHING": "Searching",
+    "SCORING": "Scoring",
+    "DOWNLOADING": "Downloading",
+    "VALIDATING": "Validating",
+    "STAGED": "Staged",
+    "DELIVERING": "Delivering",
+    "PENDING_REVIEW": "Pending Review",
+    "AUTO_FINALIZING": "Auto-finalizing",
+    "COMPLETED": "Completed",
+    "FAILED": "Failed",
+    "CANCELLED": "Cancelled"
+  },
+  "toast": {
+    "searchRequiredSummary": "Search required",
+    "searchRequiredDetail": "Enter a query, title, ISBN, or direct URL first.",
+    "noResultsSummary": "No result",
+    "noResultsDetail": "No configured source returned an acquisition candidate.",
+    "searchError": "Search failed.",
+    "acquireError": "Acquisition failed.",
+    "processError": "Job processing failed.",
+    "cleanupDone": "Download cleanup completed.",
+    "cleanupError": "Download cleanup failed.",
+    "jobQueuedSummary": "Job queued",
+    "jobQueuedDetail": "Job #{{id}} has been queued.",
+    "jobFinishedSummary": "Job finished",
+    "jobFinishedDetail": "Job #{{id}} ended with status {{status}}.",
+    "jobFailedSummary": "Job failed"
+  }
+}

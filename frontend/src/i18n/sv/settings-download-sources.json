@@ -1,0 +1,70 @@
+{
+  "title": "Download Sources",
+  "description": "Configure acquisition adapters used by the automated downloads pipeline.",
+  "sources": {
+    "sectionTitle": "Sources",
+    "sectionDesc": "Add Prowlarr, MangaDex, OPDS, direct URL, or custom plugin sources."
+  },
+  "actions": {
+    "addSource": "Add Source",
+    "edit": "Edit",
+    "delete": "Delete",
+    "formatJson": "Format JSON"
+  },
+  "table": {
+    "name": "Name",
+    "type": "Type",
+    "status": "Status",
+    "priority": "Priority",
+    "flareSolverr": "FlareSolverr",
+    "actions": "Actions"
+  },
+  "status": {
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "configured": "Configured",
+    "notConfigured": "Not configured"
+  },
+  "dialog": {
+    "createTitle": "Add Download Source",
+    "editTitle": "Edit Download Source"
+  },
+  "form": {
+    "name": "Name",
+    "type": "Type",
+    "priority": "Priority",
+    "enabled": "Enabled",
+    "credentialsJson": "Credentials JSON",
+    "configJson": "Config JSON"
+  },
+  "flareSolverr": {
+    "label": "Route HTTP through FlareSolverr",
+    "description": "Stores a normalized FlareSolverr block in the source config for adapters that need it.",
+    "baseUrl": "FlareSolverr URL"
+  },
+  "types": {
+    "OPDS": "OPDS",
+    "PROWLARR_TORZNAB": "Prowlarr / Torznab",
+    "DIRECT_URL": "Direct URL",
+    "MANGADEX": "MangaDex",
+    "CUSTOM_WEB_PLUGIN": "Custom Web Plugin"
+  },
+  "delete": {
+    "header": "Delete source",
+    "message": "Delete source \"{{name}}\"?"
+  },
+  "toast": {
+    "loadError": "Unable to load download sources.",
+    "created": "Download source created.",
+    "updated": "Download source updated.",
+    "saveError": "Unable to save download source.",
+    "deleted": "Download source deleted.",
+    "deleteError": "Unable to delete download source.",
+    "invalidJsonSummary": "Invalid JSON",
+    "invalidJsonDetail": "{{label}} must contain valid JSON.",
+    "configObjectRequired": "Config JSON must be a JSON object."
+  },
+  "empty": "No download source configured yet.",
+  "accessRestricted": "Admin access required",
+  "accessDenied": "Download source management is restricted to instance administrators."
+}

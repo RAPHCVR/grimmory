@@ -9,6 +9,7 @@
     "email": "E-mail",
     "patterns": "Vzory",
     "authentication": "OIDC",
+    "downloadSources": "Download Sources",
     "tasks": "Úlohy",
     "auditLogs": "Auditné záznamy",
     "opds": "OPDS",
