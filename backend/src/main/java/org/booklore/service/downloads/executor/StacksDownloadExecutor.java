@@ -22,6 +22,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -41,14 +42,18 @@ public class StacksDownloadExecutor implements DownloadExecutor {
     private static final int DEFAULT_REQUEST_TIMEOUT_SECONDS = 30;
     private static final int DEFAULT_POLL_SECONDS = 10;
     private static final int DEFAULT_TIMEOUT_MINUTES = 180;
+    private static final String DEFAULT_DOWNLOAD_ENDPOINT = "/api/queue/add";
+    private static final String DEFAULT_STATUS_ENDPOINT = "/api/status";
     private static final Set<String> DEFAULT_COMPLETED_STATUSES = Set.of("completed", "complete", "finished", "done", "success", "succeeded", "downloaded");
     private static final Set<String> DEFAULT_FAILED_STATUSES = Set.of("failed", "error", "cancelled", "canceled", "aborted");
     private static final List<String> TASK_ID_FIELDS = List.of("taskId", "task_id", "downloadId", "download_id", "id", "uuid", "jobId", "job_id");
     private static final List<String> STATUS_URL_FIELDS = List.of("statusUrl", "status_url", "links.status", "status.href");
     private static final List<String> STATUS_FIELDS = List.of("status", "state", "task.status", "download.status");
-    private static final List<String> PROGRESS_FIELDS = List.of("progressPercent", "progress_percent", "percent", "percentage", "progress", "download.progress");
-    private static final List<String> FILE_PATH_FIELDS = List.of("filePath", "file_path", "outputPath", "output_path", "localPath", "local_path", "path", "downloadedFile", "downloaded_file", "result.path", "file.path");
+    private static final List<String> PROGRESS_FIELDS = List.of("progressPercent", "progress_percent", "percent", "percentage", "progress.percent", "progress", "download.progress");
+    private static final List<String> FILE_PATH_FIELDS = List.of("filePath", "file_path", "filepath", "outputPath", "output_path", "localPath", "local_path", "path", "downloadedFile", "downloaded_file", "result.path", "file.path");
     private static final List<String> ERROR_FIELDS = List.of("error", "errorMessage", "error_message", "message", "reason");
+    private static final List<String> STACKS_STATUS_ARRAYS = List.of("current_downloads", "active", "queue", "queued", "recent_history", "history");
+    private static final List<String> DEFAULT_REMOTE_DOWNLOAD_ROOTS = List.of("/opt/stacks/download", "/bookdrop");
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
@@ -75,7 +80,7 @@ public class StacksDownloadExecutor implements DownloadExecutor {
         SubmittedStacksTask submitted = submitTask(config, request, externalIdentifier);
         saveExternalTask(request.getJob(), firstNonBlank(submitted.taskId(), submitted.statusUrl()));
 
-        StacksStatus initialStatus = toStatus(submitted.responseBody());
+        StacksStatus initialStatus = toStatus(submitted.responseBody(), externalIdentifier);
         if (isComplete(initialStatus, config)) {
             Path completed = resolveCompletedFile(initialStatus, config, request);
             if (progressSink != null) {
@@ -87,12 +92,12 @@ public class StacksDownloadExecutor implements DownloadExecutor {
             throw new DownloadSourceException("Stacks download failed: " + firstNonBlank(initialStatus.errorMessage(), initialStatus.status(), "unknown error"));
         }
 
-        URI statusUri = statusUri(config, submitted);
+        URI statusUri = statusUri(config, submitted, externalIdentifier);
         Instant deadline = Instant.now().plus(Duration.ofMinutes(config.timeoutMinutes()));
         StacksStatus lastStatus = initialStatus;
         int lastProgress = 1;
         while (Instant.now().isBefore(deadline)) {
-            lastStatus = fetchStatus(config, statusUri);
+            lastStatus = fetchStatus(config, statusUri, externalIdentifier);
             Integer progress = lastStatus.progressPercent();
             if (progress != null && progressSink != null) {
                 lastProgress = Math.max(lastProgress, Math.min(99, Math.max(1, progress)));
@@ -150,9 +155,13 @@ public class StacksDownloadExecutor implements DownloadExecutor {
             }
 
             JsonNode body = parseJson(response.body());
-            String taskId = firstText(body, TASK_ID_FIELDS);
+            if (body.path("success").isBoolean() && !body.path("success").asBoolean()) {
+                throw new DownloadSourceException("Stacks submit rejected the download: " + firstNonBlank(firstText(body, ERROR_FIELDS), body.path("message").asText(null), "unknown error"));
+            }
+
+            String taskId = firstNonBlank(firstText(body, TASK_ID_FIELDS), body.path("md5").asText(null), externalIdentifier);
             String statusUrl = firstText(body, STATUS_URL_FIELDS);
-            if (taskId == null && statusUrl == null && !isComplete(toStatus(body), config)) {
+            if (taskId == null && statusUrl == null && !isComplete(toStatus(body, externalIdentifier), config)) {
                 throw new DownloadSourceException("Stacks submit response did not expose a task id or status URL");
             }
             return new SubmittedStacksTask(taskId, statusUrl, body);
@@ -166,7 +175,7 @@ public class StacksDownloadExecutor implements DownloadExecutor {
         }
     }
 
-    private StacksStatus fetchStatus(StacksConfig config, URI statusUri) {
+    private StacksStatus fetchStatus(StacksConfig config, URI statusUri, String externalIdentifier) {
         try {
             HttpRequest.Builder builder = HttpRequest.newBuilder(statusUri)
                     .timeout(Duration.ofSeconds(config.requestTimeoutSeconds()))
@@ -177,7 +186,7 @@ public class StacksDownloadExecutor implements DownloadExecutor {
             if (response.statusCode() < 200 || response.statusCode() > 299) {
                 throw new DownloadSourceException("Stacks status failed with HTTP status " + response.statusCode() + ": " + response.body());
             }
-            return toStatus(parseJson(response.body()));
+            return toStatus(parseJson(response.body()), externalIdentifier);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new DownloadSourceException("Stacks status polling interrupted", e);
@@ -188,20 +197,32 @@ public class StacksDownloadExecutor implements DownloadExecutor {
         }
     }
 
-    private URI statusUri(StacksConfig config, SubmittedStacksTask submitted) {
+    private URI statusUri(StacksConfig config, SubmittedStacksTask submitted, String externalIdentifier) {
         String statusUrl = submitted.statusUrl();
         if (statusUrl != null && !statusUrl.isBlank()) {
             return config.resolveUrl(statusUrl);
         }
-        if (submitted.taskId() == null || submitted.taskId().isBlank()) {
-            throw new DownloadSourceException("Stacks did not return a task id to poll");
+        String template = config.statusUrlTemplate();
+        String taskId = firstNonBlank(submitted.taskId(), externalIdentifier);
+        if (template.contains("{taskId}") || template.contains("{id}") || template.contains("{md5}")) {
+            if (taskId == null || taskId.isBlank()) {
+                throw new DownloadSourceException("Stacks did not return a task id to poll");
+            }
+            return config.resolveUrl(template
+                    .replace("{taskId}", taskId)
+                    .replace("{id}", taskId)
+                    .replace("{md5}", externalIdentifier == null ? taskId : externalIdentifier));
         }
-        return config.resolveUrl(config.statusUrlTemplate().replace("{taskId}", submitted.taskId()).replace("{id}", submitted.taskId()));
+        return config.resolveUrl(template);
     }
 
-    private StacksStatus toStatus(JsonNode root) {
+    private StacksStatus toStatus(JsonNode root, String externalIdentifier) {
         if (root == null || root.isMissingNode() || root.isNull()) {
             return new StacksStatus(null, null, null, null, root);
+        }
+        StacksStatus nativeStatus = stacksNativeStatus(root, externalIdentifier);
+        if (nativeStatus != null) {
+            return nativeStatus;
         }
         return new StacksStatus(
                 firstText(root, STATUS_FIELDS),
@@ -235,11 +256,8 @@ public class StacksDownloadExecutor implements DownloadExecutor {
         String returnedPath = status.filePath();
         if (returnedPath != null && !returnedPath.isBlank()) {
             Path candidate = localCandidateFor(returnedPath, config, request);
-            if (!isSameOrChild(candidate, stagingDir)) {
-                throw new DownloadSourceException("Stacks completed outside the BookLore staging directory: " + candidate);
-            }
             if (Files.exists(candidate)) {
-                return waitForStableFile(candidate);
+                return waitForStableFile(moveIntoStagingIfNeeded(candidate, stagingDir));
             }
         }
 
@@ -304,11 +322,57 @@ public class StacksDownloadExecutor implements DownloadExecutor {
         if (returnedPath.startsWith("file:")) {
             return Path.of(URI.create(returnedPath)).toAbsolutePath().normalize();
         }
+        String localRoot = config.resolveLocalDownloadRoot(request.getStagingDir());
+        for (String downloadRoot : config.remoteDownloadRoots()) {
+            String normalizedRemoteRoot = normalizePathText(downloadRoot);
+            if (normalizedRemoteRoot != null && returnedNormalized.startsWith(normalizedRemoteRoot)) {
+                String relative = returnedNormalized.substring(normalizedRemoteRoot.length());
+                while (relative.startsWith("/")) {
+                    relative = relative.substring(1);
+                }
+                return Path.of(localRoot).resolve(relative).toAbsolutePath().normalize();
+            }
+        }
         Path candidate = Path.of(returnedPath);
         if (!candidate.isAbsolute()) {
             candidate = request.getStagingDir().resolve(candidate);
         }
         return candidate.toAbsolutePath().normalize();
+    }
+
+    private Path moveIntoStagingIfNeeded(Path source, Path stagingDir) {
+        Path normalizedSource = source.toAbsolutePath().normalize();
+        if (isSameOrChild(normalizedSource, stagingDir)) {
+            return normalizedSource;
+        }
+        try {
+            Files.createDirectories(stagingDir);
+            Path target = uniqueTarget(stagingDir, normalizedSource.getFileName().toString());
+            return Files.move(normalizedSource, target, StandardCopyOption.REPLACE_EXISTING).toAbsolutePath().normalize();
+        } catch (IOException e) {
+            throw new DownloadSourceException("Failed to move Stacks completed file into staging: " + e.getMessage(), e);
+        }
+    }
+
+    private Path uniqueTarget(Path directory, String fileName) {
+        Path target = directory.resolve(fileName);
+        if (Files.notExists(target)) {
+            return target;
+        }
+        String baseName = fileName;
+        String extension = "";
+        int dot = fileName.lastIndexOf('.');
+        if (dot > 0) {
+            baseName = fileName.substring(0, dot);
+            extension = fileName.substring(dot);
+        }
+        for (int i = 1; i < 1000; i++) {
+            Path candidate = directory.resolve(baseName + "-" + i + extension);
+            if (Files.notExists(candidate)) {
+                return candidate;
+            }
+        }
+        throw new DownloadSourceException("Could not allocate a staging filename for Stacks output: " + fileName);
     }
 
     private String externalIdentifier(NormalizedDownloadResult result) {
@@ -353,17 +417,17 @@ public class StacksDownloadExecutor implements DownloadExecutor {
                 node.path("downloadEndpointUrl").asText(null),
                 configReader.firstText(request.getSource(), "stacksApiUrl", null)
         );
-        String downloadEndpoint = blankToNull(node.path("downloadEndpoint").asText("/api/download"));
+        String downloadEndpoint = blankToNull(node.path("downloadEndpoint").asText(DEFAULT_DOWNLOAD_ENDPOINT));
         URI submitUri = resolveSubmitUri(baseUrl, apiUrl, downloadEndpoint);
         String statusUrlTemplate = firstNonBlank(
                 node.path("statusUrlTemplate").asText(null),
                 node.path("statusEndpointUrl").asText(null),
-                submitUri.toString() + "/{taskId}"
+                baseUrl == null || baseUrl.isBlank() ? submitUri.toString() + "/{taskId}" : trimTrailingSlash(baseUrl) + DEFAULT_STATUS_ENDPOINT
         );
 
         String apiKey = firstNonBlank(node.path("apiKey").asText(null), configReader.firstText(request.getSource(), "stacksApiKey", null));
-        String apiKeyHeader = blankToNull(node.path("apiKeyHeader").asText(null));
-        String authorizationScheme = blankToNull(node.path("authorizationScheme").asText(apiKeyHeader == null ? "Bearer" : null));
+        String apiKeyHeader = blankToNull(node.path("apiKeyHeader").asText("X-API-Key"));
+        String authorizationScheme = blankToNull(node.path("authorizationScheme").asText(null));
         String username = blankToNull(node.path("username").asText(null));
         String password = blankToNull(node.path("password").asText(null));
         int requestTimeoutSeconds = Math.max(3, node.path("requestTimeoutSeconds").asInt(DEFAULT_REQUEST_TIMEOUT_SECONDS));
@@ -374,6 +438,11 @@ public class StacksDownloadExecutor implements DownloadExecutor {
                 node.path("stagingPath").asText(null),
                 node.path("outputDir").asText(null),
                 "{stagingDir}"
+        );
+        String localDownloadRoot = firstNonBlank(
+                node.path("localDownloadRoot").asText(null),
+                node.path("localStacksDownloadRoot").asText(null),
+                "{bookdrop}"
         );
 
         return new StacksConfig(
@@ -388,6 +457,8 @@ public class StacksDownloadExecutor implements DownloadExecutor {
                 pollIntervalSeconds,
                 timeoutMinutes,
                 remoteStagingPath,
+                stringList(node.path("remoteDownloadRoots"), DEFAULT_REMOTE_DOWNLOAD_ROOTS),
+                localDownloadRoot,
                 statusList(node.path("completedStatuses"), DEFAULT_COMPLETED_STATUSES),
                 statusList(node.path("failedStatuses"), DEFAULT_FAILED_STATUSES)
         );
@@ -450,6 +521,65 @@ public class StacksDownloadExecutor implements DownloadExecutor {
         return null;
     }
 
+    private StacksStatus stacksNativeStatus(JsonNode root, String externalIdentifier) {
+        if (externalIdentifier == null || externalIdentifier.isBlank()) {
+            return null;
+        }
+        String normalizedIdentifier = externalIdentifier.trim().toLowerCase(Locale.ROOT);
+
+        JsonNode current = root.path("current");
+        if (current.isObject() && sameIdentifier(current, normalizedIdentifier)) {
+            return statusFromNativeItem(current, firstNonBlank(firstText(current, STATUS_FIELDS), "downloading"), false);
+        }
+
+        for (String field : STACKS_STATUS_ARRAYS) {
+            JsonNode array = root.path(field);
+            if (!array.isArray()) {
+                continue;
+            }
+            for (JsonNode item : array) {
+                if (!sameIdentifier(item, normalizedIdentifier)) {
+                    continue;
+                }
+                String defaultStatus = switch (field) {
+                    case "current_downloads", "active" -> "downloading";
+                    case "recent_history", "history" -> item.path("success").asBoolean(false) ? "completed" : "failed";
+                    default -> firstNonBlank(item.path("status").asText(null), "queued");
+                };
+                return statusFromNativeItem(item, defaultStatus, "recent_history".equals(field) || "history".equals(field));
+            }
+        }
+
+        if (root.path("success").asBoolean(false) && sameIdentifier(root, normalizedIdentifier)) {
+            return statusFromNativeItem(root, firstNonBlank(firstText(root, STATUS_FIELDS), "queued"), false);
+        }
+        return null;
+    }
+
+    private boolean sameIdentifier(JsonNode item, String normalizedIdentifier) {
+        for (String field : List.of("md5", "id", "hash", "externalId", "external_id")) {
+            String value = item.path(field).asText(null);
+            if (value != null && value.trim().equalsIgnoreCase(normalizedIdentifier)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private StacksStatus statusFromNativeItem(JsonNode item, String defaultStatus, boolean successMeansFinal) {
+        String status = firstNonBlank(firstText(item, STATUS_FIELDS), defaultStatus);
+        if (successMeansFinal && item.path("success").isBoolean()) {
+            status = item.path("success").asBoolean() ? "completed" : "failed";
+        }
+        return new StacksStatus(
+                status,
+                firstProgress(item),
+                firstText(item, FILE_PATH_FIELDS),
+                firstText(item, ERROR_FIELDS),
+                item
+        );
+    }
+
     private Integer clampProgress(double value) {
         return (int) Math.max(0, Math.min(100, Math.round(value)));
     }
@@ -480,6 +610,20 @@ public class StacksDownloadExecutor implements DownloadExecutor {
             }
         }
         return values.isEmpty() ? List.copyOf(defaults) : List.copyOf(values);
+    }
+
+    private List<String> stringList(JsonNode node, List<String> defaults) {
+        if (!node.isArray()) {
+            return defaults;
+        }
+        List<String> values = new ArrayList<>();
+        for (JsonNode item : node) {
+            String value = blankToNull(item.asText(null));
+            if (value != null) {
+                values.add(value);
+            }
+        }
+        return values.isEmpty() ? defaults : List.copyOf(values);
     }
 
     private boolean isSameOrChild(Path candidate, Path parent) {
@@ -581,6 +725,8 @@ public class StacksDownloadExecutor implements DownloadExecutor {
                                 int pollIntervalSeconds,
                                 int timeoutMinutes,
                                 String remoteStagingPath,
+                                List<String> remoteDownloadRoots,
+                                String localDownloadRoot,
                                 List<String> completedStatuses,
                                 List<String> failedStatuses) {
 
@@ -597,6 +743,19 @@ public class StacksDownloadExecutor implements DownloadExecutor {
             return template
                     .replace("{stagingDir}", stagingDir.toAbsolutePath().toString())
                     .replace("{jobId}", String.valueOf(jobId));
+        }
+
+        String resolveLocalDownloadRoot(Path stagingDir) {
+            Path bookdrop = stagingDir.toAbsolutePath().normalize();
+            if (bookdrop.getParent() != null && ".downloads".equals(bookdrop.getParent().getFileName().toString()) && bookdrop.getParent().getParent() != null) {
+                bookdrop = bookdrop.getParent().getParent();
+            } else if (bookdrop.getParent() != null) {
+                bookdrop = bookdrop.getParent();
+            }
+            String template = localDownloadRoot == null || localDownloadRoot.isBlank() ? "{bookdrop}" : localDownloadRoot;
+            return template
+                    .replace("{bookdrop}", bookdrop.toString())
+                    .replace("{stagingDir}", stagingDir.toAbsolutePath().normalize().toString());
         }
     }
 }

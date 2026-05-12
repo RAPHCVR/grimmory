@@ -312,10 +312,7 @@ export class DownloadSourcesComponent implements OnInit {
           timeoutSeconds: 20
         };
       case 'ANNAS_ARCHIVE_API':
-        return {
-          baseUrl: '',
-          apiKey: ''
-        };
+        return {};
       default:
         return {};
     }
@@ -371,31 +368,38 @@ export class DownloadSourcesComponent implements OnInit {
       case 'ANNAS_ARCHIVE_API':
         return {
           annasArchiveApi: {
+            baseUrl: 'https://annas-archive.gl',
+            fallbackBaseUrls: [
+              'https://annas-archive.gd',
+              'https://annas-archive.pk',
+              'https://annas-archive.li'
+            ],
+            searchPath: '/search',
             acquisitionType: 'EXTERNAL_STACKS',
             queryParam: 'q',
             formatParam: 'ext',
-            limitParam: 'limit',
             defaultFormat: 'epub',
-            timeoutSeconds: 30,
             maxResults: 50,
-            resultsPath: 'results',
             requiresFlareSolverr: true,
-            apiKeyHeader: 'X-API-Key',
-            downloadUrlFields: ['downloadUrl', 'download_url', 'directUrl', 'direct_url', 'url', 'href', 'link', 'mirror'],
-            titleFields: ['title', 'name'],
-            authorFields: ['authors', 'author'],
-            detailsUrlFields: ['detailsUrl', 'details_url', 'sourceUrl', 'source_url', 'pageUrl', 'page']
+            resultLinkSelector: 'a.js-vim-focus[href*=/md5/], a.font-semibold[href*=/md5/]'
           },
           stacks: {
-            apiUrl: 'http://localhost:7788/api/download',
+            baseUrl: 'http://localhost:7788',
+            downloadEndpoint: '/api/queue/add',
+            statusUrlTemplate: 'http://localhost:7788/api/status',
             apiKey: '',
-            authorizationScheme: 'Bearer',
+            apiKeyHeader: 'X-API-Key',
+            remoteDownloadRoots: ['/opt/stacks/download', '/bookdrop'],
+            localDownloadRoot: '{bookdrop}',
             remoteStagingPath: '{stagingDir}',
             pollIntervalSeconds: 10,
             timeoutMinutes: 180,
             requestTimeoutSeconds: 30
           },
-          flareSolverr
+          flareSolverr: {
+            ...flareSolverr,
+            enabled: true
+          }
         };
       case 'CUSTOM_WEB_PLUGIN':
         return {

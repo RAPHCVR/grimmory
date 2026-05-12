@@ -133,9 +133,9 @@ export class DownloadsComponent implements OnInit, OnDestroy {
         this.results = [...(response.results ?? [])].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
         if (!this.results.length) {
           this.messageService.add({
-            severity: 'info',
+            severity: this.searchError ? 'warn' : 'info',
             summary: this.t.translate('downloads.toast.noResultsSummary'),
-            detail: this.t.translate('downloads.toast.noResultsDetail')
+            detail: this.searchError || this.t.translate('downloads.toast.noResultsDetail')
           });
         }
       },

@@ -7,14 +7,17 @@ import org.booklore.model.enums.DownloadContentKind;
 import org.booklore.model.enums.DownloadFormat;
 import org.booklore.model.enums.DownloadSourceType;
 import org.booklore.service.downloads.adapter.impl.AnnasArchiveApiAdapter;
+import org.booklore.service.downloads.client.FlareSolverrClient;
 import org.booklore.service.downloads.dto.DownloadSearchCriteria;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
 
 import java.net.InetSocketAddress;
+import java.net.URI;
 import java.net.URLDecoder;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
@@ -25,146 +28,213 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AnnasArchiveApiAdapterTest {
 
+    private static final String MD5 = "0123456789abcdef0123456789abcdef";
+
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
-    void search_callsConfiguredJsonApiAndNormalizesResults() throws Exception {
-        AtomicReference<String> apiKeyHeader = new AtomicReference<>();
-        AtomicReference<Map<String, String>> queryParams = new AtomicReference<>();
-        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-        server.createContext("/search", exchange -> {
-            apiKeyHeader.set(exchange.getRequestHeaders().getFirst("X-API-Key"));
-            queryParams.set(queryParams(exchange.getRequestURI().getRawQuery()));
-            byte[] body = """
-                    {
-                      "results": [
-                        {
-                          "md5": "abc123",
-                          "title": "Les Fourmis",
-                          "authors": ["Bernard Werber"],
-                          "language": "fr",
-                          "extension": "epub",
-                          "downloadUrl": "https://bridge.example/download/abc123.epub",
-                          "detailsUrl": "https://bridge.example/book/abc123",
-                          "size": "1.5 MB",
-                          "year": "1991",
-                          "isbn": "9782253063336"
-                        }
-                      ]
-                    }
-                    """.getBytes(StandardCharsets.UTF_8);
+    void search_fetchesRenderedHtmlViaFlareSolverrAndReturnsStacksMd5Results() throws Exception {
+        AtomicReference<String> requestedUrl = new AtomicReference<>();
+        AtomicReference<String> requestedCommand = new AtomicReference<>();
+        HttpServer flareSolverr = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        flareSolverr.createContext("/v1", exchange -> {
+            var body = objectMapper.readTree(exchange.getRequestBody());
+            requestedCommand.set(body.path("cmd").asText());
+            requestedUrl.set(body.path("url").asText());
+
+            String html = """
+                    <html>
+                      <body>
+                        <a href="/md5/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" class="inline-block max-w-[50%] truncate">Irrelevant sidebar link</a>
+                        <div>
+                          <a href="/md5/0123456789abcdef0123456789abcdef" class="line-clamp-[3] js-vim-focus font-semibold">
+                            Les Fourmis
+                          </a>
+                          <a href="/search?q=Werber%2C%20Bernard">
+                            <span class="icon-[mdi--user-edit]"></span>
+                            Werber, Bernard [Werber, Bernard]
+                          </a>
+                          <span>French EPUB 1.5 MB 1991</span>
+                        </div>
+                        <a href="/md5/0123456789abcdef0123456789abcdef">Duplicate</a>
+                        <a href="/book/not-a-result">Ignored</a>
+                      </body>
+                    </html>
+                    """;
+            byte[] response = objectMapper.writeValueAsBytes(Map.of(
+                    "status", "ok",
+                    "solution", Map.of(
+                            "response", html,
+                            "userAgent", "Mozilla/5.0",
+                            "cookies", List.of()
+                    )
+            ));
             exchange.getResponseHeaders().add("Content-Type", "application/json");
-            exchange.sendResponseHeaders(200, body.length);
-            exchange.getResponseBody().write(body);
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
             exchange.close();
         });
-        server.start();
+        flareSolverr.start();
 
         try {
-            String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort() + "/search";
+            String flareSolverrBaseUrl = "http://127.0.0.1:" + flareSolverr.getAddress().getPort();
             DownloadSourceEntity source = DownloadSourceEntity.builder()
-                    .name("Anna bridge")
+                    .name("Anna HTML")
                     .type(DownloadSourceType.ANNAS_ARCHIVE_API)
-                    .credentialsJson(objectMapper.writeValueAsString(Map.of(
-                            "baseUrl", baseUrl,
-                            "apiKey", "secret"
-                    )))
                     .configJson(objectMapper.writeValueAsString(Map.of(
                             "annasArchiveApi", Map.of(
-                                    "resultsPath", "results",
-                                    "timeoutSeconds", 5,
-                                    "requiresFlareSolverr", true
+                                    "baseUrl", "https://annas-archive.li",
+                                    "searchPath", "/search",
+                                    "defaultFormat", "epub",
+                                    "maxResults", 10
+                            ),
+                            "flareSolverr", Map.of(
+                                    "enabled", true,
+                                    "baseUrl", flareSolverrBaseUrl,
+                                    "maxTimeoutMs", 5000
                             )
                     )))
                     .build();
-            AnnasArchiveApiAdapter adapter = new AnnasArchiveApiAdapter(
-                    HttpClient.newHttpClient(),
-                    objectMapper,
-                    new DownloadSourceConfigReader(objectMapper)
-            );
+            AnnasArchiveApiAdapter adapter = adapter();
 
             var results = adapter.search(source, DownloadSearchCriteria.builder()
+                    .query("Les Fourmis")
+                    .author("Bernard Werber")
+                    .contentKind(DownloadContentKind.BOOK)
+                    .preferredFormats(List.of(DownloadFormat.EPUB))
+                    .maxResults(10)
+                    .build());
+
+            assertEquals("request.get", requestedCommand.get());
+            URI uri = URI.create(requestedUrl.get());
+            assertEquals("https", uri.getScheme());
+            assertEquals("annas-archive.li", uri.getHost());
+            assertEquals("/search", uri.getPath());
+            Map<String, String> queryParams = queryParams(uri.getRawQuery());
+            assertEquals("Les Fourmis", queryParams.get("q"));
+            assertEquals("epub", queryParams.get("ext"));
+
+            assertEquals(1, results.size());
+            var result = results.getFirst();
+            assertEquals(MD5, result.getSourceResultId());
+            assertTrue(result.getTitle().contains("Les Fourmis"));
+            assertEquals(List.of("Bernard Werber"), result.getAuthors());
+            assertEquals(DownloadFormat.EPUB, result.getFormat());
+            assertEquals(DownloadAcquisitionType.EXTERNAL_STACKS, result.getAcquisitionType());
+            assertEquals("https://annas-archive.li/md5/" + MD5, result.getDetailsUrl());
+            assertNull(result.getDownloadUrl());
+            assertTrue(result.isRequiresFlareSolverr());
+            assertEquals(1991, result.getPublishedYear());
+            assertEquals("fr", result.getLanguage());
+            assertEquals(1_572_864L, result.getSizeBytes());
+            assertTrue(result.getRawJson().contains(MD5));
+        } finally {
+            flareSolverr.stop(0);
+        }
+    }
+
+    @Test
+    void search_fallsBackToNextDomainWhenPrimaryRendersNoMd5Links() throws Exception {
+        List<String> requestedUrls = new ArrayList<>();
+        HttpServer flareSolverr = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        flareSolverr.createContext("/v1", exchange -> {
+            var body = objectMapper.readTree(exchange.getRequestBody());
+            String requestedUrl = body.path("url").asText();
+            requestedUrls.add(requestedUrl);
+
+            String html = requestedUrl.contains("annas-archive.gl")
+                    ? "<html><a href=\"/md5/" + MD5 + "\">Les Fourmis Bernard Werber French EPUB 1.5 MB 1991</a></html>"
+                    : "<html><title>Redirecting...</title><script>location.href='https://annas-archive.gl/search'</script></html>";
+            byte[] response = objectMapper.writeValueAsBytes(Map.of(
+                    "status", "ok",
+                    "solution", Map.of("response", html)
+            ));
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        flareSolverr.start();
+
+        try {
+            String flareSolverrBaseUrl = "http://127.0.0.1:" + flareSolverr.getAddress().getPort();
+            DownloadSourceEntity source = DownloadSourceEntity.builder()
+                    .name("Anna HTML")
+                    .type(DownloadSourceType.ANNAS_ARCHIVE_API)
+                    .configJson(objectMapper.writeValueAsString(Map.of(
+                            "annasArchiveApi", Map.of(
+                                    "baseUrl", "https://annas-archive.li",
+                                    "fallbackBaseUrls", List.of("https://annas-archive.gl"),
+                                    "useDefaultFallbacks", false
+                            ),
+                            "flareSolverr", Map.of("baseUrl", flareSolverrBaseUrl)
+                    )))
+                    .build();
+
+            var results = adapter().search(source, DownloadSearchCriteria.builder()
                     .query("Bernard Werber")
                     .contentKind(DownloadContentKind.BOOK)
                     .preferredFormats(List.of(DownloadFormat.EPUB))
                     .maxResults(10)
                     .build());
 
-            assertEquals("secret", apiKeyHeader.get());
-            assertEquals("Bernard Werber", queryParams.get().get("q"));
-            assertEquals("epub", queryParams.get().get("ext"));
-            assertEquals("10", queryParams.get().get("limit"));
+            assertEquals(2, requestedUrls.size());
+            assertEquals("annas-archive.li", URI.create(requestedUrls.get(0)).getHost());
+            assertEquals("annas-archive.gl", URI.create(requestedUrls.get(1)).getHost());
             assertEquals(1, results.size());
-            var result = results.getFirst();
-            assertEquals("abc123", result.getSourceResultId());
-            assertEquals("Les Fourmis", result.getTitle());
-            assertEquals(List.of("Bernard Werber"), result.getAuthors());
-            assertEquals(DownloadFormat.EPUB, result.getFormat());
-            assertEquals(DownloadAcquisitionType.DIRECT_FILE, result.getAcquisitionType());
-            assertTrue(result.isRequiresFlareSolverr());
-            assertEquals(1_572_864L, result.getSizeBytes());
-            assertEquals("9782253063336", result.getIsbn());
+            assertEquals(MD5, results.getFirst().getSourceResultId());
+            assertEquals("https://annas-archive.gl/md5/" + MD5, results.getFirst().getDetailsUrl());
         } finally {
-            server.stop(0);
+            flareSolverr.stop(0);
         }
     }
 
     @Test
-    void search_whenConfiguredForStacks_allowsMd5OnlyResults() throws Exception {
-        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-        server.createContext("/search", exchange -> {
-            byte[] body = """
-                    {
-                      "results": [
-                        {
-                          "md5": "def456",
-                          "title": "Le Père de nos pères",
-                          "authors": "Bernard Werber",
-                          "extension": "epub"
-                        }
-                      ]
-                    }
-                    """.getBytes(StandardCharsets.UTF_8);
+    void search_whenHtmlContainsNoMd5Links_returnsNoResults() throws Exception {
+        HttpServer flareSolverr = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        flareSolverr.createContext("/v1", exchange -> {
+            exchange.getRequestBody().readAllBytes();
+            byte[] response = objectMapper.writeValueAsBytes(Map.of(
+                    "status", "ok",
+                    "solution", Map.of("response", "<html><a href=\"/search?q=test\">No result</a></html>")
+            ));
             exchange.getResponseHeaders().add("Content-Type", "application/json");
-            exchange.sendResponseHeaders(200, body.length);
-            exchange.getResponseBody().write(body);
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
             exchange.close();
         });
-        server.start();
+        flareSolverr.start();
 
         try {
-            String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort() + "/search";
+            String flareSolverrBaseUrl = "http://127.0.0.1:" + flareSolverr.getAddress().getPort();
             DownloadSourceEntity source = DownloadSourceEntity.builder()
-                    .name("Anna Stacks bridge")
+                    .name("Anna HTML")
                     .type(DownloadSourceType.ANNAS_ARCHIVE_API)
-                    .credentialsJson(objectMapper.writeValueAsString(Map.of("baseUrl", baseUrl)))
                     .configJson(objectMapper.writeValueAsString(Map.of(
-                            "annasArchiveApi", Map.of(
-                                    "resultsPath", "results",
-                                    "acquisitionType", "EXTERNAL_STACKS"
-                            )
+                            "annasArchiveApi", Map.of("baseUrl", "https://annas-archive.li/search"),
+                            "flareSolverr", Map.of("baseUrl", flareSolverrBaseUrl)
                     )))
                     .build();
-            AnnasArchiveApiAdapter adapter = new AnnasArchiveApiAdapter(
-                    HttpClient.newHttpClient(),
-                    objectMapper,
-                    new DownloadSourceConfigReader(objectMapper)
-            );
 
-            var results = adapter.search(source, DownloadSearchCriteria.builder()
+            var results = adapter().search(source, DownloadSearchCriteria.builder()
                     .query("Bernard Werber")
                     .contentKind(DownloadContentKind.BOOK)
                     .maxResults(10)
                     .build());
 
-            assertEquals(1, results.size());
-            var result = results.getFirst();
-            assertEquals("def456", result.getSourceResultId());
-            assertEquals(DownloadAcquisitionType.EXTERNAL_STACKS, result.getAcquisitionType());
-            assertNull(result.getDownloadUrl());
+            assertTrue(results.isEmpty());
         } finally {
-            server.stop(0);
+            flareSolverr.stop(0);
         }
+    }
+
+    private AnnasArchiveApiAdapter adapter() {
+        DownloadSourceConfigReader configReader = new DownloadSourceConfigReader(objectMapper);
+        return new AnnasArchiveApiAdapter(
+                new FlareSolverrClient(HttpClient.newHttpClient(), objectMapper, configReader),
+                objectMapper,
+                configReader
+        );
     }
 
     private Map<String, String> queryParams(String rawQuery) {

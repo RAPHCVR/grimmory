@@ -31,6 +31,7 @@ import tools.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.nio.file.*;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
@@ -72,8 +73,19 @@ public class DownloadPipelineManager {
 
         try {
             List<DownloadSourceEntity> sources = sourceRepository.findAllByEnabledTrueOrderByPriorityAscNameAsc();
+            List<String> sourceErrors = new ArrayList<>();
+            int resultCount = 0;
             for (DownloadSourceEntity source : sources) {
-                runSourceSearch(search, source, criteria);
+                SourceSearchOutcome outcome = runSourceSearch(search, source, criteria);
+                resultCount += outcome.resultCount();
+                if (outcome.errorMessage() != null) {
+                    sourceErrors.add(outcome.errorMessage());
+                }
+            }
+            if (sources.isEmpty()) {
+                search.setErrorMessage("No enabled download sources are configured");
+            } else if (resultCount == 0 && !sourceErrors.isEmpty()) {
+                search.setErrorMessage(String.join(" | ", sourceErrors));
             }
             search.setStatus(DownloadSearchStatus.COMPLETED);
             return searchRepository.save(search);
@@ -204,7 +216,7 @@ public class DownloadPipelineManager {
         }
     }
 
-    private void runSourceSearch(DownloadSearchEntity search, DownloadSourceEntity source, DownloadSearchCriteria criteria) {
+    private SourceSearchOutcome runSourceSearch(DownloadSearchEntity search, DownloadSourceEntity source, DownloadSearchCriteria criteria) {
         try {
             DownloadSourceAdapter adapter = adapterRegistry.adapterFor(source);
             List<NormalizedDownloadResult> normalizedResults = adapter.search(source, criteria);
@@ -212,8 +224,10 @@ public class DownloadPipelineManager {
                 DownloadScoreBreakdown score = scoringService.score(criteria, normalized);
                 resultRepository.save(toEntity(search, source, normalized, score));
             }
+            return new SourceSearchOutcome(normalizedResults.size(), null);
         } catch (DownloadSourceException e) {
             log.warn("Download source '{}' failed during search: {}", source.getName(), e.getMessage());
+            return new SourceSearchOutcome(0, source.getName() + ": " + e.getMessage());
         }
     }
 
@@ -350,5 +364,8 @@ public class DownloadPipelineManager {
         } catch (Exception e) {
             return List.of();
         }
+    }
+
+    private record SourceSearchOutcome(int resultCount, String errorMessage) {
     }
 }

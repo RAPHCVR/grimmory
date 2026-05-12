@@ -23,7 +23,7 @@ public class DownloadScoringService {
         List<String> reasons = new ArrayList<>();
         boolean directUrlMatch = directUrlMatches(criteria, result);
 
-        if (isBlank(result.getDownloadUrl())) {
+        if (requiresDownloadUrl(result) && isBlank(result.getDownloadUrl())) {
             score -= 100;
             reasons.add("-100 missing download URL");
         }
@@ -76,6 +76,18 @@ public class DownloadScoringService {
             } else {
                 score -= 20;
                 reasons.add("-20 author mismatch");
+            }
+        } else if (isBlank(criteria.getAuthor()) && !isBlank(criteria.effectiveQuery()) && result.getAuthors() != null && !result.getAuthors().isEmpty()) {
+            double bestAuthor = result.getAuthors().stream()
+                    .mapToDouble(author -> similarity(criteria.effectiveQuery(), author))
+                    .max()
+                    .orElse(0);
+            if (bestAuthor >= 0.85) {
+                score += 45;
+                reasons.add("+45 query author match");
+            } else if (bestAuthor >= 0.65) {
+                score += 20;
+                reasons.add("+20 query author partial match");
             }
         }
 
@@ -155,6 +167,12 @@ public class DownloadScoringService {
         }
         reasons.add("-50 wrong format");
         return -50;
+    }
+
+    private boolean requiresDownloadUrl(NormalizedDownloadResult result) {
+        return result == null
+                || result.getAcquisitionType() == null
+                || result.getAcquisitionType() != org.booklore.model.enums.DownloadAcquisitionType.EXTERNAL_STACKS;
     }
 
     private int scoreRequestedNumber(String expectedTitle, NormalizedDownloadResult result, List<String> reasons) {

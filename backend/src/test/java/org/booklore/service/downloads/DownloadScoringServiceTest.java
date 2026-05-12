@@ -146,4 +146,30 @@ class DownloadScoringServiceTest {
         assertTrue(score.getReasons().contains("+80 direct URL exact match"));
         assertTrue(score.getReasons().contains("+10 content kind inferred from direct URL"));
     }
+
+    @Test
+    void score_externalStacksMd5Result_doesNotRequireDownloadUrlAndMatchesAuthorQuery() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("bernard werber")
+                .contentKind(DownloadContentKind.BOOK)
+                .preferredFormats(List.of(DownloadFormat.EPUB))
+                .build();
+
+        NormalizedDownloadResult result = NormalizedDownloadResult.builder()
+                .sourceResultId("0123456789abcdef0123456789abcdef")
+                .title("Les Fourmis")
+                .authors(List.of("Bernard Werber"))
+                .format(DownloadFormat.EPUB)
+                .contentKind(DownloadContentKind.BOOK)
+                .acquisitionType(DownloadAcquisitionType.EXTERNAL_STACKS)
+                .detailsUrl("https://annas-archive.gl/md5/0123456789abcdef0123456789abcdef")
+                .sizeBytes(1_500_000L)
+                .build();
+
+        var score = service.score(criteria, result);
+
+        assertTrue(score.getScore() >= 40);
+        assertTrue(score.getReasons().contains("+45 query author match"));
+        assertTrue(score.getReasons().stream().noneMatch("-100 missing download URL"::equals));
+    }
 }

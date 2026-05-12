@@ -27,14 +27,39 @@ public class FlareSolverrClient {
     private final ObjectMapper objectMapper;
     private final DownloadSourceConfigReader configReader;
 
+    public String fetchHtml(DownloadSourceEntity source, String url) {
+        JsonNode solution = requestGet(source, url, false);
+        String html = solution.path("response").asText(null);
+        if (html == null || html.isBlank()) {
+            throw new DownloadSourceException("FlareSolverr response did not contain rendered HTML");
+        }
+        return html;
+    }
+
     public Map<String, String> resolveHeaders(DownloadSourceEntity source, String url) {
+        JsonNode solution = requestGet(source, url, true);
+        Map<String, String> headers = new LinkedHashMap<>();
+        String userAgent = solution.path("userAgent").asText(null);
+        if (userAgent != null && !userAgent.isBlank()) {
+            headers.put("User-Agent", userAgent);
+        }
+        String cookies = cookieHeader(solution.path("cookies"));
+        if (!cookies.isBlank()) {
+            headers.put("Cookie", cookies);
+        }
+        return headers;
+    }
+
+    private JsonNode requestGet(DownloadSourceEntity source, String url, boolean returnOnlyCookies) {
         FlareSolverrConfig config = readConfig(source);
         try {
             ObjectNode body = objectMapper.createObjectNode();
             body.put("cmd", "request.get");
             body.put("url", url);
             body.put("maxTimeout", config.maxTimeoutMs());
-            body.put("returnOnlyCookies", true);
+            if (returnOnlyCookies) {
+                body.put("returnOnlyCookies", true);
+            }
 
             HttpRequest request = HttpRequest.newBuilder(URI.create(config.baseUrl() + "/v1"))
                     .timeout(Duration.ofMillis(config.maxTimeoutMs() + 5_000L))
@@ -53,16 +78,10 @@ public class FlareSolverrClient {
                 throw new DownloadSourceException("FlareSolverr failed: " + root.path("message").asText("unknown error"));
             }
             JsonNode solution = root.path("solution");
-            Map<String, String> headers = new LinkedHashMap<>();
-            String userAgent = solution.path("userAgent").asText(null);
-            if (userAgent != null && !userAgent.isBlank()) {
-                headers.put("User-Agent", userAgent);
+            if (solution.isMissingNode() || solution.isNull()) {
+                throw new DownloadSourceException("FlareSolverr response did not contain a solution");
             }
-            String cookies = cookieHeader(solution.path("cookies"));
-            if (!cookies.isBlank()) {
-                headers.put("Cookie", cookies);
-            }
-            return headers;
+            return solution;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new DownloadSourceException("FlareSolverr request interrupted", e);
