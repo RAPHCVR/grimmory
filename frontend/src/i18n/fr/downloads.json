@@ -73,6 +73,8 @@
         "cleanupError": "Le nettoyage des téléchargements a échoué.",
         "jobQueuedSummary": "Job en file",
         "jobQueuedDetail": "Le job #{{id}} a été ajouté à la file.",
+        "jobStartedSummary": "Job démarré",
+        "jobStartedDetail": "Le job #{{id}} est maintenant {{status}}. Suis-le dans le tableau des jobs.",
         "jobFinishedSummary": "Job terminé",
         "jobFinishedDetail": "Le job #{{id}} s'est terminé avec le statut {{status}}.",
         "jobFailedSummary": "Job en échec"

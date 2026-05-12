@@ -73,6 +73,8 @@
     "cleanupError": "Download cleanup failed.",
     "jobQueuedSummary": "Job queued",
     "jobQueuedDetail": "Job #{{id}} has been queued.",
+    "jobStartedSummary": "Job started",
+    "jobStartedDetail": "Job #{{id}} is now {{status}}. Follow it from the jobs table.",
     "jobFinishedSummary": "Job finished",
     "jobFinishedDetail": "Job #{{id}} ended with status {{status}}.",
     "jobFailedSummary": "Job failed"

@@ -19,6 +19,7 @@ import org.booklore.repository.DownloadJobRepository;
 import org.booklore.repository.DownloadResultRepository;
 import org.booklore.repository.DownloadSourceRepository;
 import org.booklore.service.downloads.DownloadJobCleanupService;
+import org.booklore.service.downloads.DownloadJobRunner;
 import org.booklore.service.downloads.DownloadPipelineManager;
 import org.booklore.service.downloads.dto.DownloadSearchCriteria;
 import org.springframework.data.domain.Sort;
@@ -40,6 +41,7 @@ public class DownloadController {
     private final DownloadResultRepository resultRepository;
     private final DownloadJobRepository jobRepository;
     private final DownloadPipelineManager pipelineManager;
+    private final DownloadJobRunner jobRunner;
     private final DownloadJobCleanupService cleanupService;
 
     @Operation(summary = "List download sources")
@@ -114,17 +116,18 @@ public class DownloadController {
         ));
     }
 
-    @Operation(summary = "Acquire best matching result synchronously")
-    @ApiResponse(responseCode = "200", description = "Download job processed")
+    @Operation(summary = "Queue and start the best matching download result")
+    @ApiResponse(responseCode = "200", description = "Download job queued and processing started")
     @PostMapping("/acquire")
     public DownloadJobResponse acquireBestMatch(@Parameter(description = "Download acquisition request") @RequestBody DownloadAcquireRequest request) {
-        return toJobResponse(pipelineManager.acquireBestMatch(
+        DownloadJobEntity job = pipelineManager.queueBestMatch(
                 toCriteria(request),
                 request.getTargetLibraryId(),
                 request.getTargetLibraryPathId(),
                 Boolean.TRUE.equals(request.getAutoFinalize()),
                 request.getConfidenceThreshold() == null ? 90 : request.getConfidenceThreshold()
-        ));
+        );
+        return toJobResponse(jobRunner.start(job.getId()));
     }
 
     @Operation(summary = "Queue a selected download result")
@@ -141,25 +144,26 @@ public class DownloadController {
         ));
     }
 
-    @Operation(summary = "Acquire a selected download result synchronously")
-    @ApiResponse(responseCode = "200", description = "Selected download job processed")
+    @Operation(summary = "Queue and start a selected download result")
+    @ApiResponse(responseCode = "200", description = "Selected download job queued and processing started")
     @PostMapping("/results/{resultId}/acquire")
     public DownloadJobResponse acquireResult(@PathVariable Long resultId,
                                              @Parameter(description = "Selected result acquisition request") @RequestBody DownloadResultAcquireRequest request) {
-        return toJobResponse(pipelineManager.acquireResult(
+        DownloadJobEntity job = pipelineManager.queueResult(
                 resultId,
                 request.getTargetLibraryId(),
                 request.getTargetLibraryPathId(),
                 Boolean.TRUE.equals(request.getAutoFinalize()),
                 request.getConfidenceThreshold() == null ? 90 : request.getConfidenceThreshold()
-        ));
+        );
+        return toJobResponse(jobRunner.start(job.getId()));
     }
 
-    @Operation(summary = "Process a queued download job")
-    @ApiResponse(responseCode = "200", description = "Download job processed")
+    @Operation(summary = "Start processing a queued download job")
+    @ApiResponse(responseCode = "200", description = "Download job processing started")
     @PostMapping("/jobs/{jobId}/process")
     public DownloadJobResponse processJob(@PathVariable Long jobId) {
-        return toJobResponse(pipelineManager.processQueuedJob(jobId));
+        return toJobResponse(jobRunner.start(jobId));
     }
 
     @Operation(summary = "Get a download job")

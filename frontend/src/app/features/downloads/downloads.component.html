@@ -56,8 +56,9 @@
 
       <div class="advanced-grid">
         <div class="field">
-          <label>{{ t('search.contentKind') }}</label>
+          <label for="download-content-kind">{{ t('search.contentKind') }}</label>
           <p-select
+            inputId="download-content-kind"
             [options]="contentKindOptions"
             [(ngModel)]="contentKind"
             optionLabel="label"
@@ -66,8 +67,9 @@
           </p-select>
         </div>
         <div class="field">
-          <label>{{ t('search.formats') }}</label>
+          <label for="download-formats">{{ t('search.formats') }}</label>
           <p-multiselect
+            inputId="download-formats"
             [options]="formatOptions"
             [(ngModel)]="preferredFormats"
             optionLabel="label"
@@ -77,43 +79,43 @@
           </p-multiselect>
         </div>
         <div class="field">
-          <label>{{ t('search.maxResults') }}</label>
-          <p-inputnumber [(ngModel)]="maxResults" [min]="1" [max]="100" [showButtons]="true"></p-inputnumber>
+          <label for="download-max-results">{{ t('search.maxResults') }}</label>
+          <p-inputnumber inputId="download-max-results" [(ngModel)]="maxResults" [min]="1" [max]="100" [showButtons]="true"></p-inputnumber>
         </div>
         <div class="field">
-          <label>{{ t('search.confidenceThreshold') }}</label>
-          <p-inputnumber [(ngModel)]="confidenceThreshold" [min]="0" [max]="100" [showButtons]="true"></p-inputnumber>
+          <label for="download-confidence-threshold">{{ t('search.confidenceThreshold') }}</label>
+          <p-inputnumber inputId="download-confidence-threshold" [(ngModel)]="confidenceThreshold" [min]="0" [max]="100" [showButtons]="true"></p-inputnumber>
         </div>
         <div class="field toggle-field">
-          <label>{{ t('search.autoFinalize') }}</label>
-          <p-toggleswitch [(ngModel)]="autoFinalize"></p-toggleswitch>
+          <label for="download-auto-finalize">{{ t('search.autoFinalize') }}</label>
+          <p-toggleswitch inputId="download-auto-finalize" [(ngModel)]="autoFinalize"></p-toggleswitch>
         </div>
       </div>
 
       <div class="advanced-grid secondary-grid">
         <div class="field">
-          <label>{{ t('search.title') }}</label>
-          <input pInputText [(ngModel)]="title"/>
+          <label for="download-title">{{ t('search.title') }}</label>
+          <input id="download-title" pInputText [(ngModel)]="title"/>
         </div>
         <div class="field">
-          <label>{{ t('search.author') }}</label>
-          <input pInputText [(ngModel)]="author"/>
+          <label for="download-author">{{ t('search.author') }}</label>
+          <input id="download-author" pInputText [(ngModel)]="author"/>
         </div>
         <div class="field">
-          <label>{{ t('search.isbn') }}</label>
-          <input pInputText [(ngModel)]="isbn"/>
+          <label for="download-isbn">{{ t('search.isbn') }}</label>
+          <input id="download-isbn" pInputText [(ngModel)]="isbn"/>
         </div>
         <div class="field">
-          <label>{{ t('search.seriesName') }}</label>
-          <input pInputText [(ngModel)]="seriesName"/>
+          <label for="download-series-name">{{ t('search.seriesName') }}</label>
+          <input id="download-series-name" pInputText [(ngModel)]="seriesName"/>
         </div>
         <div class="field">
-          <label>{{ t('search.seriesNumber') }}</label>
-          <p-inputnumber [(ngModel)]="seriesNumber" [min]="0" [maxFractionDigits]="2"></p-inputnumber>
+          <label for="download-series-number">{{ t('search.seriesNumber') }}</label>
+          <p-inputnumber inputId="download-series-number" [(ngModel)]="seriesNumber" [min]="0" [maxFractionDigits]="2"></p-inputnumber>
         </div>
         <div class="field direct-url">
-          <label>{{ t('search.directUrl') }}</label>
-          <input pInputText [(ngModel)]="directUrl" placeholder="https://..."/>
+          <label for="download-direct-url">{{ t('search.directUrl') }}</label>
+          <input id="download-direct-url" pInputText [(ngModel)]="directUrl" placeholder="https://..."/>
         </div>
       </div>
     </section>

@@ -159,11 +159,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     ).subscribe({
       next: job => {
         this.loadJobs(false);
-        this.messageService.add({
-          severity: job.status === 'FAILED' ? 'error' : 'success',
-          summary: this.t.translate(job.status === 'FAILED' ? 'downloads.toast.jobFailedSummary' : 'downloads.toast.jobFinishedSummary'),
-          detail: job.errorMessage || this.t.translate('downloads.toast.jobFinishedDetail', {id: job.id, status: this.statusLabel(job.status)})
-        });
+        this.showJobToast(job);
       },
       error: err => {
         this.loadJobs(false);
@@ -184,11 +180,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     ).subscribe({
       next: processed => {
         this.loadJobs(false);
-        this.messageService.add({
-          severity: processed.status === 'FAILED' ? 'error' : 'success',
-          summary: this.t.translate(processed.status === 'FAILED' ? 'downloads.toast.jobFailedSummary' : 'downloads.toast.jobFinishedSummary'),
-          detail: processed.errorMessage || this.t.translate('downloads.toast.jobFinishedDetail', {id: processed.id, status: this.statusLabel(processed.status)})
-        });
+        this.showJobToast(processed);
       },
       error: err => {
         this.loadJobs(false);
@@ -356,5 +348,35 @@ export class DownloadsComponent implements OnInit, OnDestroy {
   private clean(value: string): string | null {
     const trimmed = value?.trim();
     return trimmed ? trimmed : null;
+  }
+
+  private showJobToast(job: DownloadJob): void {
+    if (job.status === 'FAILED') {
+      this.messageService.add({
+        severity: 'error',
+        summary: this.t.translate('downloads.toast.jobFailedSummary'),
+        detail: job.errorMessage || this.t.translate('downloads.toast.jobFinishedDetail', {id: job.id, status: this.statusLabel(job.status)})
+      });
+      return;
+    }
+
+    if (this.isTerminalStatus(job.status)) {
+      this.messageService.add({
+        severity: 'success',
+        summary: this.t.translate('downloads.toast.jobFinishedSummary'),
+        detail: this.t.translate('downloads.toast.jobFinishedDetail', {id: job.id, status: this.statusLabel(job.status)})
+      });
+      return;
+    }
+
+    this.messageService.add({
+      severity: 'info',
+      summary: this.t.translate('downloads.toast.jobStartedSummary'),
+      detail: this.t.translate('downloads.toast.jobStartedDetail', {id: job.id, status: this.statusLabel(job.status)})
+    });
+  }
+
+  private isTerminalStatus(status: DownloadJobStatus): boolean {
+    return ['COMPLETED', 'PENDING_REVIEW', 'FAILED', 'CANCELLED'].includes(status);
   }
 }

@@ -379,7 +379,7 @@ export class DownloadSourcesComponent implements OnInit {
     }
   }
 
-  private parseObject(value?: string | null): Record<string, any> | null {
+  private parseObject(value?: string | null): Record<string, unknown> | null {
     if (!value?.trim()) return null;
     try {
       const parsed = JSON.parse(value);
@@ -389,8 +389,8 @@ export class DownloadSourcesComponent implements OnInit {
     }
   }
 
-  private objectValue(value: unknown): Record<string, any> | null {
-    return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, any> : null;
+  private objectValue(value: unknown): Record<string, unknown> | null {
+    return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null;
   }
 
   private stringValue(value: unknown): string | null {
