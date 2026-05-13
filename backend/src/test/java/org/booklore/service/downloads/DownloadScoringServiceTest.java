@@ -424,6 +424,43 @@ class DownloadScoringServiceTest {
     }
 
     @Test
+    void score_explicitWebtoonEpisodeQueryPrefersEpisodeTitleOverSeriesIntroTie() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("Lore Olympus episode 1")
+                .seriesName("Lore Olympus")
+                .seriesNumber(1f)
+                .contentKind(DownloadContentKind.WEBTOON)
+                .preferredFormats(List.of(DownloadFormat.CBZ, DownloadFormat.PDF))
+                .build();
+
+        NormalizedDownloadResult exactEpisodeTitle = NormalizedDownloadResult.builder()
+                .title("Episode 1")
+                .seriesName("Lore Olympus")
+                .seriesNumber(1f)
+                .format(DownloadFormat.CBZ)
+                .contentKind(DownloadContentKind.WEBTOON)
+                .acquisitionType(DownloadAcquisitionType.CLI_GALLERY_DL)
+                .downloadUrl("https://www.webtoons.com/en/romance/lore-olympus/episode-1/viewer?title_no=1320&episode_no=1")
+                .build();
+
+        NormalizedDownloadResult introTitle = NormalizedDownloadResult.builder()
+                .title("Introduction")
+                .seriesName("Lore Olympus")
+                .seriesNumber(1f)
+                .format(DownloadFormat.CBZ)
+                .contentKind(DownloadContentKind.WEBTOON)
+                .acquisitionType(DownloadAcquisitionType.CLI_GALLERY_DL)
+                .downloadUrl("https://www.webtoons.com/en/romance/lore-olympus/introduction/viewer?title_no=1320&episode_no=1")
+                .build();
+
+        var exactScore = service.score(criteria, exactEpisodeTitle);
+        var introScore = service.score(criteria, introTitle);
+
+        assertTrue(exactScore.getScore() > introScore.getScore());
+        assertTrue(introScore.getReasons().contains("-50 explicit episode marker missing from result title"));
+    }
+
+    @Test
     void score_externalStacksMd5Result_doesNotRequireDownloadUrlAndMatchesAuthorQuery() {
         DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
                 .query("bernard werber")

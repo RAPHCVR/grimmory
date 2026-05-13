@@ -19,6 +19,7 @@ public class DownloadScoringService {
     private static final Pattern NUMBER_RANGE = Pattern.compile("(?<!\\d)0*(\\d{1,5})\\s*[-–]\\s*0*(\\d{1,5})(?!\\d)");
     private static final Pattern COMPACT_NUMBER_MARKER = Pattern.compile("(?iu)\\b(vol(?:ume)?|v|t(?:ome|omo)?|ch(?:apter)?|chapitre)\\.?\\s*0*(\\d{1,5})\\b");
     private static final Pattern ANY_NUMBER_MARKER = Pattern.compile("(?iu)(?:\\b(?:vol(?:ume)?|v|t(?:ome|omo)?|ch(?:apter)?|chapitre)\\.?\\s*0*\\d{1,5}\\b|#\\s*0*\\d{1,5}\\b)");
+    private static final Pattern EXPLICIT_WEBTOON_EPISODE_MARKER = Pattern.compile("(?iu)\\b(?:ep(?:isode)?|ch(?:apter)?|chapitre)\\.?\\s*0*(\\d{1,5})\\b|#\\s*0*(\\d{1,5})\\b");
     private static final Pattern UNSUPPORTED_MEDIA_MARKER = Pattern.compile("(?i)(?:\\bmp4\\b|\\bmkv\\b|\\bavi\\b|\\bmov\\b|\\bwmv\\b|\\bflac\\b|\\bmp3\\b|\\baac\\b|\\bopus\\b|\\b480p\\b|\\b720p\\b|\\b1080p\\b|\\b2160p\\b|\\bfullhd\\b|\\bbdrip\\b|\\bwebrip\\b|\\bhdtv\\b|\\bbluray\\b|\\bblu ray\\b|\\bx264\\b|\\bx265\\b|\\bhevc\\b|\\bh\\s?264\\b|\\bh\\s?265\\b|\\b10bit\\b|\\bdual audio\\b|\\bsubbed\\b|\\bsoftsubs?\\b|\\bvostfr\\b|\\bsub ita\\b|\\bsub esp\\b|\\bsoundtrack\\b|\\bost\\b|\\bs\\d{1,2}\\s?e\\d{1,3}\\b|\\btv anime\\b|\\bmovies other\\b|\\bfitgirl\\b|\\bdodi\\b|\\belamigos\\b|\\bsteamrip\\b|\\bskidrow\\b|\\breloaded\\b|\\bplaza\\b|\\brazor1911\\b|\\bcodex\\b|\\bgame repack\\b)");
     private static final int MIN_REASONABLE_SIZE_BYTES = 2 * 1024;
 
@@ -163,6 +164,7 @@ public class DownloadScoringService {
         }
 
         score += scoreWebtoonEpisodeSource(criteria, result, reasons);
+        score += scoreWebtoonEpisodeTitleTieBreaker(criteria, result, reasons);
 
         int clamped = Math.max(0, Math.min(100, score));
         if (clamped != score) {
@@ -225,12 +227,52 @@ public class DownloadScoringService {
         return -60;
     }
 
+    private int scoreWebtoonEpisodeTitleTieBreaker(DownloadSearchCriteria criteria, NormalizedDownloadResult result, List<String> reasons) {
+        if (criteria == null || result == null) {
+            return 0;
+        }
+        DownloadContentKind requestedKind = criteria.getContentKind() == null ? DownloadContentKind.AUTO : criteria.getContentKind();
+        if (requestedKind != DownloadContentKind.WEBTOON
+                || result.getContentKind() != DownloadContentKind.WEBTOON
+                || result.getAcquisitionType() != DownloadAcquisitionType.CLI_GALLERY_DL) {
+            return 0;
+        }
+        OptionalInt requestedEpisode = explicitRequestedWebtoonEpisode(criteria);
+        if (requestedEpisode.isEmpty() || resultTitleHasWebtoonEpisodeMarker(result, requestedEpisode.getAsInt())) {
+            return 0;
+        }
+        reasons.add("-50 explicit episode marker missing from result title");
+        return -50;
+    }
+
     private boolean hasRequestedSequentialNumber(DownloadSearchCriteria criteria) {
         if (criteria.getSeriesNumber() != null) {
             return true;
         }
         String evidence = String.join(" ", safe(criteria.getQuery()), safe(criteria.getTitle()), safe(criteria.getSeriesName()));
         return trailingNumber(evidence).isPresent() || hasAnyNumberMarker(evidence);
+    }
+
+    private OptionalInt explicitRequestedWebtoonEpisode(DownloadSearchCriteria criteria) {
+        String evidence = String.join(" ", safe(criteria.getQuery()), safe(criteria.getTitle()));
+        var matcher = EXPLICIT_WEBTOON_EPISODE_MARKER.matcher(evidence);
+        if (!matcher.find()) {
+            return OptionalInt.empty();
+        }
+        String number = matcher.group(1) != null ? matcher.group(1) : matcher.group(2);
+        return OptionalInt.of(Integer.parseInt(number));
+    }
+
+    private boolean resultTitleHasWebtoonEpisodeMarker(NormalizedDownloadResult result, int requestedEpisode) {
+        String title = safe(result.getTitle());
+        var matcher = EXPLICIT_WEBTOON_EPISODE_MARKER.matcher(title);
+        while (matcher.find()) {
+            String number = matcher.group(1) != null ? matcher.group(1) : matcher.group(2);
+            if (Integer.parseInt(number) == requestedEpisode) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean requiresDownloadUrl(NormalizedDownloadResult result) {
