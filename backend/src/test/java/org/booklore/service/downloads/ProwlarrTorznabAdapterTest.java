@@ -156,6 +156,16 @@ class ProwlarrTorznabAdapterTest {
                         "protocol": "torrent"
                       },
                       {
+                        "guid": "game-repack",
+                        "infoHash": "3333333333333333333333333333333333333333",
+                        "title": "ONE PIECE ODYSSEY: Deluxe Edition (+ 6 DLCs, MULTi15) [FitGirl Repack]",
+                        "indexer": "1337x",
+                        "categories": [{"name": "Games/PC"}],
+                        "size": 30000000000,
+                        "downloadUrl": "magnet:?xt=urn:btih:3333333333333333333333333333333333333333",
+                        "protocol": "torrent"
+                      },
+                      {
                         "guid": "manga-release",
                         "infoHash": "2222222222222222222222222222222222222222",
                         "title": "Dragon Ball Super - Vol.24 - Full Color (Ch101 - Ch104)",

@@ -147,6 +147,31 @@ class DownloadScoringServiceTest {
     }
 
     @Test
+    void score_sequentialResultWithoutRequestedNumberIsPenalized() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("One Piece")
+                .seriesName("One Piece")
+                .seriesNumber(100f)
+                .contentKind(DownloadContentKind.MANGA)
+                .preferredFormats(List.of(DownloadFormat.CBZ))
+                .build();
+
+        NormalizedDownloadResult result = NormalizedDownloadResult.builder()
+                .title("One Piece - Ace's Story - The Manga (2024) (Digital)")
+                .format(DownloadFormat.UNKNOWN)
+                .contentKind(DownloadContentKind.MANGA)
+                .acquisitionType(DownloadAcquisitionType.TORRENT)
+                .downloadUrl("magnet:?xt=urn:btih:abcdef")
+                .sizeBytes(280_000_000L)
+                .build();
+
+        var score = service.score(criteria, result);
+
+        assertTrue(score.getScore() < 50);
+        assertTrue(score.getReasons().contains("-20 missing requested volume/chapter number"));
+    }
+
+    @Test
     void score_mangaDexChapterNumberMismatchIsPenalized() {
         DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
                 .query("Dragon Ball Super 24")
@@ -303,6 +328,31 @@ class DownloadScoringServiceTest {
                 .acquisitionType(DownloadAcquisitionType.TORRENT)
                 .downloadUrl("magnet:?xt=urn:btih:abcdef")
                 .sizeBytes(561_000_000L)
+                .build();
+
+        var score = service.score(criteria, result);
+
+        assertEquals(0, score.getScore());
+        assertTrue(score.getReasons().contains("-90 unsupported media payload"));
+    }
+
+    @Test
+    void score_gameRepackTorrentForMangaQueryScoresZero() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("One Piece")
+                .seriesName("One Piece")
+                .seriesNumber(100f)
+                .contentKind(DownloadContentKind.MANGA)
+                .preferredFormats(List.of(DownloadFormat.CBZ))
+                .build();
+
+        NormalizedDownloadResult result = NormalizedDownloadResult.builder()
+                .title("ONE PIECE ODYSSEY: Deluxe Edition (+ 6 DLCs, MULTi15) [FitGirl Repack]")
+                .format(DownloadFormat.UNKNOWN)
+                .contentKind(DownloadContentKind.MANGA)
+                .acquisitionType(DownloadAcquisitionType.TORRENT)
+                .downloadUrl("magnet:?xt=urn:btih:abcdef")
+                .sizeBytes(30_000_000_000L)
                 .build();
 
         var score = service.score(criteria, result);

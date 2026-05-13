@@ -214,16 +214,16 @@ bootstrapSources:
       - fr
   prowlarr:
     indexerIds: ""
+    flareSolverrProxy:
+      enabled: true
+      name: FlareSolverr
+      tag: flaresolverr
+      host: http://flaresolverr:8191/
+      requestTimeout: 60
+    deleteIndexers:
+      - linuxtracker
+      - internetarchive
     bootstrapIndexers:
-      - definitionName: linuxtracker
-        name: LinuxTracker
-        enabled: true
-        required: true
-        priority: 25
-        fields:
-          baseUrl: https://linuxtracker.org/
-          sort: 3
-          type: 1
       - definitionName: nyaasi
         name: Nyaa.si
         enabled: true
@@ -237,10 +237,11 @@ bootstrapSources:
           sort: 1
           type: 1
       - definitionName: 1337x
-        name: 1337x (disabled until live test passes)
-        enabled: false
+        name: 1337x
+        enabled: true
         required: false
-        priority: 50
+        priority: 25
+        proxyTag: flaresolverr
         fields:
           baseUrl: https://1337x.to/
           downloadlink: 1

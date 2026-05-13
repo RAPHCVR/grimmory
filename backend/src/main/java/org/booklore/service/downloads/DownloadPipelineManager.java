@@ -79,11 +79,13 @@ public class DownloadPipelineManager {
     private final DownloadedCbxMetadataService downloadedCbxMetadataService;
     private final BookdropDeliveryService bookdropDeliveryService;
     private final DownloadQueryIntentParser queryIntentParser;
+    private final DownloadCanonicalResolver canonicalResolver;
     private final ObjectMapper objectMapper;
 
     @Transactional
     public DownloadSearchEntity search(DownloadSearchCriteria criteria) {
         criteria = queryIntentParser.enrich(criteria);
+        criteria = canonicalResolver.resolve(criteria);
         DownloadSearchEntity search = searchRepository.save(DownloadSearchEntity.builder()
                 .query(criteria.effectiveQuery())
                 .title(criteria.getTitle())

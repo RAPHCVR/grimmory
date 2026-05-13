@@ -975,6 +975,10 @@ spec:
               value: {{ .Values.bootstrapSources.prowlarr.indexerIds | quote }}
             - name: PROWLARR_BOOTSTRAP_INDEXERS
               value: {{ .Values.bootstrapSources.prowlarr.bootstrapIndexers | toJson | quote }}
+            - name: PROWLARR_FLARESOLVERR_PROXY
+              value: {{ .Values.bootstrapSources.prowlarr.flareSolverrProxy | toJson | quote }}
+            - name: PROWLARR_DELETE_INDEXERS
+              value: {{ .Values.bootstrapSources.prowlarr.deleteIndexers | toJson | quote }}
           command: ["python", "-c"]
           args:
             - |
@@ -1031,6 +1035,74 @@ spec:
                           return
                   print(f"Prowlarr schema field {name!r} not found for {resource.get('definitionName')}", flush=True)
 
+              def ensure_prowlarr_tag(label):
+                  if not label:
+                      return None
+                  tags = prowlarr_call("GET", "/tag", timeout=20)
+                  current = next((entry for entry in tags if entry.get("label") == label), None)
+                  if current and current.get("id") is not None:
+                      return current["id"]
+                  created = prowlarr_call("POST", "/tag", {"label": label}, timeout=20)
+                  tag_id = created.get("id")
+                  if not tag_id:
+                      raise RuntimeError(f"Prowlarr tag {label!r} was not created")
+                  print(f"created Prowlarr tag {label}", flush=True)
+                  return tag_id
+
+              def ensure_prowlarr_flaresolverr_proxy():
+                  raw = os.environ.get("PROWLARR_FLARESOLVERR_PROXY", "{}")
+                  config = json.loads(raw) if raw.strip() else {}
+                  if not bool(config.get("enabled", False)):
+                      return {}
+
+                  tag = config.get("tag") or "flaresolverr"
+                  tag_id = ensure_prowlarr_tag(tag)
+                  name = config.get("name") or "FlareSolverr"
+                  host = config.get("host") or "http://flaresolverr:8191/"
+                  request_timeout = int(config.get("requestTimeout") or 60)
+
+                  proxies = prowlarr_call("GET", "/indexerproxy", timeout=20)
+                  current = next((entry for entry in proxies if entry.get("implementation") == "FlareSolverr" or entry.get("name") == name), None)
+                  if current:
+                      payload = json.loads(json.dumps(current))
+                  else:
+                      schemas = prowlarr_call("GET", "/indexerproxy/schema", timeout=30)
+                      schema = next((entry for entry in schemas if entry.get("implementation") == "FlareSolverr"), None)
+                      if not schema:
+                          raise RuntimeError("Prowlarr FlareSolverr proxy schema not found")
+                      payload = json.loads(json.dumps(schema))
+
+                  payload["name"] = name
+                  payload["tags"] = [tag_id] if tag_id else []
+                  set_field(payload, "host", host)
+                  set_field(payload, "requestTimeout", request_timeout)
+
+                  if current and current.get("id") is not None:
+                      payload["id"] = current["id"]
+                      prowlarr_call("PUT", f"/indexerproxy/{current['id']}", payload, timeout=30)
+                      print(f"updated Prowlarr indexer proxy {name}", flush=True)
+                  else:
+                      prowlarr_call("POST", "/indexerproxy", payload, timeout=30)
+                      print(f"created Prowlarr indexer proxy {name}", flush=True)
+                  return {tag: tag_id}
+
+              def delete_prowlarr_indexers():
+                  raw = os.environ.get("PROWLARR_DELETE_INDEXERS", "[]")
+                  configured = json.loads(raw) if raw.strip() else []
+                  definitions = {str(item).strip().lower() for item in configured if str(item).strip()}
+                  if not definitions:
+                      return
+                  existing = prowlarr_call("GET", "/indexer", timeout=20)
+                  for entry in existing:
+                      definition = str(entry.get("definitionName") or "").lower()
+                      if definition not in definitions:
+                          continue
+                      indexer_id = entry.get("id")
+                      if indexer_id is None:
+                          continue
+                      prowlarr_call("DELETE", f"/indexer/{indexer_id}", timeout=30)
+                      print(f"deleted Prowlarr indexer {entry.get('name') or definition}", flush=True)
+
               def ensure_prowlarr_indexers():
                   raw = os.environ.get("PROWLARR_BOOTSTRAP_INDEXERS", "[]")
                   configured = json.loads(raw) if raw.strip() else []
@@ -1053,6 +1125,8 @@ spec:
                   if not profile_id:
                       raise RuntimeError("Prowlarr app profile not found")
                   schemas = prowlarr_call("GET", "/indexer/schema", timeout=60)
+                  delete_prowlarr_indexers()
+                  tag_cache = ensure_prowlarr_flaresolverr_proxy()
 
                   for item in configured:
                       definition = item.get("definitionName")
@@ -1069,6 +1143,24 @@ spec:
                           payload["enable"] = bool(item.get("enabled", True))
                           payload["appProfileId"] = profile_id
                           payload["priority"] = int(item.get("priority", 25))
+                          tag_ids = []
+                          for tag_label in item.get("tags") or []:
+                              tag_id = tag_cache.get(tag_label)
+                              if not tag_id:
+                                  tag_id = ensure_prowlarr_tag(tag_label)
+                                  tag_cache[tag_label] = tag_id
+                              if tag_id:
+                                  tag_ids.append(tag_id)
+                          proxy_tag = item.get("proxyTag")
+                          if proxy_tag:
+                              tag_id = tag_cache.get(proxy_tag)
+                              if not tag_id:
+                                  tag_id = ensure_prowlarr_tag(proxy_tag)
+                                  tag_cache[proxy_tag] = tag_id
+                              if tag_id:
+                                  tag_ids.append(tag_id)
+                          if tag_ids:
+                              payload["tags"] = sorted(set(tag_ids))
                           for name, value in (item.get("fields") or {}).items():
                               set_field(payload, name, value)
                           if current and current.get("id") is not None:

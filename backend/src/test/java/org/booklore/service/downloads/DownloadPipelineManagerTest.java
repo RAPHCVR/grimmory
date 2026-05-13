@@ -44,6 +44,7 @@ class DownloadPipelineManagerTest {
                 mock(DownloadedCbxMetadataService.class),
                 mock(BookdropDeliveryService.class),
                 mock(DownloadQueryIntentParser.class),
+                mock(DownloadCanonicalResolver.class),
                 new ObjectMapper()
         );
 

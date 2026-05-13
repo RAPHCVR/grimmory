@@ -148,6 +148,34 @@ class DirectUrlAdapterTest {
     }
 
     @Test
+    void search_webtoonKeywordSearch_ignoresConcreteMangaRequest() {
+        DownloadSourceEntity source = DownloadSourceEntity.builder()
+                .name("Webtoons")
+                .type(DownloadSourceType.DIRECT_URL)
+                .configJson("""
+                        {
+                          "galleryDl": {
+                            "enabled": true,
+                            "metadataProbeEnabled": false,
+                            "webtoons": {
+                              "searchUrlTemplate": "http://127.0.0.1:9/search?keyword={query}"
+                            }
+                          }
+                        }
+                        """)
+                .build();
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("Dragon Ball Super")
+                .contentKind(DownloadContentKind.MANGA)
+                .preferredFormats(List.of(DownloadFormat.CBZ))
+                .build();
+
+        var results = adapter.search(source, criteria);
+
+        assertTrue(results.isEmpty());
+    }
+
+    @Test
     void search_webtoonsViewerUrlWithoutManualMetadata_infersSeriesEpisodeAndContentKind() {
         DownloadSourceEntity source = DownloadSourceEntity.builder()
                 .name("webtoon")

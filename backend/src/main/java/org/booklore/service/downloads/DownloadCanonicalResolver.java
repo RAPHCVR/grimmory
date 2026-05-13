@@ -1,0 +1,631 @@
+package org.booklore.service.downloads;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.booklore.model.enums.DownloadContentKind;
+import org.booklore.model.enums.DownloadFormat;
+import org.booklore.service.downloads.dto.DownloadSearchCriteria;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.web.util.UriComponentsBuilder;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+
+import java.net.URI;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Optional;
+import java.util.Set;
+import java.util.regex.Pattern;
+
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class DownloadCanonicalResolver {
+
+    private static final Pattern ISBN_LIKE = Pattern.compile("(?<!\\d)(?:97[89][\\s-]?)?\\d[\\d\\s-]{8,16}[\\dXx](?!\\d)");
+    private static final Pattern TOKEN_SPLIT = Pattern.compile("[^\\p{L}\\p{N}]+");
+    private static final Set<String> TOKEN_STOP_WORDS = Set.of(
+            "the", "a", "an", "and", "of", "for", "to", "in", "on",
+            "le", "la", "les", "un", "une", "des", "de", "du", "d", "et",
+            "vol", "volume", "v", "tome", "tomo", "chapter", "chapitre", "chap", "ch",
+            "episode", "ep", "book", "livre", "manga", "comic", "webtoon", "manhwa", "manhua"
+    );
+    private static final List<String> TITLE_LANGUAGE_ORDER = List.of("en", "fr", "ja-ro", "ja", "ko", "zh", "es", "de", "it");
+
+    private final HttpClient httpClient;
+    private final ObjectMapper objectMapper;
+
+    @Value("${booklore.downloads.resolver.enabled:true}")
+    boolean enabled = true;
+    @Value("${booklore.downloads.resolver.timeout-seconds:4}")
+    int timeoutSeconds = 4;
+    @Value("${booklore.downloads.resolver.provider-limit:5}")
+    int providerLimit = 5;
+    @Value("${booklore.downloads.resolver.minimum-confidence:0.52}")
+    double minimumConfidence = 0.52D;
+
+    @Value("${booklore.downloads.resolver.openlibrary.enabled:true}")
+    boolean openLibraryEnabled = true;
+    @Value("${booklore.downloads.resolver.openlibrary.base-url:https://openlibrary.org}")
+    String openLibraryBaseUrl = "https://openlibrary.org";
+
+    @Value("${booklore.downloads.resolver.google-books.enabled:true}")
+    boolean googleBooksEnabled = true;
+    @Value("${booklore.downloads.resolver.google-books.base-url:https://www.googleapis.com/books/v1}")
+    String googleBooksBaseUrl = "https://www.googleapis.com/books/v1";
+
+    @Value("${booklore.downloads.resolver.mangadex.enabled:true}")
+    boolean mangaDexEnabled = true;
+    @Value("${booklore.downloads.resolver.mangadex.base-url:https://api.mangadex.org}")
+    String mangaDexBaseUrl = "https://api.mangadex.org";
+
+    @Value("${booklore.downloads.resolver.webtoons.enabled:true}")
+    boolean webtoonsEnabled = true;
+    @Value("${booklore.downloads.resolver.webtoons.search-url-templates:https://www.webtoons.com/en/search?keyword={query},https://www.webtoons.com/search?keyword={query}}")
+    String webtoonsSearchUrlTemplates = "https://www.webtoons.com/en/search?keyword={query},https://www.webtoons.com/search?keyword={query}";
+
+    @Value("${booklore.downloads.resolver.comicvine.enabled:false}")
+    boolean comicVineEnabled = false;
+    @Value("${booklore.downloads.resolver.comicvine.base-url:https://comicvine.gamespot.com/api}")
+    String comicVineBaseUrl = "https://comicvine.gamespot.com/api";
+    @Value("${booklore.downloads.resolver.comicvine.api-key:}")
+    String comicVineApiKey = "";
+
+    public DownloadSearchCriteria resolve(DownloadSearchCriteria criteria) {
+        if (!enabled || criteria == null || !isBlank(criteria.getDirectUrl())) {
+            return criteria;
+        }
+
+        String term = canonicalInput(criteria);
+        if (isBlank(term)) {
+            return criteria;
+        }
+
+        try {
+            List<Candidate> candidates = new ArrayList<>();
+            DownloadContentKind requested = requestedKind(criteria);
+            boolean sequential = likelySequentialArt(criteria);
+
+            if (mangaDexEnabled && (requested == DownloadContentKind.MANGA || requested == DownloadContentKind.AUTO && sequential)) {
+                candidates.addAll(resolveMangaDex(term));
+            }
+            if (webtoonsEnabled && requested == DownloadContentKind.WEBTOON) {
+                candidates.addAll(resolveWebtoons(term));
+            }
+            if (comicVineEnabled && !isBlank(comicVineApiKey) && requested == DownloadContentKind.COMIC) {
+                candidates.addAll(resolveComicVine(term));
+            }
+            if (requested == DownloadContentKind.BOOK || requested == DownloadContentKind.AUTO || requested == DownloadContentKind.COMIC) {
+                if (openLibraryEnabled) {
+                    candidates.addAll(resolveOpenLibrary(term));
+                }
+                if (googleBooksEnabled) {
+                    candidates.addAll(resolveGoogleBooks(term));
+                }
+            }
+
+            Optional<Candidate> best = candidates.stream()
+                    .filter(candidate -> candidate.confidence() >= minimumConfidence)
+                    .max((left, right) -> Double.compare(left.confidence(), right.confidence()));
+            if (best.isEmpty()) {
+                return criteria;
+            }
+            DownloadSearchCriteria resolved = applyCandidate(criteria, best.get());
+            log.debug("Canonical resolver selected {} candidate '{}' with confidence {} for '{}'",
+                    best.get().provider(), best.get().displayTitle(), best.get().confidence(), criteria.effectiveQuery());
+            return resolved;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.debug("Canonical resolver interrupted for '{}'", criteria.effectiveQuery(), e);
+            return criteria;
+        } catch (Exception e) {
+            log.debug("Canonical resolver skipped for '{}': {}", criteria.effectiveQuery(), e.getMessage(), e);
+            return criteria;
+        }
+    }
+
+    private List<Candidate> resolveOpenLibrary(String term) throws Exception {
+        URI uri = UriComponentsBuilder.fromUriString(openLibraryBaseUrl)
+                .path("/search.json")
+                .queryParam("q", term)
+                .queryParam("limit", boundedProviderLimit())
+                .queryParam("fields", "key,title,author_name,isbn,language,first_publish_year")
+                .build()
+                .encode()
+                .toUri();
+        Optional<JsonNode> root = fetchJson(uri);
+        if (root.isEmpty()) {
+            return List.of();
+        }
+        List<Candidate> candidates = new ArrayList<>();
+        for (JsonNode doc : array(root.get().path("docs"))) {
+            String title = text(doc.path("title"));
+            if (isBlank(title)) {
+                continue;
+            }
+            String author = firstArrayText(doc.path("author_name"));
+            String isbn = firstIsbn(doc.path("isbn"));
+            candidates.add(new Candidate(
+                    "openlibrary",
+                    DownloadContentKind.BOOK,
+                    title,
+                    author,
+                    isbn,
+                    null,
+                    score(term, title, author)
+            ));
+        }
+        return candidates;
+    }
+
+    private List<Candidate> resolveGoogleBooks(String term) throws Exception {
+        URI uri = UriComponentsBuilder.fromUriString(googleBooksBaseUrl)
+                .path("/volumes")
+                .queryParam("q", term)
+                .queryParam("maxResults", boundedProviderLimit())
+                .queryParam("printType", "books")
+                .build()
+                .encode()
+                .toUri();
+        Optional<JsonNode> root = fetchJson(uri);
+        if (root.isEmpty()) {
+            return List.of();
+        }
+        List<Candidate> candidates = new ArrayList<>();
+        for (JsonNode item : array(root.get().path("items"))) {
+            JsonNode info = item.path("volumeInfo");
+            String title = text(info.path("title"));
+            if (isBlank(title)) {
+                continue;
+            }
+            String author = firstArrayText(info.path("authors"));
+            String isbn = googleBooksIsbn(info.path("industryIdentifiers"));
+            candidates.add(new Candidate(
+                    "google-books",
+                    DownloadContentKind.BOOK,
+                    title,
+                    author,
+                    isbn,
+                    null,
+                    score(term, title, author)
+            ));
+        }
+        return candidates;
+    }
+
+    private List<Candidate> resolveMangaDex(String term) throws Exception {
+        URI uri = UriComponentsBuilder.fromUriString(mangaDexBaseUrl)
+                .path("/manga")
+                .queryParam("title", term)
+                .queryParam("limit", boundedProviderLimit())
+                .queryParam("includes[]", "author")
+                .queryParam("includes[]", "artist")
+                .queryParam("order[relevance]", "desc")
+                .queryParam("contentRating[]", "safe")
+                .queryParam("contentRating[]", "suggestive")
+                .queryParam("contentRating[]", "erotica")
+                .queryParam("contentRating[]", "pornographic")
+                .build()
+                .encode()
+                .toUri();
+        Optional<JsonNode> root = fetchJson(uri);
+        if (root.isEmpty()) {
+            return List.of();
+        }
+        List<Candidate> candidates = new ArrayList<>();
+        for (JsonNode manga : array(root.get().path("data"))) {
+            String title = localizedTitle(manga.path("attributes"));
+            if (isBlank(title)) {
+                continue;
+            }
+            String author = relationshipNames(manga, Set.of("author", "artist"));
+            candidates.add(new Candidate(
+                    "mangadex",
+                    DownloadContentKind.MANGA,
+                    title,
+                    author,
+                    null,
+                    title,
+                    score(term, title, author)
+            ));
+        }
+        return candidates;
+    }
+
+    private List<Candidate> resolveWebtoons(String term) throws Exception {
+        List<Candidate> candidates = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        for (String template : splitCsv(webtoonsSearchUrlTemplates)) {
+            String searchUrl = template.replace("{query}", URLEncoder.encode(term, StandardCharsets.UTF_8));
+            Optional<String> body = fetchText(URI.create(searchUrl));
+            if (body.isEmpty()) {
+                continue;
+            }
+            Document document = Jsoup.parse(body.get(), searchUrl);
+            for (Element anchor : document.select("a[href*=title_no][href*=/list]")) {
+                String href = anchor.absUrl("href");
+                if (isBlank(href) || !seen.add(normalizeUrl(href))) {
+                    continue;
+                }
+                String title = firstNonBlank(textOf(anchor, ".title"), anchor.attr("title"), textOf(anchor, ".subj"));
+                if (isBlank(title)) {
+                    continue;
+                }
+                String author = textOf(anchor, ".author");
+                candidates.add(new Candidate(
+                        "webtoons",
+                        DownloadContentKind.WEBTOON,
+                        title,
+                        author,
+                        null,
+                        title,
+                        score(term, title, author)
+                ));
+            }
+            if (!candidates.isEmpty()) {
+                break;
+            }
+        }
+        return candidates;
+    }
+
+    private List<Candidate> resolveComicVine(String term) throws Exception {
+        URI uri = UriComponentsBuilder.fromUriString(comicVineBaseUrl)
+                .path("/search/")
+                .queryParam("api_key", comicVineApiKey)
+                .queryParam("format", "json")
+                .queryParam("resources", "volume")
+                .queryParam("query", term)
+                .queryParam("limit", boundedProviderLimit())
+                .build()
+                .encode()
+                .toUri();
+        Optional<JsonNode> root = fetchJson(uri);
+        if (root.isEmpty()) {
+            return List.of();
+        }
+        List<Candidate> candidates = new ArrayList<>();
+        for (JsonNode result : array(root.get().path("results"))) {
+            String title = text(result.path("name"));
+            if (isBlank(title)) {
+                continue;
+            }
+            String publisher = text(result.path("publisher").path("name"));
+            candidates.add(new Candidate(
+                    "comicvine",
+                    DownloadContentKind.COMIC,
+                    title,
+                    publisher,
+                    null,
+                    title,
+                    score(term, title, publisher)
+            ));
+        }
+        return candidates;
+    }
+
+    private Optional<JsonNode> fetchJson(URI uri) throws Exception {
+        HttpResponse<String> response = send(uri, "application/json");
+        if (response.statusCode() < 200 || response.statusCode() > 299 || isBlank(response.body())) {
+            return Optional.empty();
+        }
+        return Optional.of(objectMapper.readTree(response.body()));
+    }
+
+    private Optional<String> fetchText(URI uri) throws Exception {
+        HttpResponse<String> response = send(uri, "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+        if (response.statusCode() < 200 || response.statusCode() > 299 || isBlank(response.body())) {
+            return Optional.empty();
+        }
+        return Optional.of(response.body());
+    }
+
+    private HttpResponse<String> send(URI uri, String accept) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(uri)
+                .timeout(Duration.ofSeconds(Math.max(1, timeoutSeconds)))
+                .header("Accept", accept)
+                .header("User-Agent", "BookLore-Downloads")
+                .GET()
+                .build();
+        return httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+    }
+
+    private DownloadSearchCriteria applyCandidate(DownloadSearchCriteria criteria, Candidate candidate) {
+        DownloadSearchCriteria.DownloadSearchCriteriaBuilder builder = criteria.toBuilder();
+        boolean sequential = candidate.contentKind() != null && candidate.contentKind().isSequentialArt() || likelySequentialArt(criteria);
+
+        if (isBlank(criteria.getTitle()) && !isBlank(candidate.title())) {
+            builder.title(candidate.title());
+        }
+        if (sequential && isBlank(criteria.getSeriesName()) && !isBlank(candidate.seriesName())) {
+            builder.seriesName(candidate.seriesName());
+        }
+        if (isBlank(criteria.getAuthor()) && !isBlank(candidate.author())) {
+            builder.author(candidate.author());
+        }
+        if (isBlank(criteria.getIsbn()) && !isBlank(candidate.isbn())) {
+            builder.isbn(candidate.isbn());
+        }
+        if (criteria.getContentKind() == null || criteria.getContentKind().isAuto()) {
+            builder.contentKind(candidate.contentKind());
+        }
+        String canonicalQuery = canonicalOutputQuery(criteria, candidate, sequential);
+        if (!isBlank(canonicalQuery)) {
+            builder.query(canonicalQuery);
+        }
+        return builder.build();
+    }
+
+    private String canonicalOutputQuery(DownloadSearchCriteria criteria, Candidate candidate, boolean sequential) {
+        String original = criteria.getQuery();
+        if (!isBlank(original) && (sequential || looksLikeIsbn(original))) {
+            return original;
+        }
+        if (candidate.contentKind() == DownloadContentKind.BOOK) {
+            return compactJoin(candidate.title(), candidate.author());
+        }
+        return isBlank(original) ? candidate.displayTitle() : original;
+    }
+
+    private String canonicalInput(DownloadSearchCriteria criteria) {
+        return firstNonBlank(criteria.getSeriesName(), criteria.getTitle(), criteria.getQuery(), criteria.getIsbn(), criteria.effectiveQuery());
+    }
+
+    private DownloadContentKind requestedKind(DownloadSearchCriteria criteria) {
+        return criteria.getContentKind() == null ? DownloadContentKind.AUTO : criteria.getContentKind();
+    }
+
+    private boolean likelySequentialArt(DownloadSearchCriteria criteria) {
+        DownloadContentKind kind = requestedKind(criteria);
+        if (kind.isSequentialArt() || criteria.getSeriesNumber() != null) {
+            return true;
+        }
+        List<DownloadFormat> formats = criteria.getPreferredFormats();
+        return formats != null && formats.stream().anyMatch(DownloadFormat::isArchiveComicFormat);
+    }
+
+    private double score(String query, String title, String author) {
+        double titleScore = tokenScore(query, title);
+        double authorScore = tokenScore(query, author);
+        double score = Math.max(titleScore, titleScore + Math.min(0.25D, authorScore * 0.25D));
+        if (!isBlank(author) && normalized(query).contains(normalized(author))) {
+            score += 0.10D;
+        }
+        return Math.min(0.99D, score);
+    }
+
+    private double tokenScore(String left, String right) {
+        Set<String> leftTokens = tokens(left);
+        Set<String> rightTokens = tokens(right);
+        if (leftTokens.isEmpty() || rightTokens.isEmpty()) {
+            return 0D;
+        }
+        int intersection = 0;
+        for (String token : leftTokens) {
+            if (rightTokens.contains(token)) {
+                intersection++;
+            }
+        }
+        double leftCoverage = intersection / (double) leftTokens.size();
+        double rightCoverage = intersection / (double) rightTokens.size();
+        double jaccard = intersection / (double) (leftTokens.size() + rightTokens.size() - intersection);
+        return Math.max(jaccard, leftCoverage * 0.65D + rightCoverage * 0.35D);
+    }
+
+    private Set<String> tokens(String value) {
+        Set<String> tokens = new LinkedHashSet<>();
+        String normalized = normalized(value);
+        if (normalized.isBlank()) {
+            return tokens;
+        }
+        for (String token : TOKEN_SPLIT.split(normalized)) {
+            if (token.length() < 2 || TOKEN_STOP_WORDS.contains(token) || token.chars().allMatch(Character::isDigit)) {
+                continue;
+            }
+            tokens.add(token);
+        }
+        return tokens;
+    }
+
+    private String normalized(String value) {
+        return value == null ? "" : value.toLowerCase(Locale.ROOT).replace('\u00a0', ' ').replaceAll("\\s+", " ").trim();
+    }
+
+    private String localizedTitle(JsonNode attributes) {
+        JsonNode titleNode = attributes.path("title");
+        String title = localizedText(titleNode);
+        if (!isBlank(title)) {
+            return title;
+        }
+        for (JsonNode altTitle : array(attributes.path("altTitles"))) {
+            title = localizedText(altTitle);
+            if (!isBlank(title)) {
+                return title;
+            }
+        }
+        return null;
+    }
+
+    private String localizedText(JsonNode object) {
+        if (object == null || object.isMissingNode() || object.isNull()) {
+            return null;
+        }
+        if (object.isTextual()) {
+            return text(object);
+        }
+        for (String language : TITLE_LANGUAGE_ORDER) {
+            String value = text(object.path(language));
+            if (!isBlank(value)) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private String relationshipNames(JsonNode resource, Set<String> types) {
+        List<String> names = new ArrayList<>();
+        for (JsonNode relationship : array(resource.path("relationships"))) {
+            if (!types.contains(relationship.path("type").asText())) {
+                continue;
+            }
+            String name = text(relationship.path("attributes").path("name"));
+            if (!isBlank(name) && !names.contains(name)) {
+                names.add(name);
+            }
+        }
+        return String.join(", ", names);
+    }
+
+    private String googleBooksIsbn(JsonNode identifiers) {
+        String first = null;
+        for (JsonNode identifier : array(identifiers)) {
+            String value = cleanIsbn(text(identifier.path("identifier")));
+            if (isBlank(value)) {
+                continue;
+            }
+            if (first == null) {
+                first = value;
+            }
+            if (value.length() == 13) {
+                return value;
+            }
+        }
+        return first;
+    }
+
+    private String firstIsbn(JsonNode values) {
+        String first = null;
+        for (JsonNode value : array(values)) {
+            String isbn = cleanIsbn(text(value));
+            if (isBlank(isbn)) {
+                continue;
+            }
+            if (first == null) {
+                first = isbn;
+            }
+            if (isbn.length() == 13) {
+                return isbn;
+            }
+        }
+        return first;
+    }
+
+    private String cleanIsbn(String value) {
+        if (isBlank(value)) {
+            return null;
+        }
+        return value.replaceAll("[^0-9Xx]", "").toUpperCase(Locale.ROOT);
+    }
+
+    private boolean looksLikeIsbn(String value) {
+        return !isBlank(value) && ISBN_LIKE.matcher(value).find();
+    }
+
+    private List<JsonNode> array(JsonNode node) {
+        if (node == null || !node.isArray()) {
+            return List.of();
+        }
+        List<JsonNode> values = new ArrayList<>();
+        for (JsonNode value : node) {
+            values.add(value);
+        }
+        return values;
+    }
+
+    private String firstArrayText(JsonNode node) {
+        for (JsonNode value : array(node)) {
+            String text = text(value);
+            if (!isBlank(text)) {
+                return text;
+            }
+        }
+        return null;
+    }
+
+    private List<String> splitCsv(String csv) {
+        if (isBlank(csv)) {
+            return List.of();
+        }
+        List<String> values = new ArrayList<>();
+        for (String value : csv.split(",")) {
+            String trimmed = value.trim();
+            if (!trimmed.isBlank()) {
+                values.add(trimmed);
+            }
+        }
+        return values;
+    }
+
+    private String textOf(Element element, String selector) {
+        Element selected = element.selectFirst(selector);
+        return selected == null ? null : selected.text().trim();
+    }
+
+    private String normalizeUrl(String value) {
+        int hashIndex = value.indexOf('#');
+        return hashIndex >= 0 ? value.substring(0, hashIndex) : value;
+    }
+
+    private String text(JsonNode node) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return null;
+        }
+        String text = node.asText(null);
+        return text == null || text.isBlank() ? null : text.trim();
+    }
+
+    private String compactJoin(String... values) {
+        return String.join(" ", splitNonBlank(values)).replaceAll("\\s+", " ").trim();
+    }
+
+    private List<String> splitNonBlank(String... values) {
+        List<String> present = new ArrayList<>();
+        for (String value : values) {
+            if (!isBlank(value)) {
+                present.add(value.trim());
+            }
+        }
+        return present;
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (!isBlank(value)) {
+                return value.trim();
+            }
+        }
+        return null;
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.isBlank();
+    }
+
+    private int boundedProviderLimit() {
+        return Math.max(1, Math.min(providerLimit, 10));
+    }
+
+    private record Candidate(String provider,
+                             DownloadContentKind contentKind,
+                             String title,
+                             String author,
+                             String isbn,
+                             String seriesName,
+                             double confidence) {
+        String displayTitle() {
+            return seriesName != null && !seriesName.isBlank() ? seriesName : title;
+        }
+    }
+}

@@ -112,10 +112,18 @@ public class DirectUrlAdapter implements DownloadSourceAdapter {
     }
 
     private boolean isWebtoonsSearch(DownloadSourceEntity source, DownloadSearchCriteria criteria) {
-        if (criteria == null || criteria.effectiveQuery().isBlank()) {
+        String query = criteria == null ? null : firstNonBlank(criteria.getSeriesName(), criteria.getTitle(), criteria.effectiveQuery());
+        if (query == null || query.isBlank()) {
+            return false;
+        }
+        List<DownloadFormat> preferredFormats = criteria.getPreferredFormats();
+        if (preferredFormats != null && !preferredFormats.isEmpty() && preferredFormats.stream().noneMatch(DownloadFormat::isArchiveComicFormat)) {
             return false;
         }
         DownloadContentKind contentKind = criteria.getContentKind();
+        if (contentKind != null && !contentKind.isAuto() && contentKind != DownloadContentKind.WEBTOON) {
+            return false;
+        }
         return (contentKind != null && contentKind == DownloadContentKind.WEBTOON)
                 || containsIgnoreCase(source.getName(), "webtoon")
                 || containsIgnoreCase(source.getConfigJson(), "webtoon")
@@ -128,8 +136,9 @@ public class DirectUrlAdapter implements DownloadSourceAdapter {
             return List.of();
         }
         try {
+            String searchQuery = firstNonBlank(criteria.getSeriesName(), criteria.getTitle(), criteria.effectiveQuery());
             String searchUrl = config.searchUrlTemplate()
-                    .replace("{query}", URLEncoder.encode(criteria.effectiveQuery(), StandardCharsets.UTF_8));
+                    .replace("{query}", URLEncoder.encode(searchQuery, StandardCharsets.UTF_8));
             HttpRequest request = HttpRequest.newBuilder(URI.create(searchUrl))
                     .timeout(Duration.ofSeconds(config.timeoutSeconds()))
                     .header("Accept", "text/html,application/xhtml+xml")
@@ -140,7 +149,7 @@ public class DirectUrlAdapter implements DownloadSourceAdapter {
             if (response.statusCode() < 200 || response.statusCode() > 299) {
                 return List.of();
             }
-            List<WebtoonsSeriesCandidate> candidates = parseWebtoonsSearch(response.body(), criteria.effectiveQuery());
+            List<WebtoonsSeriesCandidate> candidates = parseWebtoonsSearch(response.body(), searchQuery);
             List<NormalizedDownloadResult> results = new ArrayList<>();
             for (WebtoonsSeriesCandidate candidate : candidates.stream().limit(config.maxResults()).toList()) {
                 String resolvedUrl = criteria.getSeriesNumber() == null
@@ -150,7 +159,7 @@ public class DirectUrlAdapter implements DownloadSourceAdapter {
                         .orElse(new UrlMetadata(candidate.title(), candidate.title(), criteria.getSeriesNumber(), candidate.language(), DownloadContentKind.WEBTOON, candidate.author() == null ? List.of() : List.of(candidate.author()), null));
                 Map<String, Object> raw = new LinkedHashMap<>();
                 raw.put("provider", "webtoons-search");
-                raw.put("query", criteria.effectiveQuery());
+                raw.put("query", searchQuery);
                 raw.put("seriesUrl", candidate.url());
                 raw.put("resolvedUrl", resolvedUrl);
                 raw.put("titleNo", candidate.titleNo());
