@@ -214,3 +214,37 @@ bootstrapSources:
       - fr
   prowlarr:
     indexerIds: ""
+    bootstrapIndexers:
+      - definitionName: linuxtracker
+        name: LinuxTracker
+        enabled: true
+        required: true
+        priority: 25
+        fields:
+          baseUrl: https://linuxtracker.org/
+          sort: 3
+          type: 1
+      - definitionName: nyaasi
+        name: Nyaa.si
+        enabled: true
+        required: true
+        priority: 25
+        fields:
+          baseUrl: https://nyaa.si/
+          prefer_magnet_links: true
+          cat-id: 9
+          filter-id: 0
+          sort: 1
+          type: 1
+      - definitionName: 1337x
+        name: 1337x (disabled until live test passes)
+        enabled: false
+        required: false
+        priority: 50
+        fields:
+          baseUrl: https://1337x.to/
+          downloadlink: 1
+          downloadlink2: 1
+          disablesort: true
+          sort: 2
+          type: 1

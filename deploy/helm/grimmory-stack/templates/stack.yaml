@@ -581,6 +581,7 @@ spec:
           args:
             - |
               mkdir -p /config/qBittorrent /bookdrop/.downloads
+              rm -f /config/qBittorrent/lockfile
               if [ ! -f /config/qBittorrent/qBittorrent.conf ]; then
                 printf '%s\n' \
                   '[LegalNotice]' \
@@ -628,6 +629,8 @@ spec:
               value: {{ .Values.global.timezone | quote }}
             - name: WEBUI_PORT
               value: {{ .Values.qbittorrent.webPort | quote }}
+            - name: TORRENTING_PORT
+              value: {{ .Values.qbittorrent.bittorrentPort | quote }}
           readinessProbe:
             httpGet:
               path: /
@@ -970,6 +973,8 @@ spec:
               value: {{ join "," .Values.bootstrapSources.mangaDex.translatedLanguages | quote }}
             - name: PROWLARR_INDEXER_IDS
               value: {{ .Values.bootstrapSources.prowlarr.indexerIds | quote }}
+            - name: PROWLARR_BOOTSTRAP_INDEXERS
+              value: {{ .Values.bootstrapSources.prowlarr.bootstrapIndexers | toJson | quote }}
           command: ["python", "-c"]
           args:
             - |
@@ -978,9 +983,11 @@ spec:
               import sys
               import time
               import urllib.error
+              import urllib.parse
               import urllib.request
 
               base = os.environ["GRIMMORY_API_BASE"].rstrip("/")
+              prowlarr_base = "http://prowlarr:{{ .Values.prowlarr.port }}/api/v1"
 
               def call(method, path, payload=None, token=None, timeout=20):
                   data = None
@@ -999,6 +1006,83 @@ spec:
                       body = exc.read().decode("utf-8", "replace")
                       raise RuntimeError(f"{method} {path} failed with HTTP {exc.code}: {body}") from exc
 
+              def prowlarr_call(method, path, payload=None, timeout=30):
+                  data = None
+                  headers = {
+                      "Accept": "application/json",
+                      "X-Api-Key": os.environ["PROWLARR_API_KEY"],
+                  }
+                  if payload is not None:
+                      data = json.dumps(payload).encode("utf-8")
+                      headers["Content-Type"] = "application/json"
+                  req = urllib.request.Request(prowlarr_base + path, data=data, method=method, headers=headers)
+                  try:
+                      with urllib.request.urlopen(req, timeout=timeout) as resp:
+                          body = resp.read().decode("utf-8")
+                          return json.loads(body) if body else {}
+                  except urllib.error.HTTPError as exc:
+                      body = exc.read().decode("utf-8", "replace")
+                      raise RuntimeError(f"Prowlarr {method} {path} failed with HTTP {exc.code}: {body}") from exc
+
+              def set_field(resource, name, value):
+                  for field in resource.get("fields") or []:
+                      if field.get("name") == name:
+                          field["value"] = value
+                          return
+                  print(f"Prowlarr schema field {name!r} not found for {resource.get('definitionName')}", flush=True)
+
+              def ensure_prowlarr_indexers():
+                  raw = os.environ.get("PROWLARR_BOOTSTRAP_INDEXERS", "[]")
+                  configured = json.loads(raw) if raw.strip() else []
+                  if not configured:
+                      return
+
+                  deadline = time.time() + 180
+                  while True:
+                      try:
+                          prowlarr_call("GET", "/system/status", timeout=5)
+                          break
+                      except Exception as exc:
+                          if time.time() > deadline:
+                              raise
+                          print(f"waiting for prowlarr api: {exc}", flush=True)
+                          time.sleep(5)
+
+                  profiles = prowlarr_call("GET", "/appprofile", timeout=20)
+                  profile_id = (profiles[0] if profiles else {}).get("id")
+                  if not profile_id:
+                      raise RuntimeError("Prowlarr app profile not found")
+                  schemas = prowlarr_call("GET", "/indexer/schema", timeout=60)
+
+                  for item in configured:
+                      definition = item.get("definitionName")
+                      display_name = item.get("name") or definition
+                      required = bool(item.get("required", True))
+                      try:
+                          existing = prowlarr_call("GET", "/indexer", timeout=20)
+                          current = next((entry for entry in existing if entry.get("definitionName") == definition or entry.get("name") == display_name), None)
+                          schema = next((entry for entry in schemas if entry.get("definitionName") == definition), None)
+                          if not schema:
+                              raise RuntimeError(f"Prowlarr schema {definition!r} not found")
+                          payload = json.loads(json.dumps(schema))
+                          payload["name"] = display_name
+                          payload["enable"] = bool(item.get("enabled", True))
+                          payload["appProfileId"] = profile_id
+                          payload["priority"] = int(item.get("priority", 25))
+                          for name, value in (item.get("fields") or {}).items():
+                              set_field(payload, name, value)
+                          if current and current.get("id") is not None:
+                              payload["id"] = current["id"]
+                              prowlarr_call("PUT", f"/indexer/{current['id']}?forceSave=true", payload, timeout=90)
+                              print(f"updated Prowlarr indexer {display_name}", flush=True)
+                          else:
+                              prowlarr_call("POST", "/indexer?forceSave=true", payload, timeout=90)
+                              print(f"created Prowlarr indexer {display_name}", flush=True)
+                      except Exception as exc:
+                          print(f"Prowlarr indexer bootstrap failed for {display_name}: {exc}", flush=True)
+                          if required:
+                              raise
+
               deadline = time.time() + 600
               while True:
                   try:
@@ -1009,6 +1093,8 @@ spec:
                           raise
                       print(f"waiting for grimmory api: {exc}", flush=True)
                       time.sleep(5)
+
+              ensure_prowlarr_indexers()
 
               setup_status = call("GET", "/setup/status")
               setup_done = bool(setup_status.get("data")) if isinstance(setup_status, dict) else True
