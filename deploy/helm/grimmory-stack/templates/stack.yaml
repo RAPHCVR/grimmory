@@ -1218,7 +1218,7 @@ spec:
                               "downloadEndpoint": "/api/queue/add",
                               "remoteStagingPath": "{stagingDir}",
                               "localDownloadRoot": "{bookdrop}/.downloads/stacks-cache",
-                              "remoteDownloadRoots": ["/bookdrop/.downloads/stacks-cache", "/bookdrop"],
+                              "remoteDownloadRoots": ["/opt/stacks/download", "/bookdrop/.downloads/stacks-cache", "/bookdrop"],
                               "pollIntervalSeconds": 2,
                               "timeoutMinutes": 180,
                               "requestTimeoutSeconds": 30,
