@@ -387,6 +387,43 @@ class DownloadScoringServiceTest {
     }
 
     @Test
+    void score_webtoonEpisode_prefersNativeGalleryDlOverCompiledStacksVolume() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("Lore Olympus")
+                .seriesName("Lore Olympus")
+                .seriesNumber(1f)
+                .contentKind(DownloadContentKind.WEBTOON)
+                .preferredFormats(List.of(DownloadFormat.CBZ, DownloadFormat.PDF))
+                .build();
+
+        NormalizedDownloadResult nativeEpisode = NormalizedDownloadResult.builder()
+                .title("Episode 1")
+                .seriesName("Lore Olympus")
+                .seriesNumber(1f)
+                .format(DownloadFormat.CBZ)
+                .contentKind(DownloadContentKind.WEBTOON)
+                .acquisitionType(DownloadAcquisitionType.CLI_GALLERY_DL)
+                .downloadUrl("https://www.webtoons.com/en/romance/lore-olympus/episode-1/viewer?title_no=1320&episode_no=1")
+                .build();
+
+        NormalizedDownloadResult compiledVolume = NormalizedDownloadResult.builder()
+                .title("Lore Olympus: Volume One (In Black and White)")
+                .seriesName("Lore Olympus")
+                .seriesNumber(1f)
+                .format(DownloadFormat.PDF)
+                .contentKind(DownloadContentKind.WEBTOON)
+                .acquisitionType(DownloadAcquisitionType.EXTERNAL_STACKS)
+                .detailsUrl("https://annas-archive.test/md5/lore-olympus-volume-one")
+                .build();
+
+        var nativeScore = service.score(criteria, nativeEpisode);
+        var compiledScore = service.score(criteria, compiledVolume);
+
+        assertTrue(nativeScore.getScore() > compiledScore.getScore());
+        assertTrue(compiledScore.getReasons().contains("-25 non-native webtoon episode source"));
+    }
+
+    @Test
     void score_externalStacksMd5Result_doesNotRequireDownloadUrlAndMatchesAuthorQuery() {
         DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
                 .query("bernard werber")

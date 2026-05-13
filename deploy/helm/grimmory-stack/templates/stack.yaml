@@ -30,6 +30,7 @@ stringData:
   admin-username: {{ .Values.secrets.admin.username | quote }}
   admin-password: {{ .Values.secrets.admin.password | quote }}
   prowlarr-api-key: {{ .Values.secrets.prowlarr.apiKey | quote }}
+  comicvine-api-key: {{ .Values.secrets.comicVine.apiKey | quote }}
   qbittorrent-username: {{ .Values.secrets.qbittorrent.username | quote }}
   qbittorrent-password: {{ .Values.secrets.qbittorrent.password | quote }}
   qbittorrent-password-pbkdf2: {{ .Values.secrets.qbittorrent.passwordPbkdf2 | quote }}
@@ -285,6 +286,14 @@ spec:
               value: {{ .Values.grimmory.downloads.defaultAutoFinalize | quote }}
             - name: BOOKLORE_DOWNLOADS_DEFAULT_CONFIDENCE_THRESHOLD
               value: {{ .Values.grimmory.downloads.defaultConfidenceThreshold | quote }}
+            - name: BOOKLORE_DOWNLOADS_RESOLVER_COMICVINE_ENABLED
+              value: {{ .Values.grimmory.downloads.resolver.comicVine.enabled | quote }}
+            - name: BOOKLORE_DOWNLOADS_RESOLVER_COMICVINE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: comicvine-api-key
+                  optional: true
           startupProbe:
             httpGet:
               path: /api/v1/healthcheck

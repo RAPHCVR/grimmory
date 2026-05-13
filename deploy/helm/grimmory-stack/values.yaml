@@ -69,6 +69,8 @@ secrets:
     password: change-me-admin
   prowlarr:
     apiKey: change-me-prowlarr-api-key
+  comicVine:
+    apiKey: change-me-comicvine-api-key
   qbittorrent:
     username: admin
     password: change-me-qbittorrent-password
@@ -142,6 +144,9 @@ grimmory:
     defaultLibraryPath: /bookdrop
     defaultAutoFinalize: "true"
     defaultConfidenceThreshold: "90"
+    resolver:
+      comicVine:
+        enabled: "true"
   resources:
     requests:
       cpu: 50m

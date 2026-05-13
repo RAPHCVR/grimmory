@@ -162,6 +162,8 @@ public class DownloadScoringService {
             }
         }
 
+        score += scoreWebtoonEpisodeSource(criteria, result, reasons);
+
         int clamped = Math.max(0, Math.min(100, score));
         if (clamped != score) {
             reasons.add("clamped to " + clamped);
@@ -206,6 +208,29 @@ public class DownloadScoringService {
             return true;
         }
         return preferredFormats.stream().anyMatch(format -> format != null && format.isArchiveComicFormat());
+    }
+
+    private int scoreWebtoonEpisodeSource(DownloadSearchCriteria criteria, NormalizedDownloadResult result, List<String> reasons) {
+        if (criteria == null || result == null) {
+            return 0;
+        }
+        DownloadContentKind requestedKind = criteria.getContentKind() == null ? DownloadContentKind.AUTO : criteria.getContentKind();
+        if (requestedKind != DownloadContentKind.WEBTOON
+                || result.getContentKind() != DownloadContentKind.WEBTOON
+                || !hasRequestedSequentialNumber(criteria)
+                || result.getAcquisitionType() != DownloadAcquisitionType.EXTERNAL_STACKS) {
+            return 0;
+        }
+        reasons.add("-25 non-native webtoon episode source");
+        return -25;
+    }
+
+    private boolean hasRequestedSequentialNumber(DownloadSearchCriteria criteria) {
+        if (criteria.getSeriesNumber() != null) {
+            return true;
+        }
+        String evidence = String.join(" ", safe(criteria.getQuery()), safe(criteria.getTitle()), safe(criteria.getSeriesName()));
+        return trailingNumber(evidence).isPresent() || hasAnyNumberMarker(evidence);
     }
 
     private boolean requiresDownloadUrl(NormalizedDownloadResult result) {
