@@ -27,7 +27,10 @@
         "isbn": "ISBN",
         "seriesName": "Série",
         "seriesNumber": "Numéro",
-        "directUrl": "URL directe"
+        "directUrl": "URL directe",
+        "progressStarting": "Recherche en cours sur les sources rapides... {{seconds}} s",
+        "progressFlareSolverr": "Anna / FlareSolverr peut prendre quelques secondes ; les sources sont interrogées en parallèle... {{seconds}} s",
+        "progressSlow": "Toujours en cours : une source lente est isolée, les autres résultats seront classés dès réception... {{seconds}} s"
     },
     "contentKinds": {
         "AUTO": "Auto",
@@ -58,7 +61,8 @@
         "size": "Taille",
         "reasons": "Raisons du score",
         "actions": "Actions",
-        "empty": "Lance une recherche pour afficher les candidats classés."
+        "empty": "Lance une recherche pour afficher les candidats classés.",
+        "completedIn": "Terminé en {{seconds}} s"
     },
     "jobs": {
         "title": "Jobs",

@@ -19,7 +19,10 @@ import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Comparator;
+import java.util.Locale;
 import java.util.Optional;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 @Slf4j
 @Component
@@ -49,7 +52,8 @@ public class QbittorrentDownloadExecutor implements DownloadExecutor {
         String remoteSavePath = config.resolveRemoteSavePath(request.getStagingDir(), jobId);
         Path localSavePath = config.resolveLocalSavePath(request.getStagingDir(), jobId);
 
-        QbittorrentClient.SubmittedTorrent submitted = qbittorrentClient.addUrl(config, url, remoteSavePath, jobTag);
+        QbittorrentClient.SubmittedTorrent submitted = reusableSubmittedTorrent(config, request.getJob())
+                .orElseGet(() -> qbittorrentClient.addUrl(config, url, remoteSavePath, jobTag));
         String externalId = submitted.hash() == null || submitted.hash().isBlank() ? submitted.jobTag() : submitted.hash();
         saveExternalTask(request.getJob(), externalId);
 
@@ -78,12 +82,39 @@ public class QbittorrentDownloadExecutor implements DownloadExecutor {
         throw new DownloadSourceException("Torrent did not complete before timeout: " + state);
     }
 
+    private Optional<QbittorrentClient.SubmittedTorrent> reusableSubmittedTorrent(QbittorrentClient.QbittorrentConfig config,
+                                                                                  DownloadJobEntity job) {
+        if (job == null || !EXTERNAL_TASK_TYPE.equals(job.getExternalTaskType())) {
+            return Optional.empty();
+        }
+        String externalId = job.getExternalTaskId();
+        if (externalId == null || externalId.isBlank()) {
+            return Optional.empty();
+        }
+        boolean hashLike = isBtihHash(externalId);
+        Optional<QbittorrentClient.TorrentInfo> existing = hashLike
+                ? qbittorrentClient.findTorrent(config, externalId, null)
+                : qbittorrentClient.findTorrent(config, null, externalId);
+        if (existing.isEmpty()) {
+            return Optional.empty();
+        }
+        String hash = existing.get().hash();
+        if (hash != null && !hash.isBlank()) {
+            return Optional.of(new QbittorrentClient.SubmittedTorrent(hash, externalId));
+        }
+        return Optional.of(new QbittorrentClient.SubmittedTorrent(hashLike ? externalId : null, externalId));
+    }
+
     private Path copyCompletedPayload(QbittorrentClient.TorrentInfo info, Path localSavePath, DownloadExecutionRequest request) {
         try {
             Path payload = resolvePayloadPath(info, localSavePath, request.getResult().getContentKind());
             Path targetFile = targetFileForPayload(request.getTargetPartFile(), payload, request.getResult().getContentKind());
             Files.createDirectories(targetFile.getParent());
-            Files.copy(payload, targetFile, StandardCopyOption.REPLACE_EXISTING);
+            if (Files.isDirectory(payload) && isImageSequenceDirectory(payload, request.getResult().getContentKind())) {
+                packageImageDirectoryAsCbz(payload, targetFile);
+            } else {
+                Files.copy(payload, targetFile, StandardCopyOption.REPLACE_EXISTING);
+            }
             return targetFile;
         } catch (IOException e) {
             throw new DownloadSourceException("Failed to copy completed torrent payload into staging: " + e.getMessage(), e);
@@ -141,18 +172,24 @@ public class QbittorrentDownloadExecutor implements DownloadExecutor {
             throw new DownloadSourceException("Torrent completed payload is not a regular file or directory: " + path);
         }
         try (var stream = Files.walk(path)) {
-            return stream
+            Optional<Path> supportedFile = stream
                     .filter(Files::isRegularFile)
                     .filter(candidate -> isSupportedPayload(candidate, contentKind))
-                    .max(Comparator.comparingLong(this::safeSize))
-                    .orElseThrow(() -> new DownloadSourceException("Torrent completed without a supported BookLore file inside " + path));
+                    .max(Comparator.comparingLong(this::safeSize));
+            if (supportedFile.isPresent()) {
+                return supportedFile.get();
+            }
         }
+        if (isImageSequenceDirectory(path, contentKind)) {
+            return path;
+        }
+        throw new DownloadSourceException("Torrent completed without a supported BookLore file inside " + path);
     }
 
     private Path targetFileForPayload(Path targetPartFile, Path payload, DownloadContentKind contentKind) throws IOException {
         String extension = BookFileExtension.fromFileName(payload.getFileName().toString())
                 .map(BookFileExtension::getExtension)
-                .orElseGet(() -> isComicZipPayload(payload, contentKind) ? "cbz" : null);
+                .orElseGet(() -> isComicZipPayload(payload, contentKind) || isImageSequenceDirectory(payload, contentKind) ? "cbz" : null);
         if (extension == null || extension.isBlank()) {
             return targetPartFile;
         }
@@ -187,6 +224,47 @@ public class QbittorrentDownloadExecutor implements DownloadExecutor {
         } catch (IOException e) {
             return false;
         }
+    }
+
+    private boolean isImageSequenceDirectory(Path path, DownloadContentKind contentKind) {
+        if (!isSequentialArt(contentKind) || path == null || !Files.isDirectory(path)) {
+            return false;
+        }
+        try (var stream = Files.walk(path)) {
+            return stream.anyMatch(candidate -> Files.isRegularFile(candidate) && isImageFile(candidate));
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    private void packageImageDirectoryAsCbz(Path sourceDirectory, Path targetFile) throws IOException {
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(targetFile));
+             var images = Files.walk(sourceDirectory)) {
+            for (Path image : images
+                    .filter(Files::isRegularFile)
+                    .filter(this::isImageFile)
+                    .sorted(Comparator.comparing(path -> sourceDirectory.relativize(path).toString(), String.CASE_INSENSITIVE_ORDER))
+                    .toList()) {
+                String entryName = sourceDirectory.relativize(image).toString().replace('\\', '/');
+                zip.putNextEntry(new ZipEntry(entryName));
+                Files.copy(image, zip);
+                zip.closeEntry();
+            }
+        }
+    }
+
+    private boolean isImageFile(Path path) {
+        String fileName = path.getFileName().toString().toLowerCase();
+        return fileName.endsWith(".jpg")
+                || fileName.endsWith(".jpeg")
+                || fileName.endsWith(".png")
+                || fileName.endsWith(".webp")
+                || fileName.endsWith(".gif");
+    }
+
+    private boolean isBtihHash(String value) {
+        String normalized = value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+        return normalized.matches("[a-z0-9]{32}|[a-f0-9]{40}");
     }
 
     private boolean isSequentialArt(DownloadContentKind contentKind) {

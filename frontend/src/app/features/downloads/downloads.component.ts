@@ -83,6 +83,9 @@ export class DownloadsComponent implements OnInit, OnDestroy {
   searchId: number | null = null;
   searchError: string | null = null;
   loadingResults = false;
+  searchElapsedSeconds = 0;
+  lastSearchDurationMs: number | null = null;
+  searchProgressKey = 'downloads.search.progressStarting';
   loadingJobs = false;
   cleanupRunning = false;
   acquiringResultIds = new Set<number>();
@@ -93,6 +96,8 @@ export class DownloadsComponent implements OnInit, OnDestroy {
   formatOptions: SelectOption<DownloadFormat>[] = DOWNLOAD_FORMATS.map(value => ({label: value, value}));
 
   private pollSub?: Subscription;
+  private searchProgressTimer?: ReturnType<typeof setInterval>;
+  private searchStartedAt = 0;
 
   constructor() {
     effect(() => {
@@ -112,6 +117,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.pollSub?.unsubscribe();
+    this.clearSearchProgressTimer();
   }
 
   search(): void {
@@ -125,11 +131,12 @@ export class DownloadsComponent implements OnInit, OnDestroy {
       return;
     }
 
-    this.loadingResults = true;
+    this.startSearchProgress();
     this.searchError = null;
-    this.downloadsService.search(request).subscribe({
+    this.downloadsService.search(request).pipe(
+      finalize(() => this.stopSearchProgress())
+    ).subscribe({
       next: response => {
-        this.loadingResults = false;
         this.searchId = response.id;
         this.searchError = response.errorMessage ?? null;
         this.results = [...(response.results ?? [])]
@@ -144,7 +151,6 @@ export class DownloadsComponent implements OnInit, OnDestroy {
         }
       },
       error: err => {
-        this.loadingResults = false;
         this.searchError = err?.error?.message || err?.message || this.t.translate('downloads.toast.searchError');
         this.messageService.add({
           severity: 'error',
@@ -415,6 +421,16 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     return score == null ? '-' : `${score}/100`;
   }
 
+  searchProgressMessage(): string {
+    return this.t.translate(this.searchProgressKey, {seconds: this.searchElapsedSeconds});
+  }
+
+  lastSearchDurationLabel(): string {
+    if (!this.lastSearchDurationMs) return '';
+    const seconds = this.lastSearchDurationMs / 1000;
+    return this.t.translate('downloads.results.completedIn', {seconds: seconds.toFixed(seconds >= 10 ? 0 : 1)});
+  }
+
   formatBytes(bytes?: number | null): string {
     if (!bytes || bytes <= 0) return '-';
     const units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -472,6 +488,40 @@ export class DownloadsComponent implements OnInit, OnDestroy {
   private clean(value: string): string | null {
     const trimmed = value?.trim();
     return trimmed ? trimmed : null;
+  }
+
+  private startSearchProgress(): void {
+    this.clearSearchProgressTimer();
+    this.loadingResults = true;
+    this.searchElapsedSeconds = 0;
+    this.lastSearchDurationMs = null;
+    this.searchStartedAt = Date.now();
+    this.searchProgressKey = 'downloads.search.progressStarting';
+    this.searchProgressTimer = setInterval(() => {
+      this.searchElapsedSeconds = Math.floor((Date.now() - this.searchStartedAt) / 1000);
+      if (this.searchElapsedSeconds >= 8) {
+        this.searchProgressKey = 'downloads.search.progressSlow';
+      } else if (this.searchElapsedSeconds >= 3) {
+        this.searchProgressKey = 'downloads.search.progressFlareSolverr';
+      } else {
+        this.searchProgressKey = 'downloads.search.progressStarting';
+      }
+    }, 500);
+  }
+
+  private stopSearchProgress(): void {
+    if (this.searchStartedAt) {
+      this.lastSearchDurationMs = Date.now() - this.searchStartedAt;
+    }
+    this.loadingResults = false;
+    this.clearSearchProgressTimer();
+  }
+
+  private clearSearchProgressTimer(): void {
+    if (this.searchProgressTimer) {
+      clearInterval(this.searchProgressTimer);
+      this.searchProgressTimer = undefined;
+    }
   }
 
   private applyDefaultTargetIfSingle(): void {

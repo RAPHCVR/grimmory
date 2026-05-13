@@ -38,6 +38,9 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @Slf4j
 @Service
@@ -95,11 +98,14 @@ public class DownloadPipelineManager {
             List<DownloadSourceEntity> sources = sourceRepository.findAllByEnabledTrueOrderByPriorityAscNameAsc();
             List<String> sourceErrors = new ArrayList<>();
             int resultCount = 0;
-            for (DownloadSourceEntity source : sources) {
-                SourceSearchOutcome outcome = runSourceSearch(search, source, criteria);
-                resultCount += outcome.resultCount();
+            for (SourceSearchOutcome outcome : runSourceSearches(sources, criteria)) {
+                resultCount += outcome.results().size();
                 if (outcome.errorMessage() != null) {
                     sourceErrors.add(outcome.errorMessage());
+                }
+                for (NormalizedDownloadResult normalized : outcome.results()) {
+                    DownloadScoreBreakdown score = scoringService.score(criteria, normalized);
+                    resultRepository.save(toEntity(search, outcome.source(), normalized, score));
                 }
             }
             if (sources.isEmpty()) {
@@ -221,6 +227,8 @@ public class DownloadPipelineManager {
                 .confidenceThreshold(previous.getConfidenceThreshold() == null ? 90 : previous.getConfidenceThreshold())
                 .targetLibraryId(target.libraryId())
                 .targetLibraryPathId(target.libraryPathId())
+                .externalTaskId(previous.getExternalTaskId())
+                .externalTaskType(previous.getExternalTaskType())
                 .build();
         DownloadJobEntity saved = jobRepository.save(retry);
         if (previous.getErrorMessage() != null && previous.getErrorMessage().startsWith("Marked failed before retry")) {
@@ -290,18 +298,34 @@ public class DownloadPipelineManager {
         }
     }
 
-    private SourceSearchOutcome runSourceSearch(DownloadSearchEntity search, DownloadSourceEntity source, DownloadSearchCriteria criteria) {
+    private List<SourceSearchOutcome> runSourceSearches(List<DownloadSourceEntity> sources, DownloadSearchCriteria criteria) {
+        if (sources.size() <= 1) {
+            return sources.stream()
+                    .map(source -> runSourceSearch(source, criteria))
+                    .toList();
+        }
+
+        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            List<CompletableFuture<SourceSearchOutcome>> futures = sources.stream()
+                    .map(source -> CompletableFuture.supplyAsync(() -> runSourceSearch(source, criteria), executor))
+                    .toList();
+            return futures.stream()
+                    .map(CompletableFuture::join)
+                    .toList();
+        }
+    }
+
+    private SourceSearchOutcome runSourceSearch(DownloadSourceEntity source, DownloadSearchCriteria criteria) {
         try {
             DownloadSourceAdapter adapter = adapterRegistry.adapterFor(source);
             List<NormalizedDownloadResult> normalizedResults = adapter.search(source, criteria);
-            for (NormalizedDownloadResult normalized : normalizedResults) {
-                DownloadScoreBreakdown score = scoringService.score(criteria, normalized);
-                resultRepository.save(toEntity(search, source, normalized, score));
-            }
-            return new SourceSearchOutcome(normalizedResults.size(), null);
+            return new SourceSearchOutcome(source, normalizedResults, null);
         } catch (DownloadSourceException e) {
             log.warn("Download source '{}' failed during search: {}", source.getName(), e.getMessage());
-            return new SourceSearchOutcome(0, source.getName() + ": " + e.getMessage());
+            return new SourceSearchOutcome(source, List.of(), source.getName() + ": " + e.getMessage());
+        } catch (Exception e) {
+            log.warn("Download source '{}' failed unexpectedly during search: {}", source.getName(), e.getMessage(), e);
+            return new SourceSearchOutcome(source, List.of(), source.getName() + ": " + e.getMessage());
         }
     }
 
@@ -478,6 +502,8 @@ public class DownloadPipelineManager {
         }
     }
 
-    private record SourceSearchOutcome(int resultCount, String errorMessage) {
+    private record SourceSearchOutcome(DownloadSourceEntity source,
+                                       List<NormalizedDownloadResult> results,
+                                       String errorMessage) {
     }
 }

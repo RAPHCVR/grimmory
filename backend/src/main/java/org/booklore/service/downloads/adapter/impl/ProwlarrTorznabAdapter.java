@@ -29,6 +29,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.*;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Component
@@ -37,6 +38,8 @@ public class ProwlarrTorznabAdapter implements DownloadSourceAdapter {
 
     private static final int DEFAULT_TIMEOUT_SECONDS = 20;
     private static final String DEFAULT_INDEXER = "all";
+    private static final Pattern NON_ALNUM = Pattern.compile("[^a-z0-9]+");
+    private static final Pattern UNSUPPORTED_MEDIA_MARKER = Pattern.compile("(?i)(?:\\bmp4\\b|\\bmkv\\b|\\bavi\\b|\\bmov\\b|\\bwmv\\b|\\bflac\\b|\\bmp3\\b|\\baac\\b|\\bopus\\b|\\b480p\\b|\\b720p\\b|\\b1080p\\b|\\b2160p\\b|\\bfullhd\\b|\\bbdrip\\b|\\bwebrip\\b|\\bweb dl\\b|\\bhdtv\\b|\\bbluray\\b|\\bblu ray\\b|\\bx264\\b|\\bx265\\b|\\bhevc\\b|\\bh\\s?264\\b|\\bh\\s?265\\b|\\b10bit\\b|\\bdual audio\\b|\\bdubbed\\b|\\beng dub\\b|\\bsubbed\\b|\\bsoftsubs?\\b|\\bhardsubs?\\b|\\bvostfr\\b|\\bsub ita\\b|\\bsub esp\\b|\\bfansubs?\\b|\\braws?\\b|\\bsoundtrack\\b|\\bost\\b|\\bs\\d{1,2}\\s?e\\d{1,3}\\b|\\bepisode\\b|\\bcapitulo\\b|\\btv anime\\b|\\bmovies other\\b)");
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
@@ -154,6 +157,10 @@ public class ProwlarrTorznabAdapter implements DownloadSourceAdapter {
             DownloadFormat format = inferFormat(title, attrs);
             DownloadAcquisitionType acquisitionType = inferAcquisitionType(link);
             String rawJson = objectMapper.writeValueAsString(attrs);
+            if (isUnsupportedMediaPayload(title, firstNonBlank(attrs.get("category"), attrs.get("categories")), link, rawJson, format, acquisitionType)) {
+                log.debug("Skipping unsupported Prowlarr/Torznab media payload '{}'", title);
+                continue;
+            }
             DownloadContentKind contentKind = contentClassifier.resolve(
                     criteria.getContentKind(),
                     contentClassifier.infer(sourceType(), sourceName, title, firstNonBlank(attrs.get("series"), attrs.get("seriesName")), details, link, format, acquisitionType, rawJson),
@@ -198,6 +205,10 @@ public class ProwlarrTorznabAdapter implements DownloadSourceAdapter {
             String rawJson = objectMapper.writeValueAsString(item);
             DownloadFormat format = inferProwlarrFormat(title, rawJson);
             DownloadAcquisitionType acquisitionType = inferProwlarrAcquisitionType(downloadUrl, protocol);
+            if (isUnsupportedMediaPayload(title, item.path("categories").toString(), downloadUrl, rawJson, format, acquisitionType)) {
+                log.debug("Skipping unsupported Prowlarr media payload '{}'", title);
+                continue;
+            }
             DownloadContentKind contentKind = contentClassifier.resolve(
                     criteria.getContentKind(),
                     contentClassifier.infer(sourceType(), sourceName, title, null, detailsUrl, downloadUrl, format, acquisitionType, rawJson),
@@ -314,6 +325,33 @@ public class ProwlarrTorznabAdapter implements DownloadSourceAdapter {
         return inferAcquisitionType(link);
     }
 
+    private boolean isUnsupportedMediaPayload(String title,
+                                              String categoryText,
+                                              String downloadUrl,
+                                              String rawPayload,
+                                              DownloadFormat format,
+                                              DownloadAcquisitionType acquisitionType) {
+        boolean externalPayload = acquisitionType == DownloadAcquisitionType.TORRENT || acquisitionType == DownloadAcquisitionType.NZB;
+        boolean unknownFormat = format == null || format == DownloadFormat.UNKNOWN;
+        if (!externalPayload && !unknownFormat) {
+            return false;
+        }
+        String evidence = normalizeMediaEvidence(String.join(" ",
+                safe(title),
+                safe(categoryText),
+                safe(downloadUrl),
+                safe(rawPayload)
+        ));
+        return UNSUPPORTED_MEDIA_MARKER.matcher(evidence).find();
+    }
+
+    private String normalizeMediaEvidence(String value) {
+        return NON_ALNUM.matcher(value == null ? "" : value.toLowerCase(Locale.ROOT))
+                .replaceAll(" ")
+                .trim()
+                .replaceAll("\\s+", " ");
+    }
+
     private String firstNonBlank(String... values) {
         for (String value : values) {
             if (value != null && !value.isBlank()) {
@@ -321,6 +359,10 @@ public class ProwlarrTorznabAdapter implements DownloadSourceAdapter {
             }
         }
         return null;
+    }
+
+    private String safe(String value) {
+        return value == null ? "" : value;
     }
 
     private Long firstLong(String... values) {

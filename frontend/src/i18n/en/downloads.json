@@ -22,7 +22,10 @@
     "isbn": "ISBN",
     "seriesName": "Series",
     "seriesNumber": "Number",
-    "directUrl": "Direct URL"
+    "directUrl": "Direct URL",
+    "progressStarting": "Searching fast sources... {{seconds}} s",
+    "progressFlareSolverr": "Anna / FlareSolverr can take a few seconds; sources are queried in parallel... {{seconds}} s",
+    "progressSlow": "Still running: one slow source is isolated and results will be ranked as soon as it returns... {{seconds}} s"
   },
   "results": {
     "title": "Results",
@@ -34,7 +37,8 @@
     "size": "Size",
     "reasons": "Score reasons",
     "actions": "Actions",
-    "empty": "Run a search to display scored acquisition candidates."
+    "empty": "Run a search to display scored acquisition candidates.",
+    "completedIn": "Completed in {{seconds}} s"
   },
   "jobs": {
     "title": "Jobs",

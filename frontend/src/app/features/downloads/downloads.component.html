@@ -54,6 +54,13 @@
         </p-button>
       </div>
 
+      @if (loadingResults) {
+        <div class="search-progress-strip" role="status" aria-live="polite">
+          <i class="pi pi-spin pi-spinner"></i>
+          <span>{{ searchProgressMessage() }}</span>
+        </div>
+      }
+
       <div class="advanced-grid">
         <div class="field">
           <label for="download-content-kind">{{ t('search.contentKind') }}</label>
@@ -158,6 +165,9 @@
           <h2>{{ t('results.title') }}</h2>
           @if (searchId) {
             <span>{{ t('results.searchId', {id: searchId}) }}</span>
+          }
+          @if (!loadingResults && lastSearchDurationMs) {
+            <span class="duration-label">{{ lastSearchDurationLabel() }}</span>
           }
         </div>
         @if (searchError) {

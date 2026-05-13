@@ -289,6 +289,29 @@ class DownloadScoringServiceTest {
     }
 
     @Test
+    void score_subtitledFullHdTorrentWithoutExtensionScoresZero() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("Dragon Ball Super 24")
+                .contentKind(DownloadContentKind.MANGA)
+                .preferredFormats(List.of(DownloadFormat.CBZ))
+                .build();
+
+        NormalizedDownloadResult result = NormalizedDownloadResult.builder()
+                .title("DBF - Dragon Ball Super #24 FULLHD - Sub-Ita -")
+                .format(DownloadFormat.UNKNOWN)
+                .contentKind(DownloadContentKind.BOOK)
+                .acquisitionType(DownloadAcquisitionType.TORRENT)
+                .downloadUrl("magnet:?xt=urn:btih:abcdef")
+                .sizeBytes(561_000_000L)
+                .build();
+
+        var score = service.score(criteria, result);
+
+        assertEquals(0, score.getScore());
+        assertTrue(score.getReasons().contains("-90 unsupported media payload"));
+    }
+
+    @Test
     void score_directGalleryDlUrl_acceptsInferredVisualContentKind() {
         String url = "https://www.webtoons.com/fr/fantasy/tower-of-god/saison-3-ep-235/viewer?title_no=1832&episode_no=652";
         DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()

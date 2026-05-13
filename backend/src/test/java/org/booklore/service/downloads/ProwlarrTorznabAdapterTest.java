@@ -139,6 +139,69 @@ class ProwlarrTorznabAdapterTest {
         }
     }
 
+    @Test
+    void search_skipsProwlarrVideoPayloadsBeforeScoring() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/api/v1/search", exchange -> {
+            byte[] body = """
+                    [
+                      {
+                        "guid": "anime-video",
+                        "infoHash": "1111111111111111111111111111111111111111",
+                        "title": "DBF - Dragon Ball Super #24 FULLHD - Sub-Ita -",
+                        "indexer": "Nyaa",
+                        "categories": [{"name": "Anime"}],
+                        "size": 561000000,
+                        "downloadUrl": "magnet:?xt=urn:btih:1111111111111111111111111111111111111111",
+                        "protocol": "torrent"
+                      },
+                      {
+                        "guid": "manga-release",
+                        "infoHash": "2222222222222222222222222222222222222222",
+                        "title": "Dragon Ball Super - Vol.24 - Full Color (Ch101 - Ch104)",
+                        "indexer": "Nyaa",
+                        "categories": [{"name": "Literature"}],
+                        "size": 158000000,
+                        "downloadUrl": "magnet:?xt=urn:btih:2222222222222222222222222222222222222222",
+                        "protocol": "torrent"
+                      }
+                    ]
+                    """.getBytes();
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+
+        try {
+            String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+            DownloadSourceEntity source = DownloadSourceEntity.builder()
+                    .name("Prowlarr Local")
+                    .type(DownloadSourceType.PROWLARR_TORZNAB)
+                    .credentialsJson("""
+                            {
+                              "baseUrl": "%s",
+                              "apiKey": "secret",
+                              "timeoutSeconds": 5
+                            }
+                            """.formatted(baseUrl))
+                    .build();
+
+            List<NormalizedDownloadResult> results = adapter().search(source, DownloadSearchCriteria.builder()
+                    .query("Dragon Ball Super 24")
+                    .contentKind(DownloadContentKind.MANGA)
+                    .maxResults(5)
+                    .build());
+
+            assertEquals(1, results.size());
+            assertEquals("Dragon Ball Super - Vol.24 - Full Color (Ch101 - Ch104)", results.getFirst().getTitle());
+            assertEquals(DownloadContentKind.MANGA, results.getFirst().getContentKind());
+        } finally {
+            server.stop(0);
+        }
+    }
+
     private ProwlarrTorznabAdapter adapter() {
         return new ProwlarrTorznabAdapter(HttpClient.newHttpClient(), new ObjectMapper(), new DownloadContentClassifier());
     }
