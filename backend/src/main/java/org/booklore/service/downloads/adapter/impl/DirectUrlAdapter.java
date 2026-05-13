@@ -10,20 +10,31 @@ import org.booklore.service.downloads.DownloadContentClassifier;
 import org.booklore.service.downloads.adapter.DownloadSourceAdapter;
 import org.booklore.service.downloads.dto.DownloadSearchCriteria;
 import org.booklore.service.downloads.dto.NormalizedDownloadResult;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.net.URI;
 import java.net.URLDecoder;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -39,7 +50,11 @@ public class DirectUrlAdapter implements DownloadSourceAdapter {
             "(?i)(?:^|[-_\\[\\] ])(?:ep|episode|chap|chapter|ch)(?:\\.|[-_ ])*0*(\\d+(?:\\.\\d+)?)(?:$|[-_\\] ])"
     );
     private static final String DEFAULT_GALLERY_DL_BINARY = "gallery-dl";
+    private static final String DEFAULT_WEBTOONS_SEARCH_URL_TEMPLATE = "https://www.webtoons.com/en/search?keyword={query}";
+    private static final int DEFAULT_WEBTOONS_SEARCH_TIMEOUT_SECONDS = 12;
+    private static final int DEFAULT_WEBTOONS_MAX_SEARCH_RESULTS = 5;
 
+    private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final DownloadContentClassifier contentClassifier;
 
@@ -51,6 +66,9 @@ public class DirectUrlAdapter implements DownloadSourceAdapter {
     @Override
     public List<NormalizedDownloadResult> search(DownloadSourceEntity source, DownloadSearchCriteria criteria) {
         if (criteria.getDirectUrl() == null || criteria.getDirectUrl().isBlank()) {
+            if (useGalleryDl(source) && isWebtoonsSearch(source, criteria)) {
+                return searchWebtoons(source, criteria);
+            }
             return List.of();
         }
         String fileName = extractFilename(criteria.getDirectUrl());
@@ -91,6 +109,173 @@ public class DirectUrlAdapter implements DownloadSourceAdapter {
                 .acquisitionType(acquisitionType)
                 .rawJson(urlMetadata.rawJson())
                 .build());
+    }
+
+    private boolean isWebtoonsSearch(DownloadSourceEntity source, DownloadSearchCriteria criteria) {
+        if (criteria == null || criteria.effectiveQuery().isBlank()) {
+            return false;
+        }
+        DownloadContentKind contentKind = criteria.getContentKind();
+        return (contentKind != null && contentKind == DownloadContentKind.WEBTOON)
+                || containsIgnoreCase(source.getName(), "webtoon")
+                || containsIgnoreCase(source.getConfigJson(), "webtoon")
+                || containsIgnoreCase(source.getCredentialsJson(), "webtoon");
+    }
+
+    private List<NormalizedDownloadResult> searchWebtoons(DownloadSourceEntity source, DownloadSearchCriteria criteria) {
+        WebtoonsSearchConfig config = readWebtoonsSearchConfig(source);
+        if (!config.enabled()) {
+            return List.of();
+        }
+        try {
+            String searchUrl = config.searchUrlTemplate()
+                    .replace("{query}", URLEncoder.encode(criteria.effectiveQuery(), StandardCharsets.UTF_8));
+            HttpRequest request = HttpRequest.newBuilder(URI.create(searchUrl))
+                    .timeout(Duration.ofSeconds(config.timeoutSeconds()))
+                    .header("Accept", "text/html,application/xhtml+xml")
+                    .header("User-Agent", "BookLore-Downloads")
+                    .GET()
+                    .build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() < 200 || response.statusCode() > 299) {
+                return List.of();
+            }
+            List<WebtoonsSeriesCandidate> candidates = parseWebtoonsSearch(response.body(), criteria.effectiveQuery());
+            List<NormalizedDownloadResult> results = new ArrayList<>();
+            for (WebtoonsSeriesCandidate candidate : candidates.stream().limit(config.maxResults()).toList()) {
+                String resolvedUrl = criteria.getSeriesNumber() == null
+                        ? candidate.url()
+                        : resolveWebtoonsEpisodeUrl(candidate.url(), criteria.getSeriesNumber(), config).orElse(candidate.url());
+                UrlMetadata metadata = inferUrlMetadata(resolvedUrl, DownloadAcquisitionType.CLI_GALLERY_DL)
+                        .orElse(new UrlMetadata(candidate.title(), candidate.title(), criteria.getSeriesNumber(), candidate.language(), DownloadContentKind.WEBTOON, candidate.author() == null ? List.of() : List.of(candidate.author()), null));
+                Map<String, Object> raw = new LinkedHashMap<>();
+                raw.put("provider", "webtoons-search");
+                raw.put("query", criteria.effectiveQuery());
+                raw.put("seriesUrl", candidate.url());
+                raw.put("resolvedUrl", resolvedUrl);
+                raw.put("titleNo", candidate.titleNo());
+                raw.put("score", candidate.score());
+                raw.put("section", candidate.section());
+                raw.put("metadata", metadata.rawJson());
+
+                results.add(NormalizedDownloadResult.builder()
+                        .sourceResultId(resolvedUrl)
+                        .title(firstNonBlank(metadata.title(), candidate.title()))
+                        .authors(resolveAuthors(criteria, metadata.authors() == null || metadata.authors().isEmpty()
+                                ? new UrlMetadata(null, null, null, null, null, candidate.author() == null ? List.of() : List.of(candidate.author()), null)
+                                : metadata))
+                        .seriesName(firstNonBlank(criteria.getSeriesName(), metadata.seriesName(), candidate.title()))
+                        .seriesNumber(criteria.getSeriesNumber() != null ? criteria.getSeriesNumber() : metadata.seriesNumber())
+                        .language(firstNonBlank(metadata.language(), candidate.language()))
+                        .contentKind(DownloadContentKind.WEBTOON)
+                        .format(DownloadFormat.CBZ)
+                        .downloadUrl(resolvedUrl)
+                        .detailsUrl(candidate.url())
+                        .requiresFlareSolverr(useFlareSolverr(source))
+                        .acquisitionType(DownloadAcquisitionType.CLI_GALLERY_DL)
+                        .rawJson(writeJson(raw))
+                        .build());
+            }
+            return results;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return List.of();
+        } catch (Exception ignored) {
+            return List.of();
+        }
+    }
+
+    private List<WebtoonsSeriesCandidate> parseWebtoonsSearch(String html, String query) {
+        if (html == null || html.isBlank()) {
+            return List.of();
+        }
+        Document document = Jsoup.parse(html);
+        List<WebtoonsSeriesCandidate> candidates = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        for (Element link : document.select("a[href*=title_no][href*=/list]")) {
+            String url = link.absUrl("href");
+            if (url.isBlank()) {
+                url = link.attr("href");
+            }
+            if (url.isBlank() || !seen.add(url)) {
+                continue;
+            }
+            URI uri;
+            try {
+                uri = URI.create(url);
+            } catch (Exception ignored) {
+                continue;
+            }
+            if (!isWebtoonsUrl(uri)) {
+                continue;
+            }
+            UrlMetadata metadata = parseWebtoonsMetadata(uri, url);
+            String title = firstNonBlank(link.selectFirst(".title") == null ? null : link.selectFirst(".title").text(), metadata.seriesName(), link.attr("title"));
+            String author = textOrNull(link.selectFirst(".author"));
+            String section = firstNonBlank(link.attr("data-webtoon-type"), metadata.rawJson());
+            String titleNo = parseQuery(uri.getRawQuery()).get("title_no");
+            int score = titleMatchScore(query, title);
+            candidates.add(new WebtoonsSeriesCandidate(url, title, author, metadata.language(), titleNo, section, score));
+        }
+        return candidates.stream()
+                .sorted(Comparator.comparingInt(WebtoonsSeriesCandidate::score).reversed()
+                        .thenComparing(candidate -> candidate.title() == null ? "" : candidate.title()))
+                .toList();
+    }
+
+    private Optional<String> resolveWebtoonsEpisodeUrl(String seriesUrl, Float requestedNumber, WebtoonsSearchConfig config) {
+        if (seriesUrl == null || seriesUrl.isBlank() || requestedNumber == null) {
+            return Optional.empty();
+        }
+        for (int page = 1; page <= config.maxEpisodePages(); page++) {
+            String url = withQueryParam(seriesUrl, "page", String.valueOf(page));
+            try {
+                HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+                        .timeout(Duration.ofSeconds(config.timeoutSeconds()))
+                        .header("Accept", "text/html,application/xhtml+xml")
+                        .header("User-Agent", "BookLore-Downloads")
+                        .GET()
+                        .build();
+                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                if (response.statusCode() < 200 || response.statusCode() > 299) {
+                    continue;
+                }
+                Optional<String> match = parseWebtoonsEpisodeUrl(response.body(), requestedNumber);
+                if (match.isPresent()) {
+                    return match;
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return Optional.empty();
+            } catch (Exception ignored) {
+                return Optional.empty();
+            }
+        }
+        return Optional.empty();
+    }
+
+    private Optional<String> parseWebtoonsEpisodeUrl(String html, Float requestedNumber) {
+        Document document = Jsoup.parse(html);
+        for (Element link : document.select("a[href*=episode_no][href*=/viewer]")) {
+            String url = link.absUrl("href");
+            if (url.isBlank()) {
+                url = link.attr("href");
+            }
+            if (url.isBlank()) {
+                continue;
+            }
+            UrlMetadata metadata;
+            try {
+                metadata = parseWebtoonsMetadata(URI.create(url), url);
+            } catch (Exception ignored) {
+                continue;
+            }
+            Float number = firstNonNull(metadata.seriesNumber(), parseEpisodeNumber(link.text()));
+            if (number != null && Math.abs(number - requestedNumber) < 0.001f) {
+                return Optional.of(url);
+            }
+        }
+        return Optional.empty();
     }
 
     private Optional<UrlMetadata> probeGalleryDlMetadata(DownloadSourceEntity source, String directUrl) {
@@ -540,6 +725,72 @@ public class DirectUrlAdapter implements DownloadSourceAdapter {
                 || nestedBoolFromJson(source.getCredentialsJson(), "flareSolverr", "enabled");
     }
 
+    private WebtoonsSearchConfig readWebtoonsSearchConfig(DownloadSourceEntity source) {
+        JsonNode node = firstGalleryDlSection(source);
+        JsonNode webtoons = node.path("webtoons");
+        boolean enabled = webtoons.path("globalSearchEnabled").asBoolean(node.path("globalSearchEnabled").asBoolean(true));
+        String searchUrlTemplate = firstNonBlank(
+                webtoons.path("searchUrlTemplate").asText(null),
+                webtoons.path("searchUrl").asText(null),
+                node.path("webtoonsSearchUrlTemplate").asText(null),
+                node.path("webtoonSearchUrlTemplate").asText(null),
+                DEFAULT_WEBTOONS_SEARCH_URL_TEMPLATE
+        );
+        int timeoutSeconds = (int) clampLong(
+                webtoons.path("timeoutSeconds").asLong(node.path("webtoonsSearchTimeoutSeconds").asLong(DEFAULT_WEBTOONS_SEARCH_TIMEOUT_SECONDS)),
+                1,
+                60
+        );
+        int maxResults = (int) clampLong(
+                webtoons.path("maxResults").asLong(node.path("webtoonsMaxSearchResults").asLong(DEFAULT_WEBTOONS_MAX_SEARCH_RESULTS)),
+                1,
+                20
+        );
+        int maxEpisodePages = (int) clampLong(
+                webtoons.path("maxEpisodePages").asLong(node.path("webtoonsMaxEpisodePages").asLong(3)),
+                1,
+                20
+        );
+        return new WebtoonsSearchConfig(enabled, searchUrlTemplate, timeoutSeconds, maxResults, maxEpisodePages);
+    }
+
+    private String withQueryParam(String value, String key, String parameterValue) {
+        String separator = value.contains("?") ? "&" : "?";
+        return value + separator + URLEncoder.encode(key, StandardCharsets.UTF_8) + "=" + URLEncoder.encode(parameterValue, StandardCharsets.UTF_8);
+    }
+
+    private int titleMatchScore(String query, String title) {
+        if (query == null || query.isBlank() || title == null || title.isBlank()) {
+            return 0;
+        }
+        List<String> queryTokens = Arrays.stream(query.toLowerCase(Locale.ROOT).split("[^a-z0-9]+"))
+                .filter(token -> token.length() > 1 && !token.matches("\\d+"))
+                .toList();
+        String normalizedTitle = title.toLowerCase(Locale.ROOT);
+        if (normalizedTitle.equals(query.toLowerCase(Locale.ROOT))) {
+            return 1000;
+        }
+        int score = 0;
+        for (String token : queryTokens) {
+            if (normalizedTitle.contains(token)) {
+                score += 100;
+            }
+        }
+        return score;
+    }
+
+    private String textOrNull(Element element) {
+        if (element == null) {
+            return null;
+        }
+        String value = element.text();
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private boolean containsIgnoreCase(String value, String needle) {
+        return value != null && needle != null && value.toLowerCase(Locale.ROOT).contains(needle.toLowerCase(Locale.ROOT));
+    }
+
     private boolean boolFromJson(String json, String key) {
         try {
             if (json == null || json.isBlank()) return false;
@@ -571,6 +822,22 @@ public class DirectUrlAdapter implements DownloadSourceAdapter {
     }
 
     private record GalleryDlProbeConfig(boolean enabled, String binaryPath, long timeoutSeconds, List<String> extraArgs) {
+    }
+
+    private record WebtoonsSearchConfig(boolean enabled,
+                                        String searchUrlTemplate,
+                                        int timeoutSeconds,
+                                        int maxResults,
+                                        int maxEpisodePages) {
+    }
+
+    private record WebtoonsSeriesCandidate(String url,
+                                           String title,
+                                           String author,
+                                           String language,
+                                           String titleNo,
+                                           String section,
+                                           int score) {
     }
 
     private record UrlMetadata(String title,

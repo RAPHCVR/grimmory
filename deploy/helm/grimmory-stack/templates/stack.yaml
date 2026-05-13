@@ -96,6 +96,10 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: mariadb
+  {{- if .Values.global.keel.enabled }}
+  annotations:
+    {{- include "grimmory-stack.keelAnnotations" . | nindent 4 }}
+  {{- end }}
   labels:
     {{- include "grimmory-stack.labels" . | nindent 4 }}
     app.kubernetes.io/component: mariadb
@@ -187,6 +191,10 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: grimmory
+  {{- if .Values.global.keel.enabled }}
+  annotations:
+    {{- include "grimmory-stack.keelAnnotations" . | nindent 4 }}
+  {{- end }}
   labels:
     {{- include "grimmory-stack.labels" . | nindent 4 }}
     app.kubernetes.io/component: grimmory
@@ -339,6 +347,10 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: flaresolverr
+  {{- if .Values.global.keel.enabled }}
+  annotations:
+    {{- include "grimmory-stack.keelAnnotations" . | nindent 4 }}
+  {{- end }}
   labels:
     {{- include "grimmory-stack.labels" . | nindent 4 }}
     app.kubernetes.io/component: flaresolverr
@@ -403,6 +415,10 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: prowlarr
+  {{- if .Values.global.keel.enabled }}
+  annotations:
+    {{- include "grimmory-stack.keelAnnotations" . | nindent 4 }}
+  {{- end }}
   labels:
     {{- include "grimmory-stack.labels" . | nindent 4 }}
     app.kubernetes.io/component: prowlarr
@@ -523,6 +539,10 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: qbittorrent
+  {{- if .Values.global.keel.enabled }}
+  annotations:
+    {{- include "grimmory-stack.keelAnnotations" . | nindent 4 }}
+  {{- end }}
   labels:
     {{- include "grimmory-stack.labels" . | nindent 4 }}
     app.kubernetes.io/component: qbittorrent
@@ -650,6 +670,10 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: stacks
+  {{- if .Values.global.keel.enabled }}
+  annotations:
+    {{- include "grimmory-stack.keelAnnotations" . | nindent 4 }}
+  {{- end }}
   labels:
     {{- include "grimmory-stack.labels" . | nindent 4 }}
     app.kubernetes.io/component: stacks

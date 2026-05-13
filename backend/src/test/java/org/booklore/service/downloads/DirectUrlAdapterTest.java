@@ -1,5 +1,6 @@
 package org.booklore.service.downloads;
 
+import com.sun.net.httpserver.HttpServer;
 import org.booklore.model.entity.DownloadSourceEntity;
 import org.booklore.model.enums.DownloadAcquisitionType;
 import org.booklore.model.enums.DownloadContentKind;
@@ -11,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import tools.jackson.databind.ObjectMapper;
 
+import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -20,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class DirectUrlAdapterTest {
 
-    private final DirectUrlAdapter adapter = new DirectUrlAdapter(new ObjectMapper(), new DownloadContentClassifier());
+    private final DirectUrlAdapter adapter = new DirectUrlAdapter(java.net.http.HttpClient.newHttpClient(), new ObjectMapper(), new DownloadContentClassifier());
 
     @TempDir
     Path tempDir;
@@ -85,6 +87,64 @@ class DirectUrlAdapterTest {
         assertEquals(1, results.size());
         assertEquals(DownloadAcquisitionType.CLI_GALLERY_DL, results.getFirst().getAcquisitionType());
         assertEquals(DownloadFormat.CBZ, results.getFirst().getFormat());
+    }
+
+    @Test
+    void search_webtoonKeywordSearch_returnsGalleryDlSeriesResult() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/search", exchange -> {
+            byte[] body = """
+                    <html><body>
+                      <a href="https://www.webtoons.com/en/romance/lore-olympus/list?title_no=1320" class="link _card_item" data-title-no="1320" data-webtoon-type="WEBTOON">
+                        <strong class="title">Lore Olympus</strong>
+                        <div class="author">Rachel Smythe</div>
+                      </a>
+                    </body></html>
+                    """.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "text/html");
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+
+        try {
+            DownloadSourceEntity source = DownloadSourceEntity.builder()
+                    .name("Webtoons")
+                    .type(DownloadSourceType.DIRECT_URL)
+                    .configJson("""
+                            {
+                              "galleryDl": {
+                                "enabled": true,
+                                "metadataProbeEnabled": false,
+                                "webtoons": {
+                                  "searchUrlTemplate": "http://127.0.0.1:%d/search?keyword={query}",
+                                  "maxResults": 3
+                                }
+                              }
+                            }
+                            """.formatted(server.getAddress().getPort()))
+                    .build();
+            DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                    .query("Lore Olympus")
+                    .contentKind(DownloadContentKind.WEBTOON)
+                    .preferredFormats(List.of(DownloadFormat.CBZ))
+                    .build();
+
+            var results = adapter.search(source, criteria);
+
+            assertEquals(1, results.size());
+            var result = results.getFirst();
+            assertEquals(DownloadAcquisitionType.CLI_GALLERY_DL, result.getAcquisitionType());
+            assertEquals(DownloadContentKind.WEBTOON, result.getContentKind());
+            assertEquals(DownloadFormat.CBZ, result.getFormat());
+            assertEquals("Lore Olympus", result.getTitle());
+            assertEquals("Lore Olympus", result.getSeriesName());
+            assertEquals(List.of("Rachel Smythe"), result.getAuthors());
+            assertTrue(result.getDownloadUrl().contains("title_no=1320"));
+        } finally {
+            server.stop(0);
+        }
     }
 
     @Test
