@@ -221,8 +221,8 @@ public class DownloadScoringService {
                 || result.getAcquisitionType() != DownloadAcquisitionType.EXTERNAL_STACKS) {
             return 0;
         }
-        reasons.add("-25 non-native webtoon episode source");
-        return -25;
+        reasons.add("-60 non-native webtoon episode source");
+        return -60;
     }
 
     private boolean hasRequestedSequentialNumber(DownloadSearchCriteria criteria) {

@@ -420,7 +420,7 @@ class DownloadScoringServiceTest {
         var compiledScore = service.score(criteria, compiledVolume);
 
         assertTrue(nativeScore.getScore() > compiledScore.getScore());
-        assertTrue(compiledScore.getReasons().contains("-25 non-native webtoon episode source"));
+        assertTrue(compiledScore.getReasons().contains("-60 non-native webtoon episode source"));
     }
 
     @Test
