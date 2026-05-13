@@ -237,7 +237,7 @@ public class DownloadScoringService {
                 || result.getAcquisitionType() != DownloadAcquisitionType.CLI_GALLERY_DL) {
             return 0;
         }
-        OptionalInt requestedEpisode = explicitRequestedWebtoonEpisode(criteria);
+        OptionalInt requestedEpisode = requestedWebtoonEpisode(criteria);
         if (requestedEpisode.isEmpty() || resultTitleHasWebtoonEpisodeMarker(result, requestedEpisode.getAsInt())) {
             return 0;
         }
@@ -253,14 +253,17 @@ public class DownloadScoringService {
         return trailingNumber(evidence).isPresent() || hasAnyNumberMarker(evidence);
     }
 
-    private OptionalInt explicitRequestedWebtoonEpisode(DownloadSearchCriteria criteria) {
+    private OptionalInt requestedWebtoonEpisode(DownloadSearchCriteria criteria) {
         String evidence = String.join(" ", safe(criteria.getQuery()), safe(criteria.getTitle()));
         var matcher = EXPLICIT_WEBTOON_EPISODE_MARKER.matcher(evidence);
-        if (!matcher.find()) {
-            return OptionalInt.empty();
+        if (matcher.find()) {
+            String number = matcher.group(1) != null ? matcher.group(1) : matcher.group(2);
+            return OptionalInt.of(Integer.parseInt(number));
         }
-        String number = matcher.group(1) != null ? matcher.group(1) : matcher.group(2);
-        return OptionalInt.of(Integer.parseInt(number));
+        if (criteria.getSeriesNumber() != null) {
+            return OptionalInt.of(Math.round(criteria.getSeriesNumber()));
+        }
+        return OptionalInt.empty();
     }
 
     private boolean resultTitleHasWebtoonEpisodeMarker(NormalizedDownloadResult result, int requestedEpisode) {

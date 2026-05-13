@@ -424,9 +424,9 @@ class DownloadScoringServiceTest {
     }
 
     @Test
-    void score_explicitWebtoonEpisodeQueryPrefersEpisodeTitleOverSeriesIntroTie() {
+    void score_canonicalWebtoonEpisodeCriteriaPrefersEpisodeTitleOverSeriesIntroTie() {
         DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
-                .query("Lore Olympus episode 1")
+                .query("Lore Olympus")
                 .seriesName("Lore Olympus")
                 .seriesNumber(1f)
                 .contentKind(DownloadContentKind.WEBTOON)
