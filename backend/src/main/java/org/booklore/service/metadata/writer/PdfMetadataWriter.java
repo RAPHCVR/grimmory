@@ -61,10 +61,12 @@ public class PdfMetadataWriter implements MetadataWriter {
             log.warn("Could not create PDF temp backup for {}: {}", file.getName(), e.getMessage());
         }
 
-        try (PdfDocument doc = PdfDocument.open(filePath)) {
-            applyMetadataToDocument(doc, metadataEntity, clear);
-            tempPath = Files.createTempFile(parentDir, ".pdfmeta-", ".pdf");
-            doc.save(tempPath, SaveOptions.SKIP_VALIDATION);
+        try {
+            try (PdfDocument doc = PdfDocument.open(filePath)) {
+                applyMetadataToDocument(doc, metadataEntity, clear);
+                tempPath = Files.createTempFile(parentDir, ".pdfmeta-", ".pdf");
+                doc.save(tempPath, SaveOptions.SKIP_VALIDATION);
+            }
             Files.move(tempPath, filePath, StandardCopyOption.REPLACE_EXISTING);
             tempPath = null;
             log.info("Successfully embedded metadata into PDF: {}", file.getName());

@@ -468,7 +468,8 @@ describe('MetadataViewerComponent', () => {
     expect(component.getStarColorScaled(null)).toBe('rgb(203, 213, 225)');
     expect(component.getStarColorScaled(5)).toBe('rgb(34, 197, 94)');
     expect(component.getRatingPercent(4.5)).toBe(90);
-    expect(component.getRatingTooltip(createBook({metadata: createMetadata({amazonRating: 4.2, amazonReviewCount: 1234})}), 'amazon')).toBe('★ 4.2 | 1,234 reviews');
+    expect(component.getRatingTooltip(createBook({metadata: createMetadata({amazonRating: 4.2, amazonReviewCount: 1234})}), 'amazon'))
+      .toBe(`★ 4.2 | ${Number(1234).toLocaleString()} reviews`);
     expect(component.getStatusLabel(ReadStatus.READING)).toBe('metadata.viewer.readStatusReading'.toUpperCase());
     expect(component.getStatusLabel('missing')).toBe('UNSET');
     expect(component.getBookCoverUrl(createBook())).toBe('cover:21:2026-03-26');

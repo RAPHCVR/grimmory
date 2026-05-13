@@ -7,7 +7,8 @@
         "acquire": "Acquérir",
         "refreshJobs": "Actualiser les jobs",
         "cleanup": "Nettoyer",
-        "process": "Traiter le job"
+        "process": "Traiter le job",
+        "retry": "Réessayer"
     },
     "search": {
         "placeholder": "Rechercher par titre, auteur, ISBN, série, ou coller une URL directe ci-dessous",
@@ -69,6 +70,7 @@
         "paths": "Chemins",
         "updated": "Mis à jour",
         "actions": "Actions",
+        "stale": "Job bloqué / stale",
         "empty": "Aucun job d'acquisition pour le moment."
     },
     "statuses": {
@@ -93,6 +95,7 @@
         "searchError": "La recherche a échoué.",
         "acquireError": "L'acquisition a échoué.",
         "processError": "Le traitement du job a échoué.",
+        "retryError": "La relance du job a échoué.",
         "cleanupDone": "Nettoyage des téléchargements terminé.",
         "cleanupError": "Le nettoyage des téléchargements a échoué.",
         "targetRequiredSummary": "Cible requise",
@@ -101,6 +104,8 @@
         "jobQueuedDetail": "Le job #{{id}} a été ajouté à la file.",
         "jobStartedSummary": "Job démarré",
         "jobStartedDetail": "Le job #{{id}} est maintenant {{status}}. Suis-le dans le tableau des jobs.",
+        "jobRetrySummary": "Job relancé",
+        "jobRetryDetail": "Le job #{{oldId}} a été relancé sous le job #{{id}}.",
         "jobFinishedSummary": "Job terminé",
         "jobFinishedDetail": "Le job #{{id}} s'est terminé avec le statut {{status}}.",
         "jobFailedSummary": "Job en échec"

@@ -166,6 +166,14 @@ public class DownloadController {
         return toJobResponse(jobRunner.start(jobId));
     }
 
+    @Operation(summary = "Retry a failed or stale download job")
+    @ApiResponse(responseCode = "200", description = "Download job retried and processing started")
+    @PostMapping("/jobs/{jobId}/retry")
+    public DownloadJobResponse retryJob(@PathVariable Long jobId) {
+        DownloadJobEntity retry = pipelineManager.retryJob(jobId);
+        return toJobResponse(jobRunner.start(retry.getId()));
+    }
+
     @Operation(summary = "Get a download job")
     @ApiResponse(responseCode = "200", description = "Download job returned successfully")
     @GetMapping("/jobs/{jobId}")

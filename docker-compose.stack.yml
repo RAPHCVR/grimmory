@@ -121,6 +121,7 @@ services:
   stacks:
     image: zelest/stacks:latest
     container_name: stacks
+    entrypoint: ["/bin/sh", "/opt/stacks/bootstrap-entrypoint.sh"]
     stop_signal: SIGTERM
     stop_grace_period: 30s
     restart: unless-stopped
@@ -133,7 +134,12 @@ services:
       PASSWORD: ${STACKS_PASSWORD:-stacks}
       SOLVERR_URL: http://flaresolverr:8191
       FLARESOLVERR_URL: http://flaresolverr:8191
+      STACKS_FLARESOLVERR_ENABLED: "true"
+      STACKS_FLARESOLVERR_URL: http://flaresolverr:8191
+      STACKS_FLARESOLVERR_TIMEOUT: 60
+      STACKS_DOWNLOAD_INCOMPLETE_PATH: /download/incomplete
     volumes:
+      - ./packaging/stacks/bootstrap-entrypoint.sh:/opt/stacks/bootstrap-entrypoint.sh:ro
       - ./shared/stacks/config:/opt/stacks/config
       - ./shared/stacks/logs:/opt/stacks/logs
       - ./shared/bookdrop:/bookdrop

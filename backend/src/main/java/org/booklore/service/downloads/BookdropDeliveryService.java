@@ -120,7 +120,7 @@ public class BookdropDeliveryService {
         return BookMetadata.builder()
                 .title(result.getTitle())
                 .authors(result.getAuthors())
-                .seriesName(result.getSeriesName())
+                .seriesName(cleanSeriesName(result.getSeriesName()))
                 .seriesNumber(result.getSeriesNumber())
                 .publishedDate(publishedDate)
                 .isbn13(normalizeIsbn13(result.getIsbn()))
@@ -168,7 +168,7 @@ public class BookdropDeliveryService {
         }
         return ComicMetadata.builder()
                 .issueNumber(result.getSeriesNumber() == null ? null : formatNumber(result.getSeriesNumber()))
-                .volumeName(result.getSeriesName())
+                .volumeName(cleanSeriesName(result.getSeriesName()))
                 .format(contentKind == DownloadContentKind.WEBTOON ? "Webtoon" : contentKind == DownloadContentKind.MANGA ? "Manga" : "Comic")
                 .manga(contentKind == DownloadContentKind.MANGA)
                 .webLink(result.getDetailsUrl())
@@ -180,6 +180,15 @@ public class BookdropDeliveryService {
             return null;
         }
         return value % 1 == 0 ? String.valueOf(value.intValue()) : value.toString();
+    }
+
+    private String cleanSeriesName(String value) {
+        if (value == null || value.isBlank()) {
+            return value;
+        }
+        String cleaned = value.replaceAll("\\s+", " ").trim()
+                .replaceAll("[\\s,;:.\\-–—]+$", "");
+        return cleaned.isBlank() ? null : cleaned;
     }
 
     private String normalizeIsbn13(String isbn) {

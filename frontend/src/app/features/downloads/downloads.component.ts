@@ -87,6 +87,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
   cleanupRunning = false;
   acquiringResultIds = new Set<number>();
   processingJobIds = new Set<number>();
+  retryingJobIds = new Set<number>();
 
   contentKindOptions: SelectOption<DownloadContentKind>[] = DOWNLOAD_CONTENT_KINDS.map(value => ({label: this.contentKindLabel(value), value}));
   formatOptions: SelectOption<DownloadFormat>[] = DOWNLOAD_FORMATS.map(value => ({label: value, value}));
@@ -214,6 +215,32 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     });
   }
 
+  retryJob(job: DownloadJob): void {
+    if (!this.canRetry(job) || this.retryingJobIds.has(job.id)) return;
+    this.retryingJobIds.add(job.id);
+    this.downloadsService.retryJob(job.id).pipe(
+      finalize(() => this.retryingJobIds.delete(job.id))
+    ).subscribe({
+      next: retried => {
+        this.loadJobs(false);
+        this.messageService.add({
+          severity: 'info',
+          summary: this.t.translate('downloads.toast.jobRetrySummary'),
+          detail: this.t.translate('downloads.toast.jobRetryDetail', {oldId: job.id, id: retried.id})
+        });
+        this.showJobToast(retried);
+      },
+      error: err => {
+        this.loadJobs(false);
+        this.messageService.add({
+          severity: 'error',
+          summary: this.t.translate('common.error'),
+          detail: err?.error?.message || err?.message || this.t.translate('downloads.toast.retryError')
+        });
+      }
+    });
+  }
+
   loadJobs(showLoader = true): void {
     if (showLoader) {
       this.loadingJobs = true;
@@ -325,6 +352,10 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     }
   }
 
+  jobSeverityFor(job: DownloadJob): 'success' | 'info' | 'warn' | 'danger' | 'secondary' {
+    return this.isStaleJob(job) ? 'danger' : this.jobSeverity(job.status);
+  }
+
   statusLabel(status: DownloadJobStatus): string {
     return this.t.translate(`downloads.statuses.${status}`);
   }
@@ -400,8 +431,23 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     return job.status === 'QUEUED' && !this.processingJobIds.has(job.id);
   }
 
+  canRetry(job: DownloadJob): boolean {
+    return !this.retryingJobIds.has(job.id) && (job.status === 'FAILED' || job.status === 'CANCELLED' || this.isStaleJob(job));
+  }
+
   isActiveJob(job: DownloadJob): boolean {
     return ['QUEUED', 'SEARCHING', 'SCORING', 'DOWNLOADING', 'VALIDATING', 'STAGED', 'DELIVERING', 'AUTO_FINALIZING'].includes(job.status);
+  }
+
+  isStaleJob(job: DownloadJob): boolean {
+    if (!this.isActiveJob(job)) {
+      return false;
+    }
+    const timestamp = Date.parse(job.updatedAt || job.createdAt || '');
+    if (Number.isNaN(timestamp)) {
+      return false;
+    }
+    return Date.now() - timestamp > 10 * 60 * 1000;
   }
 
   trackById(_: number, item: {id: number}): number {

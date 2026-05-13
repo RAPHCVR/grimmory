@@ -289,19 +289,21 @@ export class DownloadSourcesComponent implements OnInit {
       this.stringValue(flareFromCredentials?.['baseUrl']) ||
       this.stringValue(config?.['flareSolverrBaseUrl']) ||
       this.stringValue(credentials?.['flareSolverrBaseUrl']) ||
-      'http://localhost:8191';
+      'http://flaresolverr:8191';
   }
 
   private defaultCredentials(type: DownloadSourceType): Record<string, unknown> {
     switch (type) {
       case 'PROWLARR_TORZNAB':
         return {
-          baseUrl: 'http://localhost:9696',
+          baseUrl: 'http://prowlarr:9696',
           apiKey: '',
+          apiMode: 'PROWLARR',
           indexer: 'all',
+          indexerIds: '',
           function: 'search',
           categories: '',
-          timeoutSeconds: 20
+          timeoutSeconds: 30
         };
       case 'OPDS':
         return {
@@ -319,18 +321,18 @@ export class DownloadSourcesComponent implements OnInit {
   private defaultConfig(type: DownloadSourceType): Record<string, unknown> {
     const flareSolverr = {
       enabled: false,
-      baseUrl: 'http://localhost:8191',
+      baseUrl: 'http://flaresolverr:8191',
       maxTimeoutMs: 60000
     };
     switch (type) {
       case 'PROWLARR_TORZNAB':
         return {
           qbittorrent: {
-            baseUrl: 'http://localhost:8080',
+            baseUrl: 'http://qbittorrent:8080',
             username: '',
             password: '',
-            category: 'booklore',
-            tags: 'booklore',
+            category: 'grimmory',
+            tags: 'grimmory',
             remoteSavePath: '{stagingDir}',
             localSavePath: '{stagingDir}',
             pollIntervalSeconds: 10,
@@ -345,11 +347,12 @@ export class DownloadSourcesComponent implements OnInit {
           mangadex: {
             apiBaseUrl: 'https://api.mangadex.org',
             siteBaseUrl: 'https://mangadex.org',
-            translatedLanguage: 'en',
+            translatedLanguages: ['en', 'fr'],
+            preferredTitleLanguage: 'en',
             timeoutSeconds: 30,
             mangaLimit: 3,
-            chapterLimitPerManga: 100,
-            dataSaver: false
+            chapterLimitPerManga: 120,
+            dataSaver: true
           }
         };
       case 'DIRECT_URL':
@@ -382,18 +385,20 @@ export class DownloadSourcesComponent implements OnInit {
             resultLinkSelector: 'a.js-vim-focus[href*=/md5/], a.font-semibold[href*=/md5/]'
           },
           stacks: {
-            baseUrl: 'http://localhost:7788',
+            baseUrl: 'http://stacks:7788',
             downloadEndpoint: '/api/queue/add',
-            statusUrlTemplate: 'http://localhost:7788/api/status',
+            statusUrlTemplate: 'http://stacks:7788/api/status',
             apiKey: '',
             apiKeyHeader: 'X-API-Key',
+            adminApiKey: '',
+            adminApiKeyHeader: 'X-API-Key',
             remoteDownloadRoots: ['/opt/stacks/download', '/bookdrop/.downloads/stacks-cache', '/bookdrop'],
             localDownloadRoot: '{bookdrop}/.downloads/stacks-cache',
             remoteStagingPath: '{stagingDir}',
             pollIntervalSeconds: 2,
             timeoutMinutes: 180,
             requestTimeoutSeconds: 30,
-            clearHistoryOnAlreadyDownloadedMissing: false,
+            clearHistoryOnAlreadyDownloadedMissing: true,
             filesystemFallbackOnForbiddenStatus: true,
             filesystemFallbackMaxDepth: 3,
             filesystemFallbackRecentSlackSeconds: 10

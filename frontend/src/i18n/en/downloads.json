@@ -7,7 +7,8 @@
     "acquire": "Acquire",
     "refreshJobs": "Refresh Jobs",
     "cleanup": "Cleanup",
-    "process": "Process job"
+    "process": "Process job",
+    "retry": "Retry"
   },
   "search": {
     "placeholder": "Search by title, author, ISBN, series, or paste a direct URL below",
@@ -45,6 +46,7 @@
     "paths": "Paths",
     "updated": "Updated",
     "actions": "Actions",
+    "stale": "Stale job",
     "empty": "No acquisition job yet."
   },
   "statuses": {
@@ -69,10 +71,15 @@
     "searchError": "Search failed.",
     "acquireError": "Acquisition failed.",
     "processError": "Job processing failed.",
+    "retryError": "Job retry failed.",
     "cleanupDone": "Download cleanup completed.",
     "cleanupError": "Download cleanup failed.",
     "jobQueuedSummary": "Job queued",
     "jobQueuedDetail": "Job #{{id}} has been queued.",
+    "jobStartedSummary": "Job started",
+    "jobStartedDetail": "Job #{{id}} is now {{status}}. Follow it from the jobs table.",
+    "jobRetrySummary": "Job retried",
+    "jobRetryDetail": "Job #{{oldId}} has been retried as job #{{id}}.",
     "jobFinishedSummary": "Job finished",
     "jobFinishedDetail": "Job #{{id}} ended with status {{status}}.",
     "jobFailedSummary": "Job failed"

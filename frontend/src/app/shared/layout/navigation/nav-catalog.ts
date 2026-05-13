@@ -194,8 +194,13 @@ function toPageNavItem(definition: PageDefinition, translate: TranslateFn): NavI
   };
 }
 
-export function buildHomeNavItems(translate: TranslateFn): NavItem[] {
-  return HOME_PAGE_DEFINITIONS.map((definition) => toPageNavItem(definition, translate));
+export function buildHomeNavItems(
+  translate: TranslateFn,
+  permissions: ShellNavPermissions = {},
+): NavItem[] {
+  return HOME_PAGE_DEFINITIONS
+    .filter((definition) => isVisible(definition, permissions))
+    .map((definition) => toPageNavItem(definition, translate));
 }
 
 export function buildAllNavPages(

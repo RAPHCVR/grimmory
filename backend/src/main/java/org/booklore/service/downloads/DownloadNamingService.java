@@ -34,16 +34,18 @@ public class DownloadNamingService {
     }
 
     private String mangaName(NormalizedDownloadResult result, String extension) {
-        String series = valueOrDefault(result.getSeriesName(), result.getTitle());
+        String series = cleanSeries(valueOrDefault(result.getSeriesName(), result.getTitle()));
         String number = result.getSeriesNumber() == null ? "" : " - v" + formatVolume(result.getSeriesNumber());
-        String title = result.getTitle() == null || result.getTitle().equalsIgnoreCase(series) ? "" : " - " + result.getTitle();
+        String extraTitle = cleanTitleForSeries(result.getTitle(), series, result.getSeriesNumber());
+        String title = extraTitle.isBlank() ? "" : " - " + extraTitle;
         return series + number + title + "." + extension;
     }
 
     private String webtoonName(NormalizedDownloadResult result, String extension) {
-        String series = valueOrDefault(result.getSeriesName(), result.getTitle());
+        String series = cleanSeries(valueOrDefault(result.getSeriesName(), result.getTitle()));
         String number = result.getSeriesNumber() == null ? "" : " - Ch " + formatChapter(result.getSeriesNumber());
-        String title = result.getTitle() == null || result.getTitle().equalsIgnoreCase(series) ? "" : " - " + result.getTitle();
+        String extraTitle = cleanTitleForSeries(result.getTitle(), series, result.getSeriesNumber());
+        String title = extraTitle.isBlank() ? "" : " - " + extraTitle;
         return series + number + title + "." + extension;
     }
 
@@ -68,6 +70,41 @@ public class DownloadNamingService {
     private String sanitize(String input) {
         String cleaned = INVALID_CHARS.matcher(input).replaceAll("");
         return WHITESPACE.matcher(cleaned).replaceAll(" ").trim();
+    }
+
+    private String cleanSeries(String value) {
+        return valueOrDefault(cleanTitle(value).replaceAll("[\\s,;:.\\-–—]+$", ""), "Untitled");
+    }
+
+    private String cleanTitle(String value) {
+        String cleaned = valueOrDefault(value, "Untitled")
+                .replaceAll("(?iu)^manga\\s+fr\\s*[-_:]\\s*", "")
+                .replaceAll("\\s+", " ")
+                .trim();
+        return cleaned.isBlank() ? "Untitled" : cleaned;
+    }
+
+    private String cleanTitleForSeries(String title, String series, Float seriesNumber) {
+        if (title == null || title.isBlank()) {
+            return "";
+        }
+        String cleaned = cleanTitle(title);
+        if (cleaned.equalsIgnoreCase(series)) {
+            return "";
+        }
+
+        String withoutSeries = cleaned.replaceFirst("(?iu)^" + Pattern.quote(series) + "\\s*[,;:.\\-–—]*\\s*", "").trim();
+        if (seriesNumber != null) {
+            withoutSeries = withoutSeries.replaceFirst(volumePrefixPattern(seriesNumber), "").trim();
+        }
+        return withoutSeries.equalsIgnoreCase(series) || withoutSeries.equalsIgnoreCase("Untitled") ? "" : withoutSeries;
+    }
+
+    private String volumePrefixPattern(Float seriesNumber) {
+        String number = seriesNumber % 1 == 0
+                ? String.valueOf(seriesNumber.intValue())
+                : Pattern.quote(seriesNumber.toString());
+        return "(?iu)^(?:vol(?:ume)?\\.?|tome\\.?|v\\.?|#)?\\s*0*" + number + "(?:\\.0+)?\\b\\s*[,;:.\\-–—]*\\s*";
     }
 
     private String valueOrDefault(String value, String fallback) {

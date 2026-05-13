@@ -4,9 +4,14 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.regex.Pattern;
 import com.github.gotson.nightcompress.Archive;
 import org.grimmory.pdfium4j.PdfiumLibrary;
 
@@ -41,20 +46,7 @@ public final class NativeLibraries {
 
         probes.put(Library.LIBARCHIVE, new Probe("libarchive", Archive::isAvailable));
 
-        probes.put(Library.EPUB4J_NATIVE, new Probe("epub4j-native", () -> {
-            Boolean clean = tryInvokeStaticBoolean(
-                    "org.grimmory.epub4j.native_parsing.EpubNativeLibrary"
-            );
-            if (clean != null) {
-                return clean;
-            }
-            Class.forName(
-                    "org.grimmory.epub4j.native_parsing.PanamaConstants",
-                    true,
-                    NativeLibraries.class.getClassLoader()
-            );
-            return true;
-        }));
+        probes.put(Library.EPUB4J_NATIVE, new Probe("epub4j-native", NativeLibraries::hasEpubNativeLibraryFile));
 
         PROBES = Collections.unmodifiableMap(probes);
     }
@@ -104,6 +96,36 @@ public final class NativeLibraries {
         } catch (InvocationTargetException ite) {
             Throwable cause = ite.getCause();
             throw cause != null ? cause : ite;
+        }
+    }
+
+    private static boolean hasEpubNativeLibraryFile() {
+        String configuredPath = System.getProperty("epub4j.native.path");
+        if (isRegularFile(configuredPath)) {
+            return true;
+        }
+
+        String libraryName = System.mapLibraryName("epub4j_native");
+        String libraryPath = System.getProperty("java.library.path", "");
+        for (String searchPath : libraryPath.split(Pattern.quote(File.pathSeparator))) {
+            if (searchPath == null || searchPath.isBlank()) {
+                continue;
+            }
+            if (isRegularFile(Path.of(searchPath, libraryName).toString())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isRegularFile(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        try {
+            return Files.isRegularFile(Path.of(value));
+        } catch (InvalidPathException _) {
+            return false;
         }
     }
 

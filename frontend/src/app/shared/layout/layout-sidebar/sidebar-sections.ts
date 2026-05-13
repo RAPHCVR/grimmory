@@ -47,13 +47,17 @@ function sortByPref<T extends { id: number; name: string }>(items: T[], pref: So
   return pref.order === 'desc' ? sorted.reverse() : sorted;
 }
 
-export function buildHomeSection(translate: TranslateFn, counts: HomeCounts): SidebarSection[] {
+export function buildHomeSection(
+  translate: TranslateFn,
+  counts: HomeCounts,
+  permissions: ShellNavPermissions = {},
+): SidebarSection[] {
   return [{
     id: 'home',
     menuKey: 'home',
     label: translate('layout.menu.home'),
     expandable: true,
-    items: buildHomeNavItems(translate).map((item) => ({
+    items: buildHomeNavItems(translate, permissions).map((item) => ({
       ...item,
       bookCount: homeItemBookCount(item.id, counts),
     })),

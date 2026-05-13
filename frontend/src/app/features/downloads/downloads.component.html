@@ -270,7 +270,10 @@
           <tr [class.active-row]="isActiveJob(job)">
             <td>#{{ job.id }}</td>
             <td>
-              <p-tag [value]="statusLabel(job.status)" [severity]="jobSeverity(job.status)"></p-tag>
+              <p-tag [value]="statusLabel(job.status)" [severity]="jobSeverityFor(job)"></p-tag>
+              @if (isStaleJob(job)) {
+                <div class="job-warning">{{ t('jobs.stale') }}</div>
+              }
               @if (job.errorMessage) {
                 <div class="job-error">{{ job.errorMessage }}</div>
               }
@@ -307,6 +310,17 @@
                 [disabled]="!canProcess(job)"
                 (onClick)="processJob(job)"
                 [pTooltip]="t('actions.process')">
+              </p-button>
+              <p-button
+                icon="pi pi-replay"
+                size="small"
+                severity="warn"
+                [rounded]="true"
+                [outlined]="true"
+                [loading]="retryingJobIds.has(job.id)"
+                [disabled]="!canRetry(job)"
+                (onClick)="retryJob(job)"
+                [pTooltip]="t('actions.retry')">
               </p-button>
             </td>
           </tr>

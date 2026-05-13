@@ -624,7 +624,7 @@ export class PdfReaderComponent implements OnInit, OnDestroy {
       headers['Authorization'] = `Bearer ${token}`;
     }
     try {
-      const response = await fetch(url, { headers, credentials: 'include', signal });
+      const response = await fetch(url, { headers, credentials: 'include', cache: 'no-store', signal });
       if (!response.ok) throw new Error(`PDF fetch failed: ${response.status}`);
       const blob = await response.blob();
       return URL.createObjectURL(blob);
@@ -1119,9 +1119,7 @@ export class PdfReaderComponent implements OnInit, OnDestroy {
         headers['Authorization'] = `Bearer ${uploadToken}`;
       }
 
-      const url = this.altBookType
-        ? `${API_CONFIG.BASE_URL}/api/v1/books/${this.bookId}/content?bookType=${this.altBookType}`
-        : `${API_CONFIG.BASE_URL}/api/v1/books/${this.bookId}/content`;
+      const url = this.buildBookContentUrl(this.bookId, this.altBookType);
 
       const uploadResponse = await fetch(url, {
         method: 'PUT',
@@ -1521,14 +1519,21 @@ export class PdfReaderComponent implements OnInit, OnDestroy {
     bookId: string,
     fileType: string | undefined,
   ): Observable<string> {
-    const uri = fileType
-      ? `${API_CONFIG.BASE_URL}/api/v1/books/${bookId}/content?bookType=${fileType}`
-      : `${API_CONFIG.BASE_URL}/api/v1/books/${bookId}/content`;
+    const uri = this.buildBookContentUrl(bookId, fileType);
     if (!this.localSettingsService.get().cacheStorageEnabled) return of(uri);
     return from(this.cacheStorageService.getCache(uri)).pipe(
       switchMap(res => res.blob()),
       map(blob => URL.createObjectURL(blob))
     )
+  }
+
+  private buildBookContentUrl(bookId: number | string, fileType?: string): string {
+    const params = new URLSearchParams();
+    if (fileType) {
+      params.set('bookType', fileType);
+    }
+    params.set('ngsw-bypass', 'true');
+    return `${API_CONFIG.BASE_URL}/api/v1/books/${bookId}/content?${params.toString()}`;
   }
 
   private async persistAnnotations(): Promise<void> {

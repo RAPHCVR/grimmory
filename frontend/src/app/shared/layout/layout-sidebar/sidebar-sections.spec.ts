@@ -68,6 +68,12 @@ describe('buildHomeSection', () => {
       notebook: undefined,
     });
   });
+
+  it('shows downloads only to admins', () => {
+    const [section] = buildHomeSection(translate, { allBooks: 0, series: 0, authors: 0 }, { admin: true });
+
+    expect(section.items?.map((item) => item.id)).toContain('downloads');
+  });
 });
 
 describe('buildToolsSection', () => {

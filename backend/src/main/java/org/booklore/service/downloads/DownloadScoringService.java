@@ -48,7 +48,10 @@ public class DownloadScoringService {
         }
 
         String expectedTitle = firstNonBlank(criteria.getTitle(), criteria.effectiveQuery());
-        if (!isBlank(expectedTitle) && (!isBlank(result.getTitle()) || !isBlank(result.getSeriesName()))) {
+        boolean skipTitleScoringForAuthorQuery = shouldSkipTitleScoringForAuthorOnlyQuery(criteria, result);
+        if (skipTitleScoringForAuthorQuery) {
+            reasons.add("title scoring skipped for author query");
+        } else if (!isBlank(expectedTitle) && (!isBlank(result.getTitle()) || !isBlank(result.getSeriesName()))) {
             double titleSimilarity = Math.max(similarity(expectedTitle, result.getTitle()), similarity(expectedTitle, result.getSeriesName()));
             if (queryContainsMoreThanAuthor(expectedTitle, result)) {
                 titleSimilarity = Math.max(titleSimilarity, similarity(expectedTitle, combinedTitleAndAuthors(result)));
@@ -224,7 +227,69 @@ public class DownloadScoringService {
             authorTokens.addAll(tokens(normalize(author)));
         }
         authorTokens.remove("");
+        if (hasMeaningfulTitleTokenOverlap(query, result)) {
+            return true;
+        }
         return !authorTokens.isEmpty() && !authorTokens.containsAll(queryTokens);
+    }
+
+    private boolean shouldSkipTitleScoringForAuthorOnlyQuery(DownloadSearchCriteria criteria, NormalizedDownloadResult result) {
+        if (criteria == null
+                || result == null
+                || !isBlank(criteria.getTitle())
+                || !isBlank(criteria.getAuthor())
+                || !isBlank(criteria.getSeriesName())
+                || !isBlank(criteria.getIsbn())
+                || criteria.getSeriesNumber() != null
+                || isBlank(criteria.effectiveQuery())
+                || result.getAuthors() == null
+                || result.getAuthors().isEmpty()) {
+            return false;
+        }
+
+        Set<String> queryTokens = tokens(normalize(criteria.effectiveQuery()));
+        if (queryTokens.isEmpty()) {
+            return false;
+        }
+        double titleSimilarity = Math.max(similarity(criteria.effectiveQuery(), result.getTitle()), similarity(criteria.effectiveQuery(), result.getSeriesName()));
+        if (titleSimilarity >= 0.65D || hasMeaningfulTitleTokenOverlap(criteria.effectiveQuery(), result)) {
+            return false;
+        }
+
+        for (String author : result.getAuthors()) {
+            Set<String> authorTokens = tokens(normalize(author));
+            if (!authorTokens.isEmpty() && authorTokens.containsAll(queryTokens)) {
+                return true;
+            }
+            if (similarity(criteria.effectiveQuery(), author) >= 0.85D) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean hasMeaningfulTitleTokenOverlap(String query, NormalizedDownloadResult result) {
+        Set<String> queryTokens = significantTokens(query);
+        if (queryTokens.isEmpty()) {
+            return false;
+        }
+        Set<String> titleTokens = significantTokens(String.join(" ", safe(result.getTitle()), safe(result.getSeriesName())));
+        if (titleTokens.isEmpty()) {
+            return false;
+        }
+        int overlap = 0;
+        for (String token : queryTokens) {
+            if (titleTokens.contains(token)) {
+                overlap++;
+            }
+        }
+        return overlap >= Math.min(2, queryTokens.size());
+    }
+
+    private Set<String> significantTokens(String value) {
+        Set<String> values = new LinkedHashSet<>(tokens(normalize(value)));
+        values.removeIf(token -> token.length() < 3);
+        return values;
     }
 
     private String combinedTitleAndAuthors(NormalizedDownloadResult result) {

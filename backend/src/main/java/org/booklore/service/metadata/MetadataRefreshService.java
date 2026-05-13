@@ -37,6 +37,7 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -100,6 +101,9 @@ public class MetadataRefreshService {
 
             TransactionTemplate txTemplate = new TransactionTemplate(transactionManager);
             int completedCount = 0;
+            AtomicInteger booksWithProviderMetadata = new AtomicInteger();
+            AtomicInteger failedBooks = new AtomicInteger();
+            AtomicInteger skippedBooks = new AtomicInteger();
 
             for (Long bookId : actualBookIds) {
                 if (cancellationManager.isTaskCancelled(jobId)) {
@@ -117,6 +121,7 @@ public class MetadataRefreshService {
                     try {
                         if (book.getMetadata().areAllFieldsLocked()) {
                             log.info("Skipping locked book: {}", getBookIdentifier(book));
+                            skippedBooks.incrementAndGet();
                             sendBatchProgressNotification(jobId, finalCompletedCount, totalBooks, "Skipped locked book: " + book.getMetadata().getTitle(), MetadataFetchTaskStatus.IN_PROGRESS, isReviewMode);
                             return null;
                         }
@@ -137,6 +142,18 @@ public class MetadataRefreshService {
 
                         reportProgressIfNeeded(task, jobId, finalCompletedCount, totalBooks, book, isReviewMode);
                         Map<MetadataProvider, BookMetadata> metadataMap = fetchMetadataForBook(providers, book);
+                        if (metadataMap.isEmpty()) {
+                            sendBatchProgressNotification(
+                                    jobId,
+                                    finalCompletedCount + 1,
+                                    totalBooks,
+                                    "No provider metadata found for: " + book.getMetadata().getTitle(),
+                                    MetadataFetchTaskStatus.IN_PROGRESS,
+                                    isReviewMode
+                            );
+                            return null;
+                        }
+                        booksWithProviderMetadata.incrementAndGet();
                         if (providers.contains(GoodReads)) {
                             try {
                                 Thread.sleep(ThreadLocalRandom.current().nextLong(500, 1500));
@@ -170,6 +187,7 @@ public class MetadataRefreshService {
                             status.setRollbackOnly();
                             return null;
                         }
+                        failedBooks.incrementAndGet();
                         log.error("Metadata update failed for book: {}", getBookIdentifier(book), e);
                         sendBatchProgressNotification(jobId, finalCompletedCount, totalBooks, String.format("Failed to process: %s - %s", book.getMetadata().getTitle(), e.getMessage()), MetadataFetchTaskStatus.ERROR, isReviewMode);
                     }
@@ -179,10 +197,17 @@ public class MetadataRefreshService {
                 completedCount++;
             }
 
-            completeTask(task, completedCount, totalBooks, isReviewMode);
+            completeTask(task, completedCount, totalBooks, booksWithProviderMetadata.get(), failedBooks.get(), skippedBooks.get(), isReviewMode);
             cancellationManager.clearCancellation(jobId);
+            if (totalBooks > 0 && booksWithProviderMetadata.get() == 0) {
+                throw new NoMetadataFoundException(metadataRefreshNoUpdatesMessage(failedBooks.get(), skippedBooks.get()));
+            }
             log.info("Metadata refresh task {} completed successfully", jobId);
 
+        } catch (NoMetadataFoundException e) {
+            cancellationManager.clearCancellation(jobId);
+            log.info("Metadata refresh task {} completed without provider metadata: {}", jobId, e.getMessage());
+            throw e;
         } catch (RuntimeException e) {
             cancellationManager.clearCancellation(jobId);
             if (e.getCause() instanceof InterruptedException) {
@@ -261,12 +286,34 @@ public class MetadataRefreshService {
         notificationService.sendMessage(Topic.BOOK_METADATA_BATCH_PROGRESS, new MetadataBatchProgressNotification(taskId, current, total, message, status.name(), isReview));
     }
 
-    private void completeTask(MetadataFetchJobEntity task, int completed, int total, boolean isReviewMode) {
-        task.setStatus(MetadataFetchTaskStatus.COMPLETED);
+    private void completeTask(MetadataFetchJobEntity task,
+                              int completed,
+                              int total,
+                              int booksWithProviderMetadata,
+                              int failedBooks,
+                              int skippedBooks,
+                              boolean isReviewMode) {
+        boolean noMetadataUpdates = total > 0 && booksWithProviderMetadata == 0;
+        MetadataFetchTaskStatus status = noMetadataUpdates ? MetadataFetchTaskStatus.ERROR : MetadataFetchTaskStatus.COMPLETED;
+        String message = noMetadataUpdates
+                ? metadataRefreshNoUpdatesMessage(failedBooks, skippedBooks)
+                : String.format("Batch metadata fetch completed. Provider matches: %d, skipped: %d, failed: %d.", booksWithProviderMetadata, skippedBooks, failedBooks);
+        task.setStatus(status);
+        task.setStatusMessage(message);
         task.setCompletedAt(Instant.now());
         task.setCompletedBooks(completed);
         metadataFetchJobRepository.save(task);
-        sendBatchProgressNotification(task.getTaskId(), completed, total, "Batch metadata fetch successfully completed!", MetadataFetchTaskStatus.COMPLETED, isReviewMode);
+        sendBatchProgressNotification(task.getTaskId(), completed, total, message, status, isReviewMode);
+    }
+
+    private String metadataRefreshNoUpdatesMessage(int failedBooks, int skippedBooks) {
+        if (failedBooks > 0) {
+            return "Metadata refresh failed for all selected book(s). Nothing was updated.";
+        }
+        if (skippedBooks > 0) {
+            return "Metadata refresh skipped every selected book because metadata fields are locked. Nothing was updated.";
+        }
+        return "No provider metadata was found for the selected book(s). Nothing was updated.";
     }
 
     private void cancelTask(MetadataFetchJobEntity task) {

@@ -112,7 +112,7 @@ class AnnasArchiveApiAdapterTest {
             assertEquals("/search", uri.getPath());
             Map<String, String> queryParams = queryParams(uri.getRawQuery());
             assertEquals("Les Fourmis", queryParams.get("q"));
-            assertEquals("epub", queryParams.get("ext"));
+            assertNull(queryParams.get("ext"));
 
             assertEquals(1, results.size());
             var result = results.getFirst();
@@ -198,8 +198,7 @@ class AnnasArchiveApiAdapterTest {
             String requestedUrl = body.path("url").asText();
             requestedUrls.add(requestedUrl);
 
-            String html = requestedUrl.contains("ext=pdf")
-                    ? """
+            String html = """
                     <html>
                       <body>
                         <div>
@@ -214,8 +213,7 @@ class AnnasArchiveApiAdapterTest {
                         </div>
                       </body>
                     </html>
-                    """
-                    : "<html><body>No matching files</body></html>";
+                    """;
             byte[] response = objectMapper.writeValueAsBytes(Map.of(
                     "status", "ok",
                     "solution", Map.of("response", html)
@@ -248,9 +246,8 @@ class AnnasArchiveApiAdapterTest {
                     .maxResults(10)
                     .build());
 
-            assertEquals(2, requestedUrls.size());
-            assertEquals("epub", queryParams(URI.create(requestedUrls.get(0)).getRawQuery()).get("ext"));
-            assertEquals("pdf", queryParams(URI.create(requestedUrls.get(1)).getRawQuery()).get("ext"));
+            assertEquals(1, requestedUrls.size());
+            assertNull(queryParams(URI.create(requestedUrls.getFirst()).getRawQuery()).get("ext"));
             assertEquals(1, results.size());
             var result = results.getFirst();
             assertEquals(DownloadFormat.PDF, result.getFormat());
@@ -328,6 +325,69 @@ class AnnasArchiveApiAdapterTest {
     }
 
     @Test
+    void search_stripsTrailingPunctuationFromParsedSeriesNames() throws Exception {
+        HttpServer flareSolverr = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        flareSolverr.createContext("/v1", exchange -> {
+            exchange.getRequestBody().readAllBytes();
+            String html = """
+                    <html>
+                      <body>
+                        <div>
+                          <a href="/md5/0123456789abcdef0123456789abcdef" class="js-vim-focus font-semibold">
+                            One Piece, Vol. 100
+                          </a>
+                          <a href="/search?q=Oda">
+                            <span class="icon-[mdi--user-edit]"></span>
+                            Oda, Eiichiro
+                          </a>
+                          <span>English EPUB 2010</span>
+                        </div>
+                      </body>
+                    </html>
+                    """;
+            byte[] response = objectMapper.writeValueAsBytes(Map.of(
+                    "status", "ok",
+                    "solution", Map.of("response", html)
+            ));
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        flareSolverr.start();
+
+        try {
+            String flareSolverrBaseUrl = "http://127.0.0.1:" + flareSolverr.getAddress().getPort();
+            DownloadSourceEntity source = DownloadSourceEntity.builder()
+                    .name("Anna HTML")
+                    .type(DownloadSourceType.ANNAS_ARCHIVE_API)
+                    .configJson(objectMapper.writeValueAsString(Map.of(
+                            "annasArchiveApi", Map.of(
+                                    "baseUrl", "https://annas-archive.li",
+                                    "useDefaultFallbacks", false
+                            ),
+                            "flareSolverr", Map.of("baseUrl", flareSolverrBaseUrl)
+                    )))
+                    .build();
+
+            var results = adapter().search(source, DownloadSearchCriteria.builder()
+                    .query("One Piece 100")
+                    .contentKind(DownloadContentKind.MANGA)
+                    .preferredFormats(List.of(DownloadFormat.EPUB))
+                    .maxResults(10)
+                    .build());
+
+            assertEquals(1, results.size());
+            var result = results.getFirst();
+            assertEquals("One Piece", result.getSeriesName());
+            assertEquals(100F, result.getSeriesNumber());
+            assertEquals("One Piece, Vol. 100", result.getTitle());
+        } finally {
+            flareSolverr.stop(0);
+        }
+    }
+
+    @Test
     void search_interleavesResultsAcrossPreferredFormatsBeforeApplyingLimit() throws Exception {
         HttpServer flareSolverr = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         flareSolverr.createContext("/v1", exchange -> {
@@ -361,7 +421,8 @@ class AnnasArchiveApiAdapterTest {
                     .configJson(objectMapper.writeValueAsString(Map.of(
                             "annasArchiveApi", Map.of(
                                     "baseUrl", "https://annas-archive.li",
-                                    "useDefaultFallbacks", false
+                                    "useDefaultFallbacks", false,
+                                    "searchEachFormat", true
                             ),
                             "flareSolverr", Map.of("baseUrl", flareSolverrBaseUrl)
                     )))

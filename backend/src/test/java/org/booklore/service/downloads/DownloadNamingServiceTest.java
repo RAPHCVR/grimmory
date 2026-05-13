@@ -45,6 +45,32 @@ class DownloadNamingServiceTest {
     }
 
     @Test
+    void buildFinalFileName_manga_stripsTrailingSeriesPunctuation() {
+        NormalizedDownloadResult result = NormalizedDownloadResult.builder()
+                .title("One Piece, Vol. 100")
+                .seriesName("One Piece,")
+                .seriesNumber(100f)
+                .contentKind(DownloadContentKind.MANGA)
+                .build();
+
+        assertEquals("One Piece - v100.epub",
+                service.buildFinalFileName(result, DownloadFormat.EPUB));
+    }
+
+    @Test
+    void buildFinalFileName_manga_keepsUsefulSubtitleAfterRepeatedSeriesAndVolume() {
+        NormalizedDownloadResult result = NormalizedDownloadResult.builder()
+                .title("Dragon Ball Super - Vol.24 - Full Color (Ch101 - Ch104)")
+                .seriesName("Dragon Ball Super")
+                .seriesNumber(24f)
+                .contentKind(DownloadContentKind.MANGA)
+                .build();
+
+        assertEquals("Dragon Ball Super - v24 - Full Color (Ch101 - Ch104).cbz",
+                service.buildFinalFileName(result, DownloadFormat.CBZ));
+    }
+
+    @Test
     void buildFinalFileName_webtoon_usesChapterNumber() {
         NormalizedDownloadResult result = NormalizedDownloadResult.builder()
                 .title("The Tower")

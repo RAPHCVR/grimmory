@@ -42,7 +42,7 @@ export class TaskHelperService {
             severity: 'error',
             summary: this.t.translate('settingsTasks.toast.metadataFailed'),
             life: 5000,
-            detail: this.t.translate('settingsTasks.toast.metadataFailedDetail')
+            detail: e?.error?.message || e?.message || this.t.translate('settingsTasks.toast.metadataFailedDetail')
           });
         }
         return of({success: false});

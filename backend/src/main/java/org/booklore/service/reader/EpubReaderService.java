@@ -10,6 +10,7 @@ import org.booklore.model.dto.response.EpubTocItem;
 import org.booklore.model.entity.BookEntity;
 import org.booklore.model.entity.BookFileEntity;
 import org.booklore.model.enums.BookFileType;
+import org.booklore.nativelib.NativeLibraries;
 import org.booklore.repository.BookRepository;
 import org.booklore.util.FileUtils;
 import org.grimmory.epub4j.domain.*;
@@ -23,6 +24,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.*;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 
@@ -380,8 +383,27 @@ public class EpubReaderService {
     }
 
     private void streamEntryFromZip(Path epubPath, String entryName, OutputStream outputStream) throws IOException {
-        try (NativeArchive archive = NativeArchive.open(epubPath)) {
-            archive.streamEntry(entryName, outputStream);
+        if (NativeLibraries.get().isEpubNativeAvailable()) {
+            try (NativeArchive archive = NativeArchive.open(epubPath)) {
+                archive.streamEntry(entryName, outputStream);
+                return;
+            } catch (Exception | LinkageError e) {
+                log.debug("Native EPUB streaming failed for {}, falling back to ZipFile: {}",
+                        epubPath.getFileName(), e.toString());
+            }
+        }
+        streamEntryWithZipFile(epubPath, entryName, outputStream);
+    }
+
+    private void streamEntryWithZipFile(Path epubPath, String entryName, OutputStream outputStream) throws IOException {
+        try (ZipFile zipFile = new ZipFile(epubPath.toFile())) {
+            ZipEntry entry = zipFile.getEntry(entryName);
+            if (entry == null) {
+                throw new FileNotFoundException("File not found in EPUB: " + entryName);
+            }
+            try (InputStream inputStream = zipFile.getInputStream(entry)) {
+                inputStream.transferTo(outputStream);
+            }
         }
     }
 

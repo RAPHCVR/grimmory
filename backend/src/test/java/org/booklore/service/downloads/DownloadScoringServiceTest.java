@@ -334,8 +334,10 @@ class DownloadScoringServiceTest {
 
         var score = service.score(criteria, result);
 
-        assertTrue(score.getScore() >= 40);
+        assertTrue(score.getScore() >= 75);
         assertTrue(score.getReasons().contains("+45 query author match"));
+        assertTrue(score.getReasons().contains("title scoring skipped for author query"));
+        assertTrue(score.getReasons().stream().noneMatch("-35 title weak match"::equals));
         assertTrue(score.getReasons().stream().noneMatch("-100 missing download URL"::equals));
     }
 
@@ -361,6 +363,31 @@ class DownloadScoringServiceTest {
 
         assertTrue(score.getScore() >= 60);
         assertTrue(score.getReasons().contains("+35 title strong match"));
+    }
+
+    @Test
+    void score_universalQueryWithDirtyAuthorFieldStillScoresTitle() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("Les Fourmis Bernard Werber")
+                .contentKind(DownloadContentKind.BOOK)
+                .preferredFormats(List.of(DownloadFormat.EPUB))
+                .build();
+
+        NormalizedDownloadResult result = NormalizedDownloadResult.builder()
+                .sourceResultId("6fc83a82e765e3808aa55102b0894275")
+                .title("Les Fourmis (Les Fourmis, Tome 1) (Le Livre de Poche) (French Edition)")
+                .authors(List.of("Les Fourmis Bernard Werber"))
+                .format(DownloadFormat.EPUB)
+                .contentKind(DownloadContentKind.BOOK)
+                .acquisitionType(DownloadAcquisitionType.EXTERNAL_STACKS)
+                .detailsUrl("https://annas-archive.gl/md5/6fc83a82e765e3808aa55102b0894275")
+                .build();
+
+        var score = service.score(criteria, result);
+
+        assertTrue(score.getScore() >= 80);
+        assertTrue(score.getReasons().contains("+35 title strong match"));
+        assertTrue(score.getReasons().stream().noneMatch("title scoring skipped for author query"::equals));
     }
 
     @Test

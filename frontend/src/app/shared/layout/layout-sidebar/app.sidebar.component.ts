@@ -158,7 +158,7 @@ export class AppSidebarComponent {
         allBooks: this.bookService.books().length,
         series: this.seriesDataService.allSeries().length,
         authors: this.allAuthors()?.length ?? 0,
-      }),
+      }, this.currentUser()?.permissions ?? {}),
       ...buildLibrarySection(
         this.libraryService.libraries(),
         this.libraryService.bookCountByLibraryId(),

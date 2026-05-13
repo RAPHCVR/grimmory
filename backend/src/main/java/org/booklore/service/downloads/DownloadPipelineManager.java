@@ -31,9 +31,12 @@ import tools.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.nio.file.*;
 import java.time.Instant;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
@@ -44,6 +47,21 @@ public class DownloadPipelineManager {
     private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() {};
     private static final String DOWNLOADS_DIR = ".downloads";
     private static final int MIN_DOWNLOADABLE_SCORE = 50;
+    private static final Duration STALE_RETRY_AFTER = Duration.ofMinutes(10);
+    private static final Set<DownloadJobStatus> RETRYABLE_TERMINAL_STATUSES = EnumSet.of(
+            DownloadJobStatus.FAILED,
+            DownloadJobStatus.CANCELLED
+    );
+    private static final Set<DownloadJobStatus> ACTIVE_STATUSES = EnumSet.of(
+            DownloadJobStatus.QUEUED,
+            DownloadJobStatus.SEARCHING,
+            DownloadJobStatus.SCORING,
+            DownloadJobStatus.DOWNLOADING,
+            DownloadJobStatus.VALIDATING,
+            DownloadJobStatus.STAGED,
+            DownloadJobStatus.DELIVERING,
+            DownloadJobStatus.AUTO_FINALIZING
+    );
 
     private final AppProperties appProperties;
     private final DownloadSourceRepository sourceRepository;
@@ -171,6 +189,47 @@ public class DownloadPipelineManager {
         return processQueuedJob(job.getId());
     }
 
+    @Transactional
+    public DownloadJobEntity retryJob(Long jobId) {
+        DownloadJobEntity previous = jobRepository.findWithSearchAndResultAndSourceById(jobId)
+                .orElseThrow(() -> new DownloadException("Download job not found: " + jobId));
+        if (!isRetryable(previous)) {
+            throw new DownloadException("Download job " + jobId + " cannot be retried from status " + previous.getStatus());
+        }
+
+        if (ACTIVE_STATUSES.contains(previous.getStatus())) {
+            previous.setStatus(DownloadJobStatus.FAILED);
+            previous.setCompletedAt(Instant.now());
+            previous.setErrorMessage("Marked failed before retry because the job stopped reporting progress.");
+            jobRepository.save(previous);
+        }
+
+        DownloadResultEntity result = previous.getResult();
+        DownloadTargetResolver.ResolvedTarget target = targetResolver.resolve(
+                previous.getTargetLibraryId(),
+                previous.getTargetLibraryPathId(),
+                Boolean.TRUE.equals(previous.getAutoFinalize()),
+                result.getFormat()
+        );
+        DownloadJobEntity retry = DownloadJobEntity.builder()
+                .search(previous.getSearch())
+                .result(result)
+                .source(previous.getSource())
+                .status(DownloadJobStatus.QUEUED)
+                .confidenceScore(previous.getConfidenceScore())
+                .autoFinalize(Boolean.TRUE.equals(previous.getAutoFinalize()))
+                .confidenceThreshold(previous.getConfidenceThreshold() == null ? 90 : previous.getConfidenceThreshold())
+                .targetLibraryId(target.libraryId())
+                .targetLibraryPathId(target.libraryPathId())
+                .build();
+        DownloadJobEntity saved = jobRepository.save(retry);
+        if (previous.getErrorMessage() != null && previous.getErrorMessage().startsWith("Marked failed before retry")) {
+            previous.setErrorMessage("Marked failed before retry as job #" + saved.getId() + " because the job stopped reporting progress.");
+            jobRepository.save(previous);
+        }
+        return saved;
+    }
+
     public DownloadJobEntity processQueuedJob(Long jobId) {
         DownloadJobEntity job = jobRepository.findWithSearchAndResultAndSourceById(jobId)
                 .orElseThrow(() -> new DownloadException("Download job not found: " + jobId));
@@ -193,6 +252,7 @@ public class DownloadPipelineManager {
                     .stagingDir(stagingDir)
                     .targetPartFile(partFile)
                     .build(), percent -> updateProgress(job.getId(), percent));
+            throwIfSupersededByRetry(job);
             if (downloadedFile != null && !downloadedFile.equals(partFile)) {
                 partFile = downloadedFile;
                 job.setPartFilePath(partFile.toString());
@@ -212,6 +272,7 @@ public class DownloadPipelineManager {
             updateJob(job, DownloadJobStatus.STAGED, 100, null);
 
             updateJob(job, DownloadJobStatus.DELIVERING, 100, null);
+            throwIfSupersededByRetry(job);
             BookdropDeliveryService.DeliveryResult deliveryResult = bookdropDeliveryService.deliver(job, result, stagedFile, finalFileName);
             job.setDeliveredFilePath(deliveryResult.finalPath().toString());
             job.setCompletedAt(Instant.now());
@@ -220,6 +281,9 @@ public class DownloadPipelineManager {
             return jobRepository.save(job);
         } catch (Exception e) {
             log.error("Download job {} failed: {}", jobId, e.getMessage(), e);
+            if (isSupersededByRetry(jobId)) {
+                return jobRepository.findById(jobId).orElse(job);
+            }
             job.setCompletedAt(Instant.now());
             updateJob(job, DownloadJobStatus.FAILED, job.getProgressPercent(), e.getMessage());
             return jobRepository.save(job);
@@ -321,6 +385,9 @@ public class DownloadPipelineManager {
     }
 
     private void updateProgress(Long jobId, int percent) {
+        if (isSupersededByRetry(jobId)) {
+            return;
+        }
         jobRepository.findById(jobId).ifPresent(job -> {
             job.setProgressPercent(Math.max(0, Math.min(100, percent)));
             job.setLastProgressAt(Instant.now());
@@ -329,6 +396,10 @@ public class DownloadPipelineManager {
     }
 
     private void updateJob(DownloadJobEntity job, DownloadJobStatus status, Integer progress, String errorMessage) {
+        if (isSupersededByRetry(job.getId())) {
+            log.info("Skipping update of superseded download job {} to {}", job.getId(), status);
+            return;
+        }
         job.setStatus(status);
         if (progress != null) job.setProgressPercent(Math.max(0, Math.min(100, progress)));
         if (progress != null || status == DownloadJobStatus.DOWNLOADING) job.setLastProgressAt(Instant.now());
@@ -352,6 +423,40 @@ public class DownloadPipelineManager {
         } catch (IOException e) {
             log.debug("Staging directory {} was not empty or could not be deleted", directory);
         }
+    }
+
+    private void throwIfSupersededByRetry(DownloadJobEntity job) {
+        if (isSupersededByRetry(job.getId())) {
+            throw new DownloadException("Download job " + job.getId() + " was superseded by a retry");
+        }
+    }
+
+    private boolean isSupersededByRetry(Long jobId) {
+        if (jobId == null) {
+            return false;
+        }
+        return jobRepository.findById(jobId)
+                .filter(job -> job.getStatus() == DownloadJobStatus.FAILED)
+                .map(DownloadJobEntity::getErrorMessage)
+                .filter(message -> message != null && message.startsWith("Marked failed before retry"))
+                .isPresent();
+    }
+
+    private boolean isRetryable(DownloadJobEntity job) {
+        if (RETRYABLE_TERMINAL_STATUSES.contains(job.getStatus())) {
+            return true;
+        }
+        if (!ACTIVE_STATUSES.contains(job.getStatus())) {
+            return false;
+        }
+        Instant lastProgress = job.getLastProgressAt();
+        if (lastProgress == null) {
+            lastProgress = job.getUpdatedAt();
+        }
+        if (lastProgress == null) {
+            lastProgress = job.getCreatedAt();
+        }
+        return lastProgress != null && lastProgress.isBefore(Instant.now().minus(STALE_RETRY_AFTER));
     }
 
     private String writeJson(Object value) {

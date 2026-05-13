@@ -19,6 +19,15 @@ describe('nav-catalog', () => {
       'authors',
       'notebook',
     ]);
+
+    expect(buildHomeNavItems(translate, { admin: true }).map((item) => item.id)).toEqual([
+      'dashboard',
+      'allBooks',
+      'series',
+      'authors',
+      'downloads',
+      'notebook',
+    ]);
   });
 
   it('gates palette page items by permission while keeping the common pages available', () => {

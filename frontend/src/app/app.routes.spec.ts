@@ -6,6 +6,7 @@ import {BookdropGuard} from './core/security/guards/bookdrop.guard';
 import {EditMetadataGuard} from './core/security/guards/edit-metdata.guard';
 import {LibraryStatsGuard} from './core/security/guards/library-stats.guard';
 import {UserStatsGuard} from './core/security/guards/user-stats.guard';
+import {AdminGuard} from './core/security/guards/admin.guard';
 import {LoginGuard} from './shared/components/setup/login.guard';
 import {SetupGuard} from './shared/components/setup/setup.guard';
 import {SetupRedirectGuard} from './shared/components/setup/setup-redirect.guard';
@@ -27,10 +28,11 @@ describe('app routes', () => {
     const shellRoute = routes.find(route => route.path === '' && Array.isArray(route.children));
     const children = shellRoute?.children ?? [];
 
-    expect(children).toHaveLength(17);
+    expect(children).toHaveLength(18);
     expect(children.find(route => route.path === 'dashboard')?.canActivate).toEqual([AuthGuard]);
     expect(children.find(route => route.path === 'all-books')?.canActivate).toEqual([AuthGuard]);
     expect(children.find(route => route.path === 'magic-shelf/:magicShelfId/books')?.canActivate).toEqual([AuthGuard]);
+    expect(children.find(route => route.path === 'downloads')?.canActivate).toEqual([AuthGuard, AdminGuard]);
     expect(children.find(route => route.path === 'notebook')?.canActivate).toEqual([AuthGuard]);
     expect(typeof children.find(route => route.path === 'all-books')?.loadComponent).toBe('function');
     expect(typeof children.find(route => route.path === 'library/:libraryId/books')?.loadComponent).toBe('function');

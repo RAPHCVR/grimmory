@@ -14,6 +14,7 @@ import org.mockito.InjectMocks;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.io.IOException;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
@@ -22,6 +23,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 @ExtendWith(MockitoExtension.class)
 class LibraryFileHelperTest {
@@ -66,8 +68,8 @@ class LibraryFileHelperTest {
                 .toList();
 
         List<String> expected = List.of(
-                "author/other/c.mp3",
-                "author/title"
+                Path.of("author", "other", "c.mp3").toString(),
+                Path.of("author", "title").toString()
         );
 
         assertEquals(expected, actual);
@@ -75,6 +77,8 @@ class LibraryFileHelperTest {
 
     @Test
     void testGetLibraryFiles_HandlesInaccessibleDirectories() throws IOException {
+        assumeTrue(FileSystems.getDefault().supportedFileAttributeViews().contains("posix"),
+                "POSIX permissions are not supported on this filesystem");
         Files.write(tempDir.resolve("happy.epub"), new byte[]{1});
         Files.createDirectory(tempDir.resolve("some_other_random_named_dir"), PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("---------")));
         Files.write(tempDir.resolve("zzzz_happ.epub"), new byte[]{1});

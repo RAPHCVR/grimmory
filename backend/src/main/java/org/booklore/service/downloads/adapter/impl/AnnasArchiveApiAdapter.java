@@ -79,25 +79,43 @@ public class AnnasArchiveApiAdapter implements DownloadSourceAdapter {
         Exception lastFailure = null;
         boolean atLeastOneRendered = false;
         int limit = Math.min(Math.max(1, criteria.getMaxResults()), config.maxResults());
+        DownloadFormat fallbackFormat = searchFormats.getFirst();
         for (String searchUrl : config.searchUrls()) {
-            List<List<NormalizedDownloadResult>> formatResults = new ArrayList<>();
-            for (DownloadFormat searchFormat : searchFormats) {
-                URI searchUri = buildSearchUri(config, searchUrl, term, searchFormat);
+            List<NormalizedDownloadResult> domainResults;
+            if (config.searchEachFormat()) {
+                List<List<NormalizedDownloadResult>> formatResults = new ArrayList<>();
+                for (DownloadFormat searchFormat : searchFormats) {
+                    URI searchUri = buildSearchUri(config, searchUrl, term, searchFormat);
+                    String siteBaseUrl = siteBaseUrl(searchUri.toString());
+                    try {
+                        String html = flareSolverrClient.fetchHtml(source, searchUri.toString());
+                        atLeastOneRendered = true;
+                        List<NormalizedDownloadResult> results = parseHtmlResults(html, searchUri, siteBaseUrl, criteria, config, searchFormat, List.of(searchFormat));
+                        if (!results.isEmpty()) {
+                            formatResults.add(results);
+                        }
+                    } catch (DownloadSourceException e) {
+                        lastFailure = e;
+                    } catch (Exception e) {
+                        lastFailure = e;
+                    }
+                }
+                domainResults = interleaveResults(formatResults, limit);
+            } else {
+                URI searchUri = buildSearchUri(config, searchUrl, term, null);
                 String siteBaseUrl = siteBaseUrl(searchUri.toString());
                 try {
                     String html = flareSolverrClient.fetchHtml(source, searchUri.toString());
                     atLeastOneRendered = true;
-                    List<NormalizedDownloadResult> results = parseHtmlResults(html, searchUri, siteBaseUrl, criteria, config, searchFormat);
-                    if (!results.isEmpty()) {
-                        formatResults.add(results);
-                    }
+                    domainResults = parseHtmlResults(html, searchUri, siteBaseUrl, criteria, config, fallbackFormat, searchFormats);
                 } catch (DownloadSourceException e) {
                     lastFailure = e;
+                    domainResults = List.of();
                 } catch (Exception e) {
                     lastFailure = e;
+                    domainResults = List.of();
                 }
             }
-            List<NormalizedDownloadResult> domainResults = interleaveResults(formatResults, limit);
             if (!domainResults.isEmpty()) {
                 return domainResults;
             }
@@ -148,7 +166,8 @@ public class AnnasArchiveApiAdapter implements DownloadSourceAdapter {
                                                             String siteBaseUrl,
                                                             DownloadSearchCriteria criteria,
                                                             AnnasArchiveHtmlConfig config,
-                                                            DownloadFormat preferredFormat) throws Exception {
+                                                            DownloadFormat preferredFormat,
+                                                            List<DownloadFormat> acceptedFormats) throws Exception {
         Document document = Jsoup.parse(html, siteBaseUrl);
         Elements links = document.select(config.resultLinkSelector());
         if (links.isEmpty() || GENERIC_MD5_LINK_SELECTOR.equals(config.resultLinkSelector())) {
@@ -179,12 +198,23 @@ public class AnnasArchiveApiAdapter implements DownloadSourceAdapter {
             String rawText = resultText(link);
             String rawTitle = cleanDisplayTitle(firstNonBlank(titleFrom(link, rawText), rawText, md5));
             DownloadFormat resultFormat = formatFromText(rawText, preferredFormat);
+            if (!isAcceptedFormat(resultFormat, acceptedFormats)) {
+                continue;
+            }
+            DownloadContentKind inferredContentKind = contentClassifier.infer(sourceType(), "Anna's Archive", rawTitle, null, detailsUrl, null, resultFormat, DownloadAcquisitionType.EXTERNAL_STACKS, rawText);
             DownloadContentKind contentKind = contentClassifier.resolve(
                     criteria.getContentKind(),
-                    contentClassifier.infer(sourceType(), "Anna's Archive", rawTitle, null, detailsUrl, null, resultFormat, DownloadAcquisitionType.EXTERNAL_STACKS, rawText),
+                    inferredContentKind,
                     DownloadContentKind.BOOK
             );
             ParsedSequentialMetadata parsed = parseSequentialMetadata(rawTitle, rawText, contentKind);
+            ParsedSequentialMetadata requestedSequentialMetadata = parseSequentialMetadata(rawTitle, rawText, criteria.getContentKind());
+            if (criteria.getContentKind() != null
+                    && criteria.getContentKind().isSequentialArt()
+                    && hasSequentialMetadata(requestedSequentialMetadata)) {
+                contentKind = criteria.getContentKind();
+                parsed = requestedSequentialMetadata;
+            }
             String title = firstNonBlank(parsed.title(), rawTitle);
 
             ObjectNode raw = objectMapper.createObjectNode();
@@ -249,7 +279,8 @@ public class AnnasArchiveApiAdapter implements DownloadSourceAdapter {
                 defaultFormat,
                 Math.max(1, node.path("maxResults").asInt(50)),
                 firstNonBlank(node.path("resultLinkSelector").asText(null), DEFAULT_RESULT_LINK_SELECTOR),
-                node.path("requiresFlareSolverr").asBoolean(true)
+                node.path("requiresFlareSolverr").asBoolean(true),
+                node.path("searchEachFormat").asBoolean(false)
         );
     }
 
@@ -434,6 +465,13 @@ public class AnnasArchiveApiAdapter implements DownloadSourceAdapter {
         return fromText == DownloadFormat.UNKNOWN ? fallback : fromText;
     }
 
+    private boolean isAcceptedFormat(DownloadFormat format, List<DownloadFormat> acceptedFormats) {
+        if (acceptedFormats == null || acceptedFormats.isEmpty()) {
+            return true;
+        }
+        return format == null || format == DownloadFormat.UNKNOWN || acceptedFormats.contains(format);
+    }
+
     private DownloadFormat firstFileFormat(String text) {
         if (text == null || text.isBlank()) {
             return DownloadFormat.UNKNOWN;
@@ -457,7 +495,7 @@ public class AnnasArchiveApiAdapter implements DownloadSourceAdapter {
         if (titleMatcher.matches()) {
             return new ParsedSequentialMetadata(
                     compact(titleMatcher.group(3)),
-                    compact(titleMatcher.group(1)),
+                    cleanSeriesName(titleMatcher.group(1)),
                     parseFloat(titleMatcher.group(2))
             );
         }
@@ -467,7 +505,7 @@ public class AnnasArchiveApiAdapter implements DownloadSourceAdapter {
             String parsedTitle = compact(titleMatcher.group(3));
             return new ParsedSequentialMetadata(
                     parsedTitle.isBlank() ? null : parsedTitle,
-                    compact(titleMatcher.group(1)),
+                    cleanSeriesName(titleMatcher.group(1)),
                     parseFloat(titleMatcher.group(2))
             );
         }
@@ -477,7 +515,7 @@ public class AnnasArchiveApiAdapter implements DownloadSourceAdapter {
             String parsedTitle = compact(titleMatcher.group(3));
             return new ParsedSequentialMetadata(
                     parsedTitle.isBlank() ? null : parsedTitle,
-                    compact(titleMatcher.group(1)),
+                    cleanSeriesName(titleMatcher.group(1)),
                     parseFloat(titleMatcher.group(2))
             );
         }
@@ -486,12 +524,16 @@ public class AnnasArchiveApiAdapter implements DownloadSourceAdapter {
         if (trailerMatcher.find()) {
             return new ParsedSequentialMetadata(
                     null,
-                    compact(trailerMatcher.group(1)),
+                    cleanSeriesName(trailerMatcher.group(1)),
                     parseFloat(trailerMatcher.group(2))
             );
         }
 
         return new ParsedSequentialMetadata(null, null, null);
+    }
+
+    private boolean hasSequentialMetadata(ParsedSequentialMetadata parsed) {
+        return parsed != null && (parsed.seriesName() != null || parsed.seriesNumber() != null);
     }
 
     private Float parseFloat(String value) {
@@ -589,6 +631,12 @@ public class AnnasArchiveApiAdapter implements DownloadSourceAdapter {
         return compact(title);
     }
 
+    private String cleanSeriesName(String value) {
+        String series = cleanDisplayTitle(value);
+        series = series.replaceAll("[\\s,;:.\\-–—]+$", "");
+        return compact(series);
+    }
+
     private String firstFileNameCandidate(String value) {
         String normalized = compact(value).replace('\\', '/');
         Matcher matcher = FILE_NAME_EXTENSION_PATTERN.matcher(normalized);
@@ -675,7 +723,8 @@ public class AnnasArchiveApiAdapter implements DownloadSourceAdapter {
                                           DownloadFormat defaultFormat,
                                           int maxResults,
                                           String resultLinkSelector,
-                                          boolean requiresFlareSolverr) {
+                                          boolean requiresFlareSolverr,
+                                          boolean searchEachFormat) {
     }
 
     private record ParsedSequentialMetadata(String title, String seriesName, Float seriesNumber) {

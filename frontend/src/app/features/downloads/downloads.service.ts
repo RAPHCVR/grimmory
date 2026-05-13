@@ -60,6 +60,10 @@ export class DownloadsService {
     return this.http.post<DownloadJob>(`${this.baseUrl}/jobs/${jobId}/process`, {});
   }
 
+  retryJob(jobId: number): Observable<DownloadJob> {
+    return this.http.post<DownloadJob>(`${this.baseUrl}/jobs/${jobId}/retry`, {});
+  }
+
   getJob(jobId: number): Observable<DownloadJob> {
     return this.http.get<DownloadJob>(`${this.baseUrl}/jobs/${jobId}`);
   }

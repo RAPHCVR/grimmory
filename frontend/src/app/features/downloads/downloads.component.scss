@@ -176,7 +176,7 @@
 }
 
 .actions-col {
-  width: 8rem;
+  width: 8.5rem;
 }
 
 .result-title,
@@ -234,13 +234,26 @@
   font-size: 0.82rem;
 }
 
-.job-error {
+.job-error,
+.job-warning {
   margin-top: 0.35rem;
   max-width: 18rem;
-  color: var(--p-red-300);
   font-size: 0.75rem;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-error {
+  color: var(--p-red-300);
+}
+
+.job-warning {
+  color: var(--p-orange-300);
+}
+
+.jobs-panel .actions-col,
+.jobs-panel td:last-child {
   white-space: nowrap;
 }
 

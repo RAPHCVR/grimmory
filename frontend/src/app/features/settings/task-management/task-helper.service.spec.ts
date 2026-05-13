@@ -86,4 +86,32 @@ describe('TaskHelperService', () => {
       detail: 'settingsTasks.toast.metadataFailedDetail'
     });
   });
+
+  it('uses backend metadata refresh error details when available', async () => {
+    const startTask = vi.fn(() => throwError(() => ({
+      status: 500,
+      error: {message: 'No provider metadata was found for the selected book(s). Nothing was updated.'}
+    })));
+    const messageAdd = vi.fn();
+    const translate = vi.fn((key: string) => key);
+
+    TestBed.configureTestingModule({
+      providers: [
+        TaskHelperService,
+        {provide: TaskService, useValue: {startTask}},
+        {provide: MessageService, useValue: {add: messageAdd}},
+        {provide: TranslocoService, useValue: {translate}},
+      ]
+    });
+
+    const service = TestBed.inject(TaskHelperService);
+
+    await expect(firstValueFrom(service.refreshMetadataTask({libraryIds: [1]} as never))).resolves.toEqual({success: false});
+    expect(messageAdd).toHaveBeenCalledWith({
+      severity: 'error',
+      summary: 'settingsTasks.toast.metadataFailed',
+      life: 5000,
+      detail: 'No provider metadata was found for the selected book(s). Nothing was updated.'
+    });
+  });
 });

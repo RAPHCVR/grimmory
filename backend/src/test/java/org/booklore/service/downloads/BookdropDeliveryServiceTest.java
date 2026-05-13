@@ -71,7 +71,7 @@ class BookdropDeliveryServiceTest {
                 NormalizedDownloadResult.builder()
                         .title("One Piece")
                         .authors(List.of("Eiichiro Oda"))
-                        .seriesName("One Piece")
+                        .seriesName("One Piece,")
                         .seriesNumber(100F)
                         .publishedYear(2024)
                         .isbn("9784088837990")
@@ -89,6 +89,7 @@ class BookdropDeliveryServiceTest {
         BookdropFileEntity saved = captor.getValue();
         assertEquals(saved.getOriginalMetadata(), saved.getFetchedMetadata());
         assertTrue(saved.getFetchedMetadata().contains("One Piece"));
+        assertTrue(saved.getFetchedMetadata().contains("\"seriesName\":\"One Piece\""));
         assertTrue(saved.getFetchedMetadata().contains("Eiichiro Oda"));
         assertTrue(saved.getFetchedMetadata().contains("Manga"));
         assertTrue(saved.getFetchedMetadata().contains("comicMetadata"));
