@@ -14,7 +14,7 @@ global:
 singleReplicaStorageClass:
   create: true
   name: longhorn-grimmory-single
-  reclaimPolicy: Delete
+  reclaimPolicy: Retain
   allowVolumeExpansion: true
   parameters:
     numberOfReplicas: "1"
@@ -72,10 +72,10 @@ secrets:
   qbittorrent:
     username: admin
     password: change-me-qbittorrent-password
-    passwordPbkdf2: "@ByteArray(MAcFlW/H6XDVYYIG7QPCqQ==:1GzczlnnnV+jar/Mkrbew0v8lZ9NuopvLOXH/tokHors9I9+uc7Js4POVGPniff99gVl14xAsWT3rDmiV32pxw==)"
+    passwordPbkdf2: change-me-qbittorrent-pbkdf2-password
   stacks:
     username: admin
-    passwordBcrypt: "$2b$12$HAy2HmzHDexBFN6cfENJa.yagrQbD0Zh/MIyABP96SN/MWodpWG.."
+    passwordBcrypt: change-me-stacks-bcrypt-password
     apiKey: change-me-stacks-admin-api-key
     downloaderKey: change-me-stacks-downloader-key
     sessionSecret: change-me-stacks-session-secret
@@ -95,6 +95,7 @@ ingress:
   tls: []
 
 persistence:
+  keepOnDelete: true
   claims:
     grimmory-data:
       enabled: true
