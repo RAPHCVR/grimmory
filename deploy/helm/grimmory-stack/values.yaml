@@ -1,0 +1,215 @@
+global:
+  timezone: Europe/Paris
+  storageClass: longhorn-custom
+  imagePullSecrets:
+    - ghcr-secret
+  keel:
+    enabled: true
+    policy: force
+    trigger: poll
+    pollSchedule: "@every 1m"
+    matchTag: "true"
+  nodeSelector: {}
+
+singleReplicaStorageClass:
+  create: true
+  name: longhorn-grimmory-single
+  reclaimPolicy: Delete
+  allowVolumeExpansion: true
+  parameters:
+    numberOfReplicas: "1"
+    staleReplicaTimeout: "2880"
+    fsType: ext4
+    dataLocality: best-effort
+    fromBackup: ""
+
+images:
+  grimmory:
+    repository: ghcr.io/raphcvr/grimmory
+    tag: downloads-acquisition
+    pullPolicy: Always
+  mariadb:
+    repository: mariadb
+    tag: "11.4"
+    pullPolicy: IfNotPresent
+  flaresolverr:
+    repository: ghcr.io/flaresolverr/flaresolverr
+    tag: latest
+    pullPolicy: Always
+  prowlarr:
+    repository: lscr.io/linuxserver/prowlarr
+    tag: latest
+    pullPolicy: Always
+  qbittorrent:
+    repository: lscr.io/linuxserver/qbittorrent
+    tag: latest
+    pullPolicy: Always
+  stacks:
+    repository: zelest/stacks
+    tag: latest
+    pullPolicy: Always
+  bootstrap:
+    repository: python
+    tag: 3.13-alpine
+    pullPolicy: IfNotPresent
+  busybox:
+    repository: busybox
+    tag: 1.36
+    pullPolicy: IfNotPresent
+
+secrets:
+  create: true
+  existingSecret: ""
+  database:
+    username: grimmory
+    password: change-me-grimmory
+    rootPassword: change-me-root
+  admin:
+    username: admin
+    password: change-me-admin
+  prowlarr:
+    apiKey: change-me-prowlarr-api-key
+  qbittorrent:
+    username: admin
+    password: change-me-qbittorrent-password
+    passwordPbkdf2: "@ByteArray(MAcFlW/H6XDVYYIG7QPCqQ==:1GzczlnnnV+jar/Mkrbew0v8lZ9NuopvLOXH/tokHors9I9+uc7Js4POVGPniff99gVl14xAsWT3rDmiV32pxw==)"
+  stacks:
+    username: admin
+    passwordBcrypt: "$2b$12$HAy2HmzHDexBFN6cfENJa.yagrQbD0Zh/MIyABP96SN/MWodpWG.."
+    apiKey: change-me-stacks-admin-api-key
+    downloaderKey: change-me-stacks-downloader-key
+    sessionSecret: change-me-stacks-session-secret
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "1024m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+  hosts:
+    grimmory: grimmory.raphcvr.me
+    prowlarr: prowlarr.raphcvr.me
+    qbittorrent: qbit.raphcvr.me
+    stacks: stacks.raphcvr.me
+  tls: []
+
+persistence:
+  claims:
+    grimmory-data:
+      enabled: true
+      size: 2Gi
+      accessMode: ReadWriteOnce
+    grimmory-books:
+      enabled: true
+      size: 10Gi
+      accessMode: ReadWriteOnce
+      storageClass: longhorn-grimmory-single
+    bookdrop:
+      enabled: true
+      size: 10Gi
+      accessMode: ReadWriteOnce
+      storageClass: longhorn-grimmory-single
+    mariadb-data:
+      enabled: true
+      size: 20Gi
+      accessMode: ReadWriteOnce
+    prowlarr-config:
+      enabled: true
+      size: 5Gi
+      accessMode: ReadWriteOnce
+    qbittorrent-config:
+      enabled: true
+      size: 5Gi
+      accessMode: ReadWriteOnce
+    stacks-data:
+      enabled: false
+      size: 5Gi
+      accessMode: ReadWriteOnce
+      storageClass: longhorn-grimmory-single
+
+grimmory:
+  port: 6060
+  userId: "1000"
+  groupId: "1000"
+  diskType: LOCAL
+  apiDocsEnabled: "true"
+  forceDisableOidc: "false"
+  uploadsPerUser: "10"
+  downloads:
+    defaultLibraryName: Downloads
+    defaultLibraryPath: /bookdrop
+    defaultAutoFinalize: "true"
+    defaultConfidenceThreshold: "90"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 512Mi
+    limits:
+      memory: 3Gi
+
+mariadb:
+  database: grimmory
+  resources:
+    requests:
+      cpu: 25m
+      memory: 256Mi
+    limits:
+      memory: 2Gi
+
+flaresolverr:
+  resources:
+    requests:
+      cpu: 25m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+
+prowlarr:
+  port: 9696
+  userId: "1000"
+  groupId: "1000"
+  resources:
+    requests:
+      cpu: 10m
+      memory: 128Mi
+    limits:
+      memory: 1Gi
+
+qbittorrent:
+  webPort: 8080
+  bittorrentPort: 6881
+  userId: "1000"
+  groupId: "1000"
+  resources:
+    requests:
+      cpu: 25m
+      memory: 256Mi
+    limits:
+      memory: 2Gi
+
+stacks:
+  port: 7788
+  resources:
+    requests:
+      cpu: 25m
+      memory: 256Mi
+    limits:
+      memory: 2Gi
+
+bootstrapSources:
+  enabled: true
+  backoffLimit: 4
+  activeDeadlineSeconds: 900
+  annasArchive:
+    baseUrl: https://annas-archive.gl
+    fallbackBaseUrls:
+      - https://annas-archive.gd
+      - https://annas-archive.pk
+      - https://annas-archive.li
+  mangaDex:
+    translatedLanguages:
+      - en
+      - fr
+  prowlarr:
+    indexerIds: ""

@@ -1,0 +1,1160 @@
+{{- $secretName := include "grimmory-stack.secretName" . -}}
+{{- if .Values.singleReplicaStorageClass.create }}
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: {{ .Values.singleReplicaStorageClass.name | quote }}
+  labels:
+    {{- include "grimmory-stack.labels" . | nindent 4 }}
+provisioner: driver.longhorn.io
+reclaimPolicy: {{ .Values.singleReplicaStorageClass.reclaimPolicy }}
+allowVolumeExpansion: {{ .Values.singleReplicaStorageClass.allowVolumeExpansion }}
+volumeBindingMode: Immediate
+parameters:
+  {{- toYaml .Values.singleReplicaStorageClass.parameters | nindent 2 }}
+---
+{{- end }}
+{{- if and .Values.secrets.create (not .Values.secrets.existingSecret) }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $secretName }}
+  labels:
+    {{- include "grimmory-stack.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  db-username: {{ .Values.secrets.database.username | quote }}
+  db-password: {{ .Values.secrets.database.password | quote }}
+  db-root-password: {{ .Values.secrets.database.rootPassword | quote }}
+  admin-username: {{ .Values.secrets.admin.username | quote }}
+  admin-password: {{ .Values.secrets.admin.password | quote }}
+  prowlarr-api-key: {{ .Values.secrets.prowlarr.apiKey | quote }}
+  qbittorrent-username: {{ .Values.secrets.qbittorrent.username | quote }}
+  qbittorrent-password: {{ .Values.secrets.qbittorrent.password | quote }}
+  qbittorrent-password-pbkdf2: {{ .Values.secrets.qbittorrent.passwordPbkdf2 | quote }}
+  stacks-username: {{ .Values.secrets.stacks.username | quote }}
+  stacks-password-bcrypt: {{ .Values.secrets.stacks.passwordBcrypt | quote }}
+  stacks-api-key: {{ .Values.secrets.stacks.apiKey | quote }}
+  stacks-downloader-key: {{ .Values.secrets.stacks.downloaderKey | quote }}
+  stacks-session-secret: {{ .Values.secrets.stacks.sessionSecret | quote }}
+---
+{{- end }}
+{{- range $name, $claim := .Values.persistence.claims }}
+{{- if $claim.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "grimmory-stack.labels" $ | nindent 4 }}
+spec:
+  accessModes:
+    - {{ $claim.accessMode | quote }}
+  resources:
+    requests:
+      storage: {{ $claim.size | quote }}
+  {{- $storageClass := default $.Values.global.storageClass $claim.storageClass }}
+  {{- if $storageClass }}
+  storageClassName: {{ $storageClass | quote }}
+  {{- end }}
+---
+{{- end }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: stacks-bootstrap
+  labels:
+    {{- include "grimmory-stack.labels" . | nindent 4 }}
+data:
+  entrypoint.sh: |
+{{ .Files.Get "files/stacks-bootstrap-entrypoint.sh" | indent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mariadb
+  labels:
+    {{- include "grimmory-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mariadb
+spec:
+  type: ClusterIP
+  ports:
+    - name: mysql
+      port: 3306
+      targetPort: mysql
+  selector:
+    {{- include "grimmory-stack.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: mariadb
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mariadb
+  labels:
+    {{- include "grimmory-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mariadb
+spec:
+  serviceName: mariadb
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "grimmory-stack.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: mariadb
+  template:
+    metadata:
+      labels:
+        {{- include "grimmory-stack.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: mariadb
+      annotations:
+        {{- include "grimmory-stack.keelAnnotations" . | nindent 8 }}
+    spec:
+      {{- include "grimmory-stack.imagePullSecrets" . | nindent 6 }}
+      {{- with .Values.global.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: mariadb
+          image: "{{ .Values.images.mariadb.repository }}:{{ .Values.images.mariadb.tag }}"
+          imagePullPolicy: {{ .Values.images.mariadb.pullPolicy }}
+          ports:
+            - name: mysql
+              containerPort: 3306
+          env:
+            - name: MARIADB_DATABASE
+              value: {{ .Values.mariadb.database | quote }}
+            - name: MARIADB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: db-username
+            - name: MARIADB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: db-password
+            - name: MARIADB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: db-root-password
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "mariadb-admin ping -h 127.0.0.1 -uroot -p$MARIADB_ROOT_PASSWORD"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "mariadb-admin ping -h 127.0.0.1 -uroot -p$MARIADB_ROOT_PASSWORD"]
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml .Values.mariadb.resources | nindent 12 }}
+          volumeMounts:
+            - name: mariadb-data
+              mountPath: /var/lib/mysql
+      volumes:
+        - name: mariadb-data
+          persistentVolumeClaim:
+            claimName: mariadb-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grimmory
+  labels:
+    {{- include "grimmory-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grimmory
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.grimmory.port }}
+      targetPort: http
+  selector:
+    {{- include "grimmory-stack.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: grimmory
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grimmory
+  labels:
+    {{- include "grimmory-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grimmory
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "grimmory-stack.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: grimmory
+  template:
+    metadata:
+      labels:
+        {{- include "grimmory-stack.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: grimmory
+      annotations:
+        {{- include "grimmory-stack.keelAnnotations" . | nindent 8 }}
+    spec:
+      {{- include "grimmory-stack.imagePullSecrets" . | nindent 6 }}
+      {{- with .Values.global.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        - name: wait-for-db
+          image: "{{ .Values.images.busybox.repository }}:{{ .Values.images.busybox.tag }}"
+          imagePullPolicy: {{ .Values.images.busybox.pullPolicy }}
+          command:
+            - sh
+            - -c
+            - |
+              until nc -z mariadb 3306; do echo waiting for mariadb; sleep 3; done
+              mkdir -p /bookdrop/.downloads /bookdrop/.downloads/stacks-cache /books /app/data
+              chown -R 1000:1000 /bookdrop /books /app/data || true
+              chmod 775 /bookdrop /books /app/data || true
+              chmod 755 /bookdrop/lost+found /books/lost+found 2>/dev/null || true
+          volumeMounts:
+            - name: bookdrop
+              mountPath: /bookdrop
+            - name: grimmory-books
+              mountPath: /books
+            - name: grimmory-data
+              mountPath: /app/data
+      containers:
+        - name: grimmory
+          image: "{{ .Values.images.grimmory.repository }}:{{ .Values.images.grimmory.tag }}"
+          imagePullPolicy: {{ .Values.images.grimmory.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.grimmory.port }}
+          env:
+            - name: USER_ID
+              value: {{ .Values.grimmory.userId | quote }}
+            - name: GROUP_ID
+              value: {{ .Values.grimmory.groupId | quote }}
+            - name: TZ
+              value: {{ .Values.global.timezone | quote }}
+            - name: BOOKLORE_PORT
+              value: {{ .Values.grimmory.port | quote }}
+            - name: DATABASE_URL
+              value: "jdbc:mariadb://mariadb:3306/{{ .Values.mariadb.database }}?createDatabaseIfNotExist=true&connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true"
+            - name: DATABASE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: db-username
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: db-password
+            - name: API_DOCS_ENABLED
+              value: {{ .Values.grimmory.apiDocsEnabled | quote }}
+            - name: DISK_TYPE
+              value: {{ .Values.grimmory.diskType | quote }}
+            - name: ALLOWED_ORIGINS
+              value: "https://{{ .Values.ingress.hosts.grimmory }},http://localhost:6060,http://localhost:4200"
+            - name: FORCE_DISABLE_OIDC
+              value: {{ .Values.grimmory.forceDisableOidc | quote }}
+            - name: UPLOADS_PER_USER
+              value: {{ .Values.grimmory.uploadsPerUser | quote }}
+            - name: BOOKLORE_DOWNLOADS_DEFAULT_LIBRARY_NAME
+              value: {{ .Values.grimmory.downloads.defaultLibraryName | quote }}
+            - name: BOOKLORE_DOWNLOADS_DEFAULT_LIBRARY_PATH
+              value: {{ .Values.grimmory.downloads.defaultLibraryPath | quote }}
+            - name: BOOKLORE_DOWNLOADS_DEFAULT_AUTO_FINALIZE
+              value: {{ .Values.grimmory.downloads.defaultAutoFinalize | quote }}
+            - name: BOOKLORE_DOWNLOADS_DEFAULT_CONFIDENCE_THRESHOLD
+              value: {{ .Values.grimmory.downloads.defaultConfidenceThreshold | quote }}
+          startupProbe:
+            httpGet:
+              path: /api/v1/healthcheck
+              port: http
+            failureThreshold: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /api/v1/healthcheck
+              port: http
+            failureThreshold: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/v1/healthcheck
+              port: http
+            failureThreshold: 5
+            periodSeconds: 20
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml .Values.grimmory.resources | nindent 12 }}
+          volumeMounts:
+            - name: grimmory-data
+              mountPath: /app/data
+            - name: grimmory-books
+              mountPath: /books
+            - name: bookdrop
+              mountPath: /bookdrop
+      volumes:
+        - name: grimmory-data
+          persistentVolumeClaim:
+            claimName: grimmory-data
+        - name: grimmory-books
+          persistentVolumeClaim:
+            claimName: grimmory-books
+        - name: bookdrop
+          persistentVolumeClaim:
+            claimName: bookdrop
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: flaresolverr
+  labels:
+    {{- include "grimmory-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: flaresolverr
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8191
+      targetPort: http
+  selector:
+    {{- include "grimmory-stack.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: flaresolverr
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flaresolverr
+  labels:
+    {{- include "grimmory-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: flaresolverr
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "grimmory-stack.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: flaresolverr
+  template:
+    metadata:
+      labels:
+        {{- include "grimmory-stack.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: flaresolverr
+      annotations:
+        {{- include "grimmory-stack.keelAnnotations" . | nindent 8 }}
+    spec:
+      {{- include "grimmory-stack.imagePullSecrets" . | nindent 6 }}
+      {{- with .Values.global.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: flaresolverr
+          image: "{{ .Values.images.flaresolverr.repository }}:{{ .Values.images.flaresolverr.tag }}"
+          imagePullPolicy: {{ .Values.images.flaresolverr.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8191
+          env:
+            - name: TZ
+              value: {{ .Values.global.timezone | quote }}
+            - name: LOG_LEVEL
+              value: info
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.flaresolverr.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prowlarr
+  labels:
+    {{- include "grimmory-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: prowlarr
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.prowlarr.port }}
+      targetPort: http
+  selector:
+    {{- include "grimmory-stack.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: prowlarr
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prowlarr
+  labels:
+    {{- include "grimmory-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: prowlarr
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "grimmory-stack.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: prowlarr
+  template:
+    metadata:
+      labels:
+        {{- include "grimmory-stack.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: prowlarr
+      annotations:
+        {{- include "grimmory-stack.keelAnnotations" . | nindent 8 }}
+    spec:
+      {{- include "grimmory-stack.imagePullSecrets" . | nindent 6 }}
+      {{- with .Values.global.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        - name: init-prowlarr-config
+          image: "{{ .Values.images.busybox.repository }}:{{ .Values.images.busybox.tag }}"
+          imagePullPolicy: {{ .Values.images.busybox.pullPolicy }}
+          env:
+            - name: PROWLARR_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: prowlarr-api-key
+          command: ["sh", "-c"]
+          args:
+            - |
+              mkdir -p /config
+              if [ ! -f /config/config.xml ]; then
+                printf '%s\n' \
+                  '<Config>' \
+                  '  <BindAddress>*</BindAddress>' \
+                  '  <Port>9696</Port>' \
+                  '  <SslPort>6969</SslPort>' \
+                  '  <EnableSsl>False</EnableSsl>' \
+                  '  <LaunchBrowser>False</LaunchBrowser>' \
+                  "  <ApiKey>${PROWLARR_API_KEY}</ApiKey>" \
+                  '  <AuthenticationMethod>Forms</AuthenticationMethod>' \
+                  '  <AuthenticationRequired>DisabledForLocalAddresses</AuthenticationRequired>' \
+                  '  <Branch>master</Branch>' \
+                  '  <InstanceName>Prowlarr</InstanceName>' \
+                  '  <SyslogPort>514</SyslogPort>' \
+                  '  <SslCertPath></SslCertPath>' \
+                  '  <SslCertPassword></SslCertPassword>' \
+                  '  <UrlBase></UrlBase>' \
+                  '  <UpdateMechanism>Docker</UpdateMechanism>' \
+                  '</Config>' > /config/config.xml
+              fi
+          volumeMounts:
+            - name: prowlarr-config
+              mountPath: /config
+      containers:
+        - name: prowlarr
+          image: "{{ .Values.images.prowlarr.repository }}:{{ .Values.images.prowlarr.tag }}"
+          imagePullPolicy: {{ .Values.images.prowlarr.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.prowlarr.port }}
+          env:
+            - name: PUID
+              value: {{ .Values.prowlarr.userId | quote }}
+            - name: PGID
+              value: {{ .Values.prowlarr.groupId | quote }}
+            - name: TZ
+              value: {{ .Values.global.timezone | quote }}
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.prowlarr.resources | nindent 12 }}
+          volumeMounts:
+            - name: prowlarr-config
+              mountPath: /config
+      volumes:
+        - name: prowlarr-config
+          persistentVolumeClaim:
+            claimName: prowlarr-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: qbittorrent
+  labels:
+    {{- include "grimmory-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: qbittorrent
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.qbittorrent.webPort }}
+      targetPort: http
+    - name: bittorrent-tcp
+      port: {{ .Values.qbittorrent.bittorrentPort }}
+      targetPort: bittorrent-tcp
+      protocol: TCP
+    - name: bittorrent-udp
+      port: {{ .Values.qbittorrent.bittorrentPort }}
+      targetPort: bittorrent-udp
+      protocol: UDP
+  selector:
+    {{- include "grimmory-stack.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: qbittorrent
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qbittorrent
+  labels:
+    {{- include "grimmory-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: qbittorrent
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "grimmory-stack.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: qbittorrent
+  template:
+    metadata:
+      labels:
+        {{- include "grimmory-stack.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: qbittorrent
+      annotations:
+        {{- include "grimmory-stack.keelAnnotations" . | nindent 8 }}
+    spec:
+      {{- include "grimmory-stack.imagePullSecrets" . | nindent 6 }}
+      {{- with .Values.global.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        - name: init-qbittorrent-config
+          image: "{{ .Values.images.busybox.repository }}:{{ .Values.images.busybox.tag }}"
+          imagePullPolicy: {{ .Values.images.busybox.pullPolicy }}
+          env:
+            - name: QBIT_PASSWORD_PBKDF2
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: qbittorrent-password-pbkdf2
+          command: ["sh", "-c"]
+          args:
+            - |
+              mkdir -p /config/qBittorrent /bookdrop/.downloads
+              if [ ! -f /config/qBittorrent/qBittorrent.conf ]; then
+                printf '%s\n' \
+                  '[LegalNotice]' \
+                  'Accepted=true' \
+                  '' \
+                  '[Preferences]' \
+                  'Connection\PortRangeMin=6881' \
+                  'Downloads\SavePath=/bookdrop/.downloads/' \
+                  'Downloads\TempPath=/bookdrop/.downloads/' \
+                  'WebUI\Address=*' \
+                  'WebUI\AuthSubnetWhitelist=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16' \
+                  'WebUI\AuthSubnetWhitelistEnabled=false' \
+                  'WebUI\CSRFProtection=false' \
+                  'WebUI\ClickjackingProtection=false' \
+                  'WebUI\HostHeaderValidation=false' \
+                  "WebUI\Password_PBKDF2=${QBIT_PASSWORD_PBKDF2}" \
+                  'WebUI\Port=8080' \
+                  'WebUI\ServerDomains=*' \
+                  'WebUI\Username=admin' > /config/qBittorrent/qBittorrent.conf
+              fi
+          volumeMounts:
+            - name: qbittorrent-config
+              mountPath: /config
+            - name: bookdrop
+              mountPath: /bookdrop
+      containers:
+        - name: qbittorrent
+          image: "{{ .Values.images.qbittorrent.repository }}:{{ .Values.images.qbittorrent.tag }}"
+          imagePullPolicy: {{ .Values.images.qbittorrent.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.qbittorrent.webPort }}
+            - name: bittorrent-tcp
+              containerPort: {{ .Values.qbittorrent.bittorrentPort }}
+              protocol: TCP
+            - name: bittorrent-udp
+              containerPort: {{ .Values.qbittorrent.bittorrentPort }}
+              protocol: UDP
+          env:
+            - name: PUID
+              value: {{ .Values.qbittorrent.userId | quote }}
+            - name: PGID
+              value: {{ .Values.qbittorrent.groupId | quote }}
+            - name: TZ
+              value: {{ .Values.global.timezone | quote }}
+            - name: WEBUI_PORT
+              value: {{ .Values.qbittorrent.webPort | quote }}
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.qbittorrent.resources | nindent 12 }}
+          volumeMounts:
+            - name: qbittorrent-config
+              mountPath: /config
+            - name: bookdrop
+              mountPath: /bookdrop
+      volumes:
+        - name: qbittorrent-config
+          persistentVolumeClaim:
+            claimName: qbittorrent-config
+        - name: bookdrop
+          persistentVolumeClaim:
+            claimName: bookdrop
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: stacks
+  labels:
+    {{- include "grimmory-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: stacks
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.stacks.port }}
+      targetPort: http
+  selector:
+    {{- include "grimmory-stack.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: stacks
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stacks
+  labels:
+    {{- include "grimmory-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: stacks
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "grimmory-stack.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: stacks
+  template:
+    metadata:
+      labels:
+        {{- include "grimmory-stack.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: stacks
+      annotations:
+        {{- include "grimmory-stack.keelAnnotations" . | nindent 8 }}
+    spec:
+      {{- include "grimmory-stack.imagePullSecrets" . | nindent 6 }}
+      {{- with .Values.global.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        - name: init-stacks-config
+          image: "{{ .Values.images.busybox.repository }}:{{ .Values.images.busybox.tag }}"
+          imagePullPolicy: {{ .Values.images.busybox.pullPolicy }}
+          env:
+            - name: STACKS_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: stacks-username
+            - name: STACKS_PASSWORD_BCRYPT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: stacks-password-bcrypt
+            - name: STACKS_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: stacks-api-key
+            - name: STACKS_DOWNLOADER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: stacks-downloader-key
+            - name: STACKS_SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: stacks-session-secret
+          command: ["sh", "-c"]
+          args:
+            - |
+              mkdir -p /stacks-config /stacks-logs /bookdrop/.downloads/stacks-cache /bookdrop/.downloads/stacks-cache/incomplete
+              chown -R 1000:1000 /bookdrop/.downloads /stacks-config /stacks-logs || true
+              if [ ! -f /stacks-config/config.yaml ]; then
+                printf '%s\n' \
+                  'server:' \
+                  '  host: 0.0.0.0' \
+                  '  port: 7788' \
+                  'login:' \
+                  "  username: ${STACKS_USERNAME}" \
+                  "  password: ${STACKS_PASSWORD_BCRYPT}" \
+                  '  disable: false' \
+                  'api:' \
+                  "  key: ${STACKS_API_KEY}" \
+                  "  downloader_key: ${STACKS_DOWNLOADER_KEY}" \
+                  "  session_secret: ${STACKS_SESSION_SECRET}" \
+                  'downloads:' \
+                  '  delay: 2' \
+                  '  retry_count: 3' \
+                  '  resume_attempts: 3' \
+                  '  prefer_title_naming: false' \
+                  '  include_hash: none' \
+                  '  incomplete_folder_path: /opt/stacks/download/incomplete' \
+                  '  subdirectories: null' \
+                  'fast_download:' \
+                  '  enabled: false' \
+                  '  key: null' \
+                  'flaresolverr:' \
+                  '  enabled: true' \
+                  '  url: http://flaresolverr:8191' \
+                  '  timeout: 60' \
+                  'proxy:' \
+                  '  enabled: false' \
+                  '  url: null' \
+                  '  username: null' \
+                  '  password: null' \
+                  'queue:' \
+                  '  max_history: 100' \
+                  'logging:' \
+                  '  level: INFO' > /stacks-config/config.yaml
+              fi
+          volumeMounts:
+            - name: stacks-config
+              mountPath: /stacks-config
+            - name: stacks-logs
+              mountPath: /stacks-logs
+            - name: bookdrop
+              mountPath: /bookdrop
+      containers:
+        - name: stacks
+          image: "{{ .Values.images.stacks.repository }}:{{ .Values.images.stacks.tag }}"
+          imagePullPolicy: {{ .Values.images.stacks.pullPolicy }}
+          command: ["/bin/sh", "/opt/stacks/bootstrap/entrypoint.sh"]
+          ports:
+            - name: http
+              containerPort: {{ .Values.stacks.port }}
+          env:
+            - name: SOLVERR_URL
+              value: http://flaresolverr:8191
+            - name: FLARESOLVERR_URL
+              value: http://flaresolverr:8191
+            - name: STACKS_CONFIG_FILE
+              value: /opt/stacks/config/config.yaml
+            - name: STACKS_FLARESOLVERR_URL
+              value: http://flaresolverr:8191
+            - name: STACKS_FLARESOLVERR_TIMEOUT
+              value: "60"
+            - name: STACKS_DOWNLOAD_INCOMPLETE_PATH
+              value: /opt/stacks/download/incomplete
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.stacks.resources | nindent 12 }}
+          volumeMounts:
+            - name: stacks-config
+              mountPath: /opt/stacks/config
+            - name: stacks-logs
+              mountPath: /opt/stacks/logs
+            - name: bookdrop
+              mountPath: /bookdrop
+            - name: bookdrop
+              mountPath: /opt/stacks/download
+              subPath: .downloads/stacks-cache
+            - name: bookdrop
+              mountPath: /opt/stacks/download/incomplete
+              subPath: .downloads/stacks-cache/incomplete
+            - name: stacks-bootstrap
+              mountPath: /opt/stacks/bootstrap
+      volumes:
+        - name: stacks-config
+          emptyDir: {}
+        - name: stacks-logs
+          emptyDir: {}
+        - name: stacks-bootstrap
+          configMap:
+            name: stacks-bootstrap
+            defaultMode: 0755
+        - name: bookdrop
+          persistentVolumeClaim:
+            claimName: bookdrop
+---
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grimmory
+  labels:
+    {{- include "grimmory-stack.labels" . | nindent 4 }}
+  annotations:
+    {{- toYaml .Values.ingress.annotations | nindent 4 }}
+spec:
+  ingressClassName: {{ .Values.ingress.className | quote }}
+  {{- with .Values.ingress.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.hosts.grimmory | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: grimmory
+                port:
+                  number: {{ .Values.grimmory.port }}
+    - host: {{ .Values.ingress.hosts.prowlarr | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: prowlarr
+                port:
+                  number: {{ .Values.prowlarr.port }}
+    - host: {{ .Values.ingress.hosts.qbittorrent | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: qbittorrent
+                port:
+                  number: {{ .Values.qbittorrent.webPort }}
+    - host: {{ .Values.ingress.hosts.stacks | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: stacks
+                port:
+                  number: {{ .Values.stacks.port }}
+---
+{{- end }}
+{{- if .Values.bootstrapSources.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: grimmory-source-bootstrap
+  labels:
+    {{- include "grimmory-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: bootstrap
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "10"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: {{ .Values.bootstrapSources.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.bootstrapSources.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "grimmory-stack.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: bootstrap
+    spec:
+      restartPolicy: OnFailure
+      {{- include "grimmory-stack.imagePullSecrets" . | nindent 6 }}
+      {{- with .Values.global.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: source-bootstrap
+          image: "{{ .Values.images.bootstrap.repository }}:{{ .Values.images.bootstrap.tag }}"
+          imagePullPolicy: {{ .Values.images.bootstrap.pullPolicy }}
+          env:
+            - name: GRIMMORY_API_BASE
+              value: "http://grimmory:{{ .Values.grimmory.port }}/api/v1"
+            - name: ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: admin-username
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: admin-password
+            - name: PROWLARR_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: prowlarr-api-key
+            - name: QBIT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: qbittorrent-username
+            - name: QBIT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: qbittorrent-password
+            - name: STACKS_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: stacks-api-key
+            - name: STACKS_DOWNLOADER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: stacks-downloader-key
+            - name: ANNAS_BASE_URL
+              value: {{ .Values.bootstrapSources.annasArchive.baseUrl | quote }}
+            - name: ANNAS_FALLBACK_BASE_URLS
+              value: {{ join "," .Values.bootstrapSources.annasArchive.fallbackBaseUrls | quote }}
+            - name: MANGADEX_LANGUAGES
+              value: {{ join "," .Values.bootstrapSources.mangaDex.translatedLanguages | quote }}
+            - name: PROWLARR_INDEXER_IDS
+              value: {{ .Values.bootstrapSources.prowlarr.indexerIds | quote }}
+          command: ["python", "-c"]
+          args:
+            - |
+              import json
+              import os
+              import sys
+              import time
+              import urllib.error
+              import urllib.request
+
+              base = os.environ["GRIMMORY_API_BASE"].rstrip("/")
+
+              def call(method, path, payload=None, token=None, timeout=20):
+                  data = None
+                  headers = {"Accept": "application/json"}
+                  if payload is not None:
+                      data = json.dumps(payload).encode("utf-8")
+                      headers["Content-Type"] = "application/json"
+                  if token:
+                      headers["Authorization"] = "Bearer " + token
+                  req = urllib.request.Request(base + path, data=data, method=method, headers=headers)
+                  try:
+                      with urllib.request.urlopen(req, timeout=timeout) as resp:
+                          body = resp.read().decode("utf-8")
+                          return json.loads(body) if body else {}
+                  except urllib.error.HTTPError as exc:
+                      body = exc.read().decode("utf-8", "replace")
+                      raise RuntimeError(f"{method} {path} failed with HTTP {exc.code}: {body}") from exc
+
+              deadline = time.time() + 600
+              while True:
+                  try:
+                      call("GET", "/healthcheck", timeout=5)
+                      break
+                  except Exception as exc:
+                      if time.time() > deadline:
+                          raise
+                      print(f"waiting for grimmory api: {exc}", flush=True)
+                      time.sleep(5)
+
+              setup_status = call("GET", "/setup/status")
+              setup_done = bool(setup_status.get("data")) if isinstance(setup_status, dict) else True
+              if not setup_done:
+                  print("initial setup is pending, creating admin user", flush=True)
+                  call("POST", "/setup", {
+                      "username": os.environ["ADMIN_USERNAME"],
+                      "email": os.environ["ADMIN_USERNAME"] + "@local.raphcvr.me",
+                      "name": "Administrator",
+                      "password": os.environ["ADMIN_PASSWORD"],
+                  })
+
+              login_payloads = [
+                  {"username": os.environ["ADMIN_USERNAME"], "password": os.environ["ADMIN_PASSWORD"]},
+                  {"email": os.environ["ADMIN_USERNAME"], "password": os.environ["ADMIN_PASSWORD"]},
+              ]
+              token = None
+              for payload in login_payloads:
+                  try:
+                      login = call("POST", "/auth/login", payload)
+                      token = login.get("accessToken") or login.get("token") or login.get("jwt")
+                      if token:
+                          break
+                  except Exception as exc:
+                      print(f"login attempt failed: {exc}", flush=True)
+              if not token:
+                  raise RuntimeError("could not authenticate source bootstrap against Grimmory")
+
+              def as_list(value):
+                  return [part.strip() for part in value.split(",") if part.strip()]
+
+              fallback_urls = as_list(os.environ.get("ANNAS_FALLBACK_BASE_URLS", ""))
+              langs = as_list(os.environ.get("MANGADEX_LANGUAGES", "en,fr"))
+
+              sources = [
+                  {
+                      "name": "Prowlarr (Auto-Deploy)",
+                      "type": "PROWLARR_TORZNAB",
+                      "enabled": True,
+                      "priority": 10,
+                      "configJson": json.dumps({
+                          "qbittorrent": {
+                              "baseUrl": "http://qbittorrent:8080",
+                              "username": os.environ["QBIT_USERNAME"],
+                              "password": os.environ["QBIT_PASSWORD"],
+                              "category": "grimmory",
+                              "tags": "grimmory",
+                              "remoteSavePath": "{stagingDir}",
+                              "localSavePath": "{stagingDir}",
+                              "deleteTorrentOnComplete": True,
+                              "deleteFilesOnComplete": True,
+                              "timeoutMinutes": 180,
+                              "pollIntervalSeconds": 10
+                          },
+                          "flareSolverr": {
+                              "enabled": True,
+                              "baseUrl": "http://flaresolverr:8191",
+                              "maxTimeoutMs": 60000
+                          }
+                      }, separators=(",", ":")),
+                      "credentialsJson": json.dumps({
+                          "baseUrl": "http://prowlarr:9696",
+                          "apiKey": os.environ["PROWLARR_API_KEY"],
+                          "apiMode": "PROWLARR",
+                          "function": "search",
+                          "indexer": "all",
+                          "indexerIds": os.environ.get("PROWLARR_INDEXER_IDS", ""),
+                          "categories": "",
+                          "timeoutSeconds": 30
+                      }, separators=(",", ":"))
+                  },
+                  {
+                      "name": "MangaDex (Native)",
+                      "type": "MANGADEX",
+                      "enabled": True,
+                      "priority": 20,
+                      "configJson": json.dumps({
+                          "mangadex": {
+                              "apiBaseUrl": "https://api.mangadex.org",
+                              "siteBaseUrl": "https://mangadex.org",
+                              "timeoutSeconds": 30,
+                              "preferredTitleLanguage": "en",
+                              "translatedLanguages": langs,
+                              "mangaLimit": 3,
+                              "chapterLimitPerManga": 120,
+                              "dataSaver": True
+                          }
+                      }, separators=(",", ":")),
+                      "credentialsJson": "{}"
+                  },
+                  {
+                      "name": "Anna's Archive (Stacks)",
+                      "type": "ANNAS_ARCHIVE_API",
+                      "enabled": True,
+                      "priority": 30,
+                      "configJson": json.dumps({
+                          "flareSolverr": {
+                              "enabled": True,
+                              "baseUrl": "http://flaresolverr:8191",
+                              "maxTimeoutMs": 120000
+                          },
+                          "annasArchiveApi": {
+                              "baseUrl": os.environ["ANNAS_BASE_URL"],
+                              "fallbackBaseUrls": fallback_urls,
+                              "searchPath": "/search",
+                              "queryParam": "q",
+                              "formatParam": "ext",
+                              "defaultFormat": "epub",
+                              "maxResults": 50,
+                              "requiresFlareSolverr": True,
+                              "resultLinkSelector": "a.js-vim-focus[href*=/md5/], a.font-semibold[href*=/md5/]",
+                              "acquisitionType": "EXTERNAL_STACKS"
+                          },
+                          "stacks": {
+                              "baseUrl": "http://stacks:7788",
+                              "statusUrlTemplate": "http://stacks:7788/api/status",
+                              "apiKeyHeader": "X-API-Key",
+                              "apiKey": os.environ["STACKS_DOWNLOADER_KEY"],
+                              "adminApiKeyHeader": "X-API-Key",
+                              "adminApiKey": os.environ["STACKS_API_KEY"],
+                              "downloadEndpoint": "/api/queue/add",
+                              "remoteStagingPath": "{stagingDir}",
+                              "localDownloadRoot": "{bookdrop}/.downloads/stacks-cache",
+                              "remoteDownloadRoots": ["/bookdrop/.downloads/stacks-cache", "/bookdrop"],
+                              "pollIntervalSeconds": 2,
+                              "timeoutMinutes": 180,
+                              "requestTimeoutSeconds": 30,
+                              "filesystemFallbackOnForbiddenStatus": True,
+                              "filesystemFallbackMaxDepth": 3,
+                              "filesystemFallbackRecentSlackSeconds": 10,
+                              "clearHistoryOnAlreadyDownloadedMissing": True
+                          }
+                      }, separators=(",", ":")),
+                      "credentialsJson": "{}"
+                  },
+                  {
+                      "name": "Webtoons (Gallery-dl)",
+                      "type": "DIRECT_URL",
+                      "enabled": True,
+                      "priority": 40,
+                      "configJson": json.dumps({
+                          "acquisitionType": "CLI_GALLERY_DL",
+                          "useGalleryDl": True,
+                          "galleryDl": {
+                              "enabled": True,
+                              "binaryPath": "gallery-dl",
+                              "timeoutMinutes": 30,
+                              "extraArgs": ["--no-part"],
+                              "environment": {}
+                          },
+                          "flareSolverr": {
+                              "enabled": False,
+                              "baseUrl": "http://flaresolverr:8191",
+                              "maxTimeoutMs": 60000
+                          }
+                      }, separators=(",", ":")),
+                      "credentialsJson": "{}"
+                  },
+              ]
+
+              existing_response = call("GET", "/downloads/sources", token=token)
+              if isinstance(existing_response, list):
+                  existing = existing_response
+              else:
+                  existing = existing_response.get("content") or existing_response.get("items") or existing_response.get("data") or []
+              by_name = {item.get("name"): item for item in existing if isinstance(item, dict)}
+
+              for source in sources:
+                  current = by_name.get(source["name"])
+                  if current and current.get("id") is not None:
+                      print(f"updating source {source['name']}", flush=True)
+                      call("PUT", f"/downloads/sources/{current['id']}", source, token=token)
+                  else:
+                      print(f"creating source {source['name']}", flush=True)
+                      call("POST", "/downloads/sources", source, token=token)
+
+              print("source bootstrap completed", flush=True)
+{{- end }}

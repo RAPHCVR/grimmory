@@ -1,0 +1,6 @@
+apiVersion: v2
+name: grimmory-stack
+description: Full Grimmory acquisition stack with MariaDB, FlareSolverr, Prowlarr, qBittorrent, Stacks, Keel annotations, ingress, and source bootstrap.
+type: application
+version: 0.1.0
+appVersion: "downloads-acquisition"
