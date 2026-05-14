@@ -71,6 +71,9 @@ public class DirectUrlAdapter implements DownloadSourceAdapter {
             }
             return List.of();
         }
+        if (isKaganeConfigured(source) && !isKaganeUrl(criteria.getDirectUrl())) {
+            return List.of();
+        }
         String fileName = extractFilename(criteria.getDirectUrl());
         DownloadAcquisitionType acquisitionType = inferAcquisitionType(source, criteria.getDirectUrl());
         UrlMetadata urlMetadata = inferUrlMetadata(criteria.getDirectUrl(), acquisitionType).orElse(UrlMetadata.empty());
@@ -81,6 +84,7 @@ public class DirectUrlAdapter implements DownloadSourceAdapter {
                     .orElse(urlMetadata);
         }
         DownloadFormat format = acquisitionType == DownloadAcquisitionType.CLI_GALLERY_DL
+                || acquisitionType == DownloadAcquisitionType.KAGANE_CHAPTER
                 ? DownloadFormat.CBZ
                 : DownloadFormat.fromFileName(fileName).orElse(DownloadFormat.UNKNOWN);
         String title = firstNonBlank(criteria.getTitle(), urlMetadata.title(), stripExtension(fileName));
@@ -105,7 +109,7 @@ public class DirectUrlAdapter implements DownloadSourceAdapter {
                 .format(format)
                 .downloadUrl(criteria.getDirectUrl())
                 .detailsUrl(criteria.getDirectUrl())
-                .requiresFlareSolverr(useFlareSolverr(source))
+                .requiresFlareSolverr(useFlareSolverr(source) || acquisitionType == DownloadAcquisitionType.KAGANE_CHAPTER)
                 .acquisitionType(acquisitionType)
                 .rawJson(urlMetadata.rawJson())
                 .build());
@@ -380,13 +384,13 @@ public class DirectUrlAdapter implements DownloadSourceAdapter {
     }
 
     private Optional<UrlMetadata> inferUrlMetadata(String directUrl, DownloadAcquisitionType acquisitionType) {
-        if (acquisitionType != DownloadAcquisitionType.CLI_GALLERY_DL) {
-            return Optional.empty();
-        }
         try {
             URI uri = URI.create(directUrl);
-            if (isWebtoonsUrl(uri)) {
+            if (acquisitionType == DownloadAcquisitionType.CLI_GALLERY_DL && isWebtoonsUrl(uri)) {
                 return Optional.of(parseWebtoonsMetadata(uri, directUrl));
+            }
+            if (acquisitionType == DownloadAcquisitionType.KAGANE_CHAPTER && isKaganeUrl(uri)) {
+                return Optional.of(parseKaganeMetadata(uri, directUrl));
             }
         } catch (Exception ignored) {
             return Optional.empty();
@@ -432,6 +436,56 @@ public class DirectUrlAdapter implements DownloadSourceAdapter {
         );
     }
 
+    private UrlMetadata parseKaganeMetadata(URI uri, String directUrl) {
+        List<String> segments = Arrays.stream(uri.getPath().split("/"))
+                .filter(segment -> segment != null && !segment.isBlank())
+                .map(this::decode)
+                .toList();
+        Map<String, String> query = parseQuery(uri.getRawQuery());
+
+        String episodeSlug = segments.stream()
+                .filter(segment -> containsIgnoreCase(segment, "chapter")
+                        || containsIgnoreCase(segment, "chap")
+                        || containsIgnoreCase(segment, "episode")
+                        || containsIgnoreCase(segment, "saison")
+                        || containsIgnoreCase(segment, "ep-"))
+                .reduce((first, second) -> second)
+                .orElse(segments.isEmpty() ? null : segments.getLast());
+        int episodeIndex = episodeSlug == null ? -1 : segments.lastIndexOf(episodeSlug);
+        String seriesSlug = episodeIndex > 0 ? segments.get(episodeIndex - 1) : null;
+        if (seriesSlug == null && segments.size() >= 2) {
+            seriesSlug = segments.get(segments.size() - 2);
+        }
+
+        String seriesName = titleCaseSlug(seriesSlug);
+        String episodeTitle = titleCaseSlug(episodeSlug);
+        Float seriesNumber = firstNonNull(
+                parseEpisodeNumber(episodeSlug),
+                parseFloat(query.get("chapter")),
+                parseFloat(query.get("chap")),
+                parseFloat(query.get("episode"))
+        );
+        String title = firstNonBlank(episodeTitle, seriesName, stripExtension(extractFilename(directUrl)));
+
+        Map<String, Object> raw = new LinkedHashMap<>();
+        raw.put("provider", "kagane-url");
+        raw.put("url", directUrl);
+        raw.put("seriesSlug", seriesSlug);
+        raw.put("seriesName", seriesName);
+        raw.put("episodeSlug", episodeSlug);
+        raw.put("episodeNumber", seriesNumber);
+
+        return new UrlMetadata(
+                title,
+                seriesName,
+                seriesNumber,
+                null,
+                DownloadContentKind.WEBTOON,
+                List.of(),
+                writeJson(raw)
+        );
+    }
+
     private String webtoonsEpisodeSlug(List<String> segments) {
         if (segments.size() < 4) {
             return null;
@@ -464,6 +518,22 @@ public class DirectUrlAdapter implements DownloadSourceAdapter {
         }
         String normalized = host.toLowerCase(Locale.ROOT);
         return normalized.equals("webtoons.com") || normalized.endsWith(".webtoons.com");
+    }
+
+    private boolean isKaganeUrl(String url) {
+        try {
+            return isKaganeUrl(URI.create(url));
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private boolean isKaganeUrl(URI uri) {
+        String host = uri.getHost();
+        if (host == null) {
+            return false;
+        }
+        return host.toLowerCase(Locale.ROOT).contains("kagane");
     }
 
     private List<String> resolveAuthors(DownloadSearchCriteria criteria, UrlMetadata metadata) {
@@ -712,10 +782,27 @@ public class DirectUrlAdapter implements DownloadSourceAdapter {
         if (lower.endsWith(".nzb") || lower.contains(".nzb?")) {
             return DownloadAcquisitionType.NZB;
         }
+        if (useKagane(source, url)) {
+            return DownloadAcquisitionType.KAGANE_CHAPTER;
+        }
         if (useGalleryDl(source)) {
             return DownloadAcquisitionType.CLI_GALLERY_DL;
         }
         return DownloadAcquisitionType.DIRECT_FILE;
+    }
+
+    private boolean useKagane(DownloadSourceEntity source, String url) {
+        return isKaganeConfigured(source) && isKaganeUrl(url);
+    }
+
+    private boolean isKaganeConfigured(DownloadSourceEntity source) {
+        return boolFromJson(source.getConfigJson(), "useKagane")
+                || boolFromJson(source.getCredentialsJson(), "useKagane")
+                || nestedBoolFromJson(source.getConfigJson(), "kagane", "enabled")
+                || nestedBoolFromJson(source.getCredentialsJson(), "kagane", "enabled")
+                || "KAGANE_CHAPTER".equalsIgnoreCase(textFromJson(source.getConfigJson(), "acquisitionType"))
+                || "KAGANE_CHAPTER".equalsIgnoreCase(textFromJson(source.getCredentialsJson(), "acquisitionType"))
+                || containsIgnoreCase(source.getName(), "kagane");
     }
 
     private boolean useGalleryDl(DownloadSourceEntity source) {

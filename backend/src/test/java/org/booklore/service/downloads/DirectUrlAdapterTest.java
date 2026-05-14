@@ -90,6 +90,50 @@ class DirectUrlAdapterTest {
     }
 
     @Test
+    void search_kaganeUrlWithKaganeConfig_returnsKaganeChapterResult() {
+        DownloadSourceEntity source = DownloadSourceEntity.builder()
+                .name("Kagane")
+                .type(DownloadSourceType.DIRECT_URL)
+                .configJson("{\"kagane\":{\"enabled\":true},\"flareSolverr\":{\"enabled\":true}}")
+                .build();
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .directUrl("https://kagane.example/series/solo-leveling/chapter-24/")
+                .contentKind(DownloadContentKind.WEBTOON)
+                .preferredFormats(List.of(DownloadFormat.CBZ))
+                .build();
+
+        var results = adapter.search(source, criteria);
+
+        assertEquals(1, results.size());
+        var result = results.getFirst();
+        assertEquals(DownloadAcquisitionType.KAGANE_CHAPTER, result.getAcquisitionType());
+        assertEquals(DownloadFormat.CBZ, result.getFormat());
+        assertEquals(DownloadContentKind.WEBTOON, result.getContentKind());
+        assertEquals("Solo Leveling", result.getSeriesName());
+        assertEquals("Chapter 24", result.getTitle());
+        assertEquals(24f, result.getSeriesNumber());
+        assertTrue(result.isRequiresFlareSolverr());
+        assertNotNull(result.getRawJson());
+        assertTrue(result.getRawJson().contains("\"provider\":\"kagane-url\""));
+    }
+
+    @Test
+    void search_kaganeSourceIgnoresNonKaganeUrl() {
+        DownloadSourceEntity source = DownloadSourceEntity.builder()
+                .name("Kagane")
+                .type(DownloadSourceType.DIRECT_URL)
+                .configJson("{\"kagane\":{\"enabled\":true}}")
+                .build();
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .directUrl("https://example.test/series/chapter.cbz")
+                .contentKind(DownloadContentKind.WEBTOON)
+                .preferredFormats(List.of(DownloadFormat.CBZ))
+                .build();
+
+        assertTrue(adapter.search(source, criteria).isEmpty());
+    }
+
+    @Test
     void search_webtoonKeywordSearch_returnsGalleryDlSeriesResult() throws Exception {
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/search", exchange -> {

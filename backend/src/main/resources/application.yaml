@@ -26,6 +26,12 @@ app:
     default-library-name: ${DOWNLOADS_DEFAULT_LIBRARY_NAME:Downloads}
     default-library-path: ${DOWNLOADS_DEFAULT_LIBRARY_PATH:/books/Downloads}
 
+grimmory:
+  downloads:
+    flaresolverr:
+      url: ${GRIMMORY_DOWNLOADS_FLARESOLVERR_URL:http://localhost:8191/v1}
+      timeout-ms: ${GRIMMORY_DOWNLOADS_FLARESOLVERR_TIMEOUT_MS:60000}
+
 server:
   forward-headers-strategy: native
   port: ${BOOKLORE_PORT:6060}

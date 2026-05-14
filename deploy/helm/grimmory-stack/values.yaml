@@ -144,6 +144,9 @@ grimmory:
     defaultLibraryPath: /bookdrop
     defaultAutoFinalize: "true"
     defaultConfidenceThreshold: "90"
+    flaresolverr:
+      url: http://flaresolverr:8191/v1
+      timeoutMs: "60000"
     resolver:
       webtoons:
         asura:

@@ -77,19 +77,16 @@ public class WebtoonScraperDownloadExecutor implements DownloadExecutor {
             for (int i = 0; i < manifest.imageUrls().size(); i++) {
                 int pageIndex = i;
                 String imageUrl = manifest.imageUrls().get(i);
-                futures.add(executor.submit(() -> {
-                    PageImage page = downloadPage(pageIndex, imageUrl, manifest);
-                    int completed = completedDownloads.incrementAndGet();
-                    if (progressSink != null) {
-                        progressSink.onProgress(Math.min(89, (completed * 90) / manifest.imageUrls().size()));
-                    }
-                    return page;
-                }));
+                futures.add(executor.submit(() -> downloadPage(pageIndex, imageUrl, manifest)));
             }
 
             List<PageImage> pages = new ArrayList<>(manifest.imageUrls().size());
             for (Future<PageImage> future : futures) {
                 pages.add(future.get());
+                int completed = completedDownloads.incrementAndGet();
+                if (progressSink != null) {
+                    progressSink.onProgress(Math.min(89, (completed * 90) / manifest.imageUrls().size()));
+                }
             }
             pages.sort((left, right) -> Integer.compare(left.index(), right.index()));
             return pages;

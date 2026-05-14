@@ -286,6 +286,10 @@ spec:
               value: {{ .Values.grimmory.downloads.defaultAutoFinalize | quote }}
             - name: BOOKLORE_DOWNLOADS_DEFAULT_CONFIDENCE_THRESHOLD
               value: {{ .Values.grimmory.downloads.defaultConfidenceThreshold | quote }}
+            - name: GRIMMORY_DOWNLOADS_FLARESOLVERR_URL
+              value: {{ .Values.grimmory.downloads.flaresolverr.url | quote }}
+            - name: GRIMMORY_DOWNLOADS_FLARESOLVERR_TIMEOUT_MS
+              value: {{ .Values.grimmory.downloads.flaresolverr.timeoutMs | quote }}
             - name: BOOKLORE_DOWNLOADS_RESOLVER_WEBTOONS_ASURA_ENABLED
               value: {{ .Values.grimmory.downloads.resolver.webtoons.asura.enabled | quote }}
             - name: BOOKLORE_DOWNLOADS_RESOLVER_WEBTOONS_ASURA_SEARCH_URL_TEMPLATES
@@ -992,6 +996,10 @@ spec:
               value: {{ .Values.bootstrapSources.prowlarr.flareSolverrProxy | toJson | quote }}
             - name: PROWLARR_DELETE_INDEXERS
               value: {{ .Values.bootstrapSources.prowlarr.deleteIndexers | toJson | quote }}
+            - name: GRIMMORY_DOWNLOADS_FLARESOLVERR_URL
+              value: {{ .Values.grimmory.downloads.flaresolverr.url | quote }}
+            - name: GRIMMORY_DOWNLOADS_FLARESOLVERR_TIMEOUT_MS
+              value: {{ .Values.grimmory.downloads.flaresolverr.timeoutMs | quote }}
           command: ["python", "-c"]
           args:
             - |
@@ -1233,6 +1241,8 @@ spec:
 
               fallback_urls = as_list(os.environ.get("ANNAS_FALLBACK_BASE_URLS", ""))
               langs = as_list(os.environ.get("MANGADEX_LANGUAGES", "en,fr"))
+              flare_url = os.environ.get("GRIMMORY_DOWNLOADS_FLARESOLVERR_URL", "http://flaresolverr:8191/v1")
+              flare_timeout_ms = int(os.environ.get("GRIMMORY_DOWNLOADS_FLARESOLVERR_TIMEOUT_MS", "60000"))
 
               sources = [
                   {
@@ -1256,8 +1266,8 @@ spec:
                           },
                           "flareSolverr": {
                               "enabled": True,
-                              "baseUrl": "http://flaresolverr:8191",
-                              "maxTimeoutMs": 60000
+                              "url": flare_url,
+                              "maxTimeoutMs": flare_timeout_ms
                           }
                       }, separators=(",", ":")),
                       "credentialsJson": json.dumps({
@@ -1298,7 +1308,7 @@ spec:
                       "configJson": json.dumps({
                           "flareSolverr": {
                               "enabled": True,
-                              "baseUrl": "http://flaresolverr:8191",
+                              "url": flare_url,
                               "maxTimeoutMs": 120000
                           },
                           "annasArchiveApi": {
@@ -1352,8 +1362,30 @@ spec:
                           },
                           "flareSolverr": {
                               "enabled": False,
-                              "baseUrl": "http://flaresolverr:8191",
-                              "maxTimeoutMs": 60000
+                              "url": flare_url,
+                              "maxTimeoutMs": flare_timeout_ms
+                          }
+                      }, separators=(",", ":")),
+                      "credentialsJson": "{}"
+                  },
+                  {
+                      "name": "Kagane (FlareSolverr)",
+                      "type": "DIRECT_URL",
+                      "enabled": True,
+                      "priority": 45,
+                      "configJson": json.dumps({
+                          "acquisitionType": "KAGANE_CHAPTER",
+                          "useKagane": True,
+                          "useFlareSolverr": True,
+                          "kagane": {
+                              "enabled": True,
+                              "imageSelector": ".reading-content img, .page-break img, .entry-content img, .chapter-content img, .reader-area img, .wp-manga-chapter-img, article img, main img",
+                              "timeoutSeconds": 30
+                          },
+                          "flareSolverr": {
+                              "enabled": True,
+                              "url": flare_url,
+                              "maxTimeoutMs": flare_timeout_ms
                           }
                       }, separators=(",", ":")),
                       "credentialsJson": "{}"
