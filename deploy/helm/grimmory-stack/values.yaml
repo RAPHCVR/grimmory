@@ -145,6 +145,10 @@ grimmory:
     defaultAutoFinalize: "true"
     defaultConfidenceThreshold: "90"
     resolver:
+      webtoons:
+        asura:
+          enabled: "true"
+          searchUrlTemplates: "https://asurascans.com/comics?search={query},https://comicasura.net/?s={query}"
       comicVine:
         enabled: "true"
   resources:

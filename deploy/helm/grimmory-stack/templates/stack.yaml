@@ -286,6 +286,10 @@ spec:
               value: {{ .Values.grimmory.downloads.defaultAutoFinalize | quote }}
             - name: BOOKLORE_DOWNLOADS_DEFAULT_CONFIDENCE_THRESHOLD
               value: {{ .Values.grimmory.downloads.defaultConfidenceThreshold | quote }}
+            - name: BOOKLORE_DOWNLOADS_RESOLVER_WEBTOONS_ASURA_ENABLED
+              value: {{ .Values.grimmory.downloads.resolver.webtoons.asura.enabled | quote }}
+            - name: BOOKLORE_DOWNLOADS_RESOLVER_WEBTOONS_ASURA_SEARCH_URL_TEMPLATES
+              value: {{ .Values.grimmory.downloads.resolver.webtoons.asura.searchUrlTemplates | quote }}
             - name: BOOKLORE_DOWNLOADS_RESOLVER_COMICVINE_ENABLED
               value: {{ .Values.grimmory.downloads.resolver.comicVine.enabled | quote }}
             - name: BOOKLORE_DOWNLOADS_RESOLVER_COMICVINE_API_KEY

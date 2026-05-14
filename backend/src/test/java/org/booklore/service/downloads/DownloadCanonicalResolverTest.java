@@ -133,10 +133,61 @@ class DownloadCanonicalResolverTest {
         }
     }
 
+    @Test
+    void resolvesWebtoonCanonicalSeriesFromAsuraSearchHtml() throws Exception {
+        HttpServer server = htmlServer("/comics", """
+                <html><body>
+                  <a href="/comics/solo-leveling-ragnarok-030ff47a">
+                    <img alt="Solo Leveling: Ragnarok">
+                    <span>9.5</span>
+                  </a>
+                  <a href="/comics/solo-leveling-030ff47a">
+                    <img alt="Solo Leveling">
+                    <span>9.8</span>
+                  </a>
+                  <a href="/comics/solo-leveling-030ff47a/chapter/200">Chapter 200</a>
+                  <a href="/comics/sandmancer-of-the-scorched-desert-030ff47a">
+                    <span class="line-clamp-2">Sandmancer of the Scorched Desert</span>
+                  </a>
+                </body></html>
+                """);
+        server.start();
+        try {
+            DownloadCanonicalResolver resolver = resolver();
+            resolver.openLibraryEnabled = false;
+            resolver.googleBooksEnabled = false;
+            resolver.mangaDexEnabled = false;
+            resolver.webtoonsEnabled = false;
+            resolver.asuraWebtoonsEnabled = true;
+            resolver.asuraSearchUrlTemplates = baseUrl(server) + "/comics?search={query}";
+
+            DownloadSearchCriteria resolvedSolo = resolver.resolve(DownloadSearchCriteria.builder()
+                    .query("solo leveling")
+                    .contentKind(DownloadContentKind.WEBTOON)
+                    .build());
+
+            assertThat(resolvedSolo.getTitle()).isEqualTo("Solo Leveling");
+            assertThat(resolvedSolo.getSeriesName()).isEqualTo("Solo Leveling");
+            assertThat(resolvedSolo.getContentKind()).isEqualTo(DownloadContentKind.WEBTOON);
+
+            DownloadSearchCriteria resolvedObscure = resolver.resolve(DownloadSearchCriteria.builder()
+                    .query("sandmancer of the scorched desert")
+                    .contentKind(DownloadContentKind.WEBTOON)
+                    .build());
+
+            assertThat(resolvedObscure.getTitle()).isEqualTo("Sandmancer of the Scorched Desert");
+            assertThat(resolvedObscure.getSeriesName()).isEqualTo("Sandmancer of the Scorched Desert");
+            assertThat(resolvedObscure.getContentKind()).isEqualTo(DownloadContentKind.WEBTOON);
+        } finally {
+            server.stop(0);
+        }
+    }
+
     private DownloadCanonicalResolver resolver() {
         DownloadCanonicalResolver resolver = new DownloadCanonicalResolver(HttpClient.newHttpClient(), new ObjectMapper());
         resolver.timeoutSeconds = 2;
         resolver.providerLimit = 3;
+        resolver.asuraWebtoonsEnabled = false;
         return resolver;
     }
 

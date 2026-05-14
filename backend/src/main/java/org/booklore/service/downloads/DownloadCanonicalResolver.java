@@ -76,6 +76,11 @@ public class DownloadCanonicalResolver {
     @Value("${booklore.downloads.resolver.webtoons.search-url-templates:https://www.webtoons.com/en/search?keyword={query},https://www.webtoons.com/search?keyword={query}}")
     String webtoonsSearchUrlTemplates = "https://www.webtoons.com/en/search?keyword={query},https://www.webtoons.com/search?keyword={query}";
 
+    @Value("${booklore.downloads.resolver.webtoons.asura.enabled:true}")
+    boolean asuraWebtoonsEnabled = true;
+    @Value("${booklore.downloads.resolver.webtoons.asura.search-url-templates:https://asurascans.com/comics?search={query},https://comicasura.net/?s={query}}")
+    String asuraSearchUrlTemplates = "https://asurascans.com/comics?search={query},https://comicasura.net/?s={query}";
+
     @Value("${booklore.downloads.resolver.comicvine.enabled:false}")
     boolean comicVineEnabled = false;
     @Value("${booklore.downloads.resolver.comicvine.base-url:https://comicvine.gamespot.com/api}")
@@ -103,6 +108,9 @@ public class DownloadCanonicalResolver {
             }
             if (webtoonsEnabled && requested == DownloadContentKind.WEBTOON) {
                 candidates.addAll(resolveWebtoons(term));
+            }
+            if (asuraWebtoonsEnabled && requested == DownloadContentKind.WEBTOON) {
+                candidates.addAll(resolveAsuraWebtoons(term));
             }
             if (comicVineEnabled && !isBlank(comicVineApiKey) && requested == DownloadContentKind.COMIC) {
                 candidates.addAll(resolveComicVine(term));
@@ -272,6 +280,55 @@ public class DownloadCanonicalResolver {
                         null,
                         title,
                         score(term, title, author)
+                ));
+            }
+            if (!candidates.isEmpty()) {
+                break;
+            }
+        }
+        return candidates;
+    }
+
+    private List<Candidate> resolveAsuraWebtoons(String term) throws Exception {
+        List<Candidate> candidates = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        for (String template : splitCsv(asuraSearchUrlTemplates)) {
+            String searchUrl = template.replace("{query}", URLEncoder.encode(term, StandardCharsets.UTF_8));
+            Optional<String> body = fetchText(URI.create(searchUrl));
+            if (body.isEmpty()) {
+                continue;
+            }
+            Document document = Jsoup.parse(body.get(), searchUrl);
+            for (Element anchor : document.select("a[href*=/comics/]")) {
+                String href = normalizeUrl(anchor.absUrl("href"));
+                if (!isAsuraSeriesUrl(href) || !seen.add(href)) {
+                    continue;
+                }
+                String title = firstAsuraTitle(
+                        anchor.attr("title"),
+                        attrOf(anchor, "img[alt]", "alt"),
+                        textOf(anchor, ".line-clamp-2"),
+                        textOf(anchor, ".text-sm"),
+                        textOf(anchor, "h3"),
+                        textOf(anchor, "h4"),
+                        anchor.text(),
+                        titleFromAsuraUrl(href)
+                );
+                if (isBlank(title)) {
+                    continue;
+                }
+                double confidence = score(term, title, null);
+                if (confidence < 0.40D) {
+                    continue;
+                }
+                candidates.add(new Candidate(
+                        "asura",
+                        DownloadContentKind.WEBTOON,
+                        title,
+                        null,
+                        null,
+                        title,
+                        confidence
                 ));
             }
             if (!candidates.isEmpty()) {
@@ -571,6 +628,95 @@ public class DownloadCanonicalResolver {
     private String textOf(Element element, String selector) {
         Element selected = element.selectFirst(selector);
         return selected == null ? null : selected.text().trim();
+    }
+
+    private String attrOf(Element element, String selector, String attribute) {
+        Element selected = element.selectFirst(selector);
+        return selected == null ? null : selected.attr(attribute).trim();
+    }
+
+    private boolean isAsuraSeriesUrl(String href) {
+        if (isBlank(href)) {
+            return false;
+        }
+        try {
+            URI uri = URI.create(href);
+            String path = Optional.ofNullable(uri.getPath()).orElse("").toLowerCase(Locale.ROOT);
+            return path.contains("/comics/")
+                    && !path.contains("/chapter/")
+                    && !path.endsWith("/comics")
+                    && !path.endsWith("/comics/");
+        } catch (IllegalArgumentException ignored) {
+            return false;
+        }
+    }
+
+    private String cleanAsuraTitle(String value) {
+        if (isBlank(value)) {
+            return null;
+        }
+        String cleaned = value
+                .replace('\u00a0', ' ')
+                .replaceAll("(?i)\\b(chapter|chapitre|episode|ep)\\s*\\d+(?:\\.\\d+)?\\b.*$", "")
+                .replaceAll("\\s+", " ")
+                .trim();
+        if (cleaned.isBlank() || cleaned.chars().noneMatch(Character::isLetter)) {
+            return null;
+        }
+        return cleaned;
+    }
+
+    private String firstAsuraTitle(String... values) {
+        for (String value : values) {
+            String cleaned = cleanAsuraTitle(value);
+            if (!isBlank(cleaned)) {
+                return cleaned;
+            }
+        }
+        return null;
+    }
+
+    private String titleFromAsuraUrl(String href) {
+        try {
+            String path = URI.create(href).getPath();
+            if (isBlank(path)) {
+                return null;
+            }
+            String[] segments = path.split("/");
+            String slug = null;
+            for (int index = 0; index < segments.length; index++) {
+                if ("comics".equalsIgnoreCase(segments[index]) && index + 1 < segments.length) {
+                    slug = segments[index + 1];
+                    break;
+                }
+            }
+            if (isBlank(slug)) {
+                return null;
+            }
+            slug = slug.replaceAll("-[a-f0-9]{8,}$", "").replace('-', ' ').trim();
+            return titleCase(slug);
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
+    }
+
+    private String titleCase(String value) {
+        if (isBlank(value)) {
+            return null;
+        }
+        StringBuilder builder = new StringBuilder(value.length());
+        boolean capitalize = true;
+        for (int index = 0; index < value.length(); index++) {
+            char current = value.charAt(index);
+            if (Character.isLetter(current)) {
+                builder.append(capitalize ? Character.toTitleCase(current) : current);
+                capitalize = false;
+            } else {
+                builder.append(current);
+                capitalize = Character.isWhitespace(current);
+            }
+        }
+        return builder.toString().trim();
     }
 
     private String normalizeUrl(String value) {
