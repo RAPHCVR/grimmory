@@ -107,6 +107,8 @@ metadata:
 spec:
   serviceName: mariadb
   replicas: 1
+  updateStrategy:
+    type: OnDelete
   selector:
     matchLabels:
       {{- include "grimmory-stack.selectorLabels" . | nindent 6 }}
@@ -124,6 +126,41 @@ spec:
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      initContainers:
+        - name: guard-existing-mariadb-datadir
+          image: "{{ .Values.images.busybox.repository }}:{{ .Values.images.busybox.tag }}"
+          imagePullPolicy: {{ .Values.images.busybox.pullPolicy }}
+          command:
+            - sh
+            - -ec
+            - |
+              if [ -d /var/lib/mysql/mysql ]; then
+                echo "MariaDB datadir already initialized."
+                exit 0
+              fi
+
+              meaningful_entry="$(find /var/lib/mysql -mindepth 1 -maxdepth 1 ! -name lost+found -print -quit 2>/dev/null || true)"
+              if [ -z "$meaningful_entry" ]; then
+                echo "MariaDB datadir is empty; fresh initialization is allowed."
+                exit 0
+              fi
+
+              echo "FATAL: MariaDB datadir contains files but no /var/lib/mysql/mysql directory; refusing automatic fresh initialization on an existing PVC."
+              ls -la /var/lib/mysql || true
+              exit 42
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsGroup: 65534
+            runAsNonRoot: true
+            runAsUser: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: mariadb-data
+              mountPath: /var/lib/mysql
       containers:
         - name: mariadb
           image: "{{ .Values.images.mariadb.repository }}:{{ .Values.images.mariadb.tag }}"

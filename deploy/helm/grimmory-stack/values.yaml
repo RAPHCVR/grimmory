@@ -163,6 +163,45 @@ grimmory:
 
 mariadb:
   database: grimmory
+  protection:
+    enabled: true
+    dump:
+      enabled: true
+      cronJobName: grimmory-mariadb-logical-dump
+      schedule: "17 */4 * * *"
+      suspend: false
+      startingDeadlineSeconds: 600
+      activeDeadlineSeconds: 900
+      retentionDays: 14
+      allowEmpty: false
+      emptyDatabaseAction: skip
+      resources:
+        requests:
+          cpu: 10m
+          memory: 128Mi
+        limits:
+          memory: 512Mi
+      pvc:
+        name: grimmory-mariadb-dumps
+        size: 5Gi
+        accessMode: ReadWriteOnce
+      storageClass:
+        create: true
+        name: longhorn-grimmory-retain-2
+        reclaimPolicy: Retain
+        allowVolumeExpansion: true
+        parameters:
+          numberOfReplicas: "2"
+          staleReplicaTimeout: "2880"
+          fsType: ext4
+          dataLocality: best-effort
+    snapshot:
+      enabled: true
+      namespace: longhorn-system
+      recurringJobName: grimmory-db-2h-snapshot
+      group: grimmory-db
+      cron: "7 */2 * * *"
+      retain: 36
   resources:
     requests:
       cpu: 25m

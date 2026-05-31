@@ -1,0 +1,200 @@
+{{- $protection := default dict .Values.mariadb.protection -}}
+{{- if (default false $protection.enabled) }}
+{{- $secretName := include "grimmory-stack.secretName" . -}}
+{{- $dump := default dict $protection.dump -}}
+{{- $snapshot := default dict $protection.snapshot -}}
+{{- if (default false $dump.enabled) }}
+{{- $storageClassName := $dump.storageClass.name -}}
+{{- if $dump.storageClass.create }}
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: {{ $storageClassName | quote }}
+  annotations:
+    "helm.sh/resource-policy": keep
+  labels:
+    {{- include "grimmory-stack.labels" . | nindent 4 }}
+provisioner: driver.longhorn.io
+allowVolumeExpansion: {{ $dump.storageClass.allowVolumeExpansion }}
+reclaimPolicy: {{ $dump.storageClass.reclaimPolicy }}
+volumeBindingMode: Immediate
+parameters:
+  {{- toYaml $dump.storageClass.parameters | nindent 2 }}
+---
+{{- end }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $dump.pvc.name | quote }}
+  namespace: {{ .Release.Namespace | quote }}
+  annotations:
+    "helm.sh/resource-policy": keep
+  labels:
+    {{- include "grimmory-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mariadb-dump
+spec:
+  accessModes:
+    - {{ $dump.pvc.accessMode | quote }}
+  storageClassName: {{ $storageClassName | quote }}
+  resources:
+    requests:
+      storage: {{ $dump.pvc.size | quote }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ $dump.cronJobName | quote }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "grimmory-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mariadb-dump
+spec:
+  schedule: {{ $dump.schedule | quote }}
+  suspend: {{ default false $dump.suspend }}
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 5
+  successfulJobsHistoryLimit: 3
+  startingDeadlineSeconds: {{ default 600 $dump.startingDeadlineSeconds }}
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: {{ default 900 $dump.activeDeadlineSeconds }}
+      template:
+        spec:
+          {{- include "grimmory-stack.imagePullSecrets" . | nindent 10 }}
+          {{- with .Values.global.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          restartPolicy: OnFailure
+          securityContext:
+            fsGroup: 1001
+            runAsGroup: 1001
+            runAsNonRoot: true
+            runAsUser: 1001
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: dump
+              image: "{{ .Values.images.mariadb.repository }}:{{ .Values.images.mariadb.tag }}"
+              imagePullPolicy: {{ .Values.images.mariadb.pullPolicy }}
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+              resources:
+                {{- toYaml $dump.resources | nindent 16 }}
+              env:
+                - name: MARIADB_HOST
+                  value: mariadb
+                - name: MARIADB_DATABASE
+                  value: {{ .Values.mariadb.database | quote }}
+                - name: MARIADB_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $secretName }}
+                      key: db-username
+                - name: MARIADB_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $secretName }}
+                      key: db-password
+                - name: DUMP_RETENTION_DAYS
+                  value: {{ $dump.retentionDays | quote }}
+                - name: DUMP_ALLOW_EMPTY
+                  value: {{ default false $dump.allowEmpty | quote }}
+                - name: DUMP_EMPTY_DATABASE_ACTION
+                  value: {{ default "skip" $dump.emptyDatabaseAction | quote }}
+              command:
+                - sh
+                - -ec
+                - |
+                  mkdir -p /dumps/grimmory
+
+                  counts="$(mariadb -h "$MARIADB_HOST" -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" "$MARIADB_DATABASE" -N -e "SELECT (SELECT COUNT(*) FROM users), (SELECT COUNT(*) FROM book), (SELECT COUNT(*) FROM library);")"
+                  set -- $counts
+                  users="${1:-}"
+                  books="${2:-}"
+                  libraries="${3:-}"
+
+                  case "$users" in ''|*[!0-9]*) echo "FATAL: invalid users count: '$users'"; exit 3 ;; esac
+                  case "$books" in ''|*[!0-9]*) echo "FATAL: invalid books count: '$books'"; exit 3 ;; esac
+                  case "$libraries" in ''|*[!0-9]*) echo "FATAL: invalid libraries count: '$libraries'"; exit 3 ;; esac
+
+                  has_non_empty_history="$(find /dumps/grimmory -type f \( -name '*_users-[1-9]*_books-*.sql.gz' -o -name '*_users-*_books-[1-9]*_libraries-*.sql.gz' -o -name '*_users-*_books-*_libraries-[1-9]*.sql.gz' \) -print -quit 2>/dev/null || true)"
+                  has_content_history="$(find /dumps/grimmory -type f \( -name '*_users-*_books-[1-9]*_libraries-*.sql.gz' -o -name '*_users-*_books-*_libraries-[1-9]*.sql.gz' \) -print -quit 2>/dev/null || true)"
+                  if [ "$users" = "0" ] && [ "$books" = "0" ] && [ "$libraries" = "0" ] && [ -n "$has_non_empty_history" ]; then
+                    echo "FATAL: refusing empty-looking Grimmory DB after non-empty dump history exists: users=$users books=$books libraries=$libraries"
+                    exit 2
+                  fi
+
+                  if [ "$books" = "0" ] && [ "$libraries" = "0" ] && [ -n "$has_content_history" ]; then
+                    echo "FATAL: refusing contentless Grimmory DB dump after content dump history exists: users=$users books=$books libraries=$libraries"
+                    exit 2
+                  fi
+
+                  if [ "$users" = "0" ] && [ "$books" = "0" ] && [ "$libraries" = "0" ] && [ "$DUMP_ALLOW_EMPTY" != "true" ]; then
+                    case "$DUMP_EMPTY_DATABASE_ACTION" in
+                      skip)
+                        echo "Skipping empty-looking Grimmory DB dump: users=$users books=$books libraries=$libraries"
+                        exit 0
+                        ;;
+                      fail)
+                        echo "FATAL: refusing to create empty-looking Grimmory DB dump: users=$users books=$books libraries=$libraries"
+                        exit 2
+                        ;;
+                      *)
+                        echo "FATAL: unsupported DUMP_EMPTY_DATABASE_ACTION='$DUMP_EMPTY_DATABASE_ACTION'"
+                        exit 3
+                        ;;
+                    esac
+                  fi
+
+                  ts="$(date -u +%Y%m%dT%H%M%SZ)"
+                  out="/dumps/grimmory/${ts}_users-${users}_books-${books}_libraries-${libraries}.sql.gz"
+                  tmp_sql="$(mktemp)"
+                  tmp_gz="${out}.tmp"
+                  cleanup() {
+                    rm -f "$tmp_sql" "$tmp_gz"
+                  }
+                  trap cleanup EXIT
+
+                  mariadb-dump -h "$MARIADB_HOST" -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" --single-transaction --quick --routines --events "$MARIADB_DATABASE" > "$tmp_sql"
+                  test -s "$tmp_sql"
+                  gzip -9c "$tmp_sql" > "$tmp_gz"
+                  gzip -t "$tmp_gz"
+                  mv "$tmp_gz" "$out"
+                  find /dumps/grimmory -type f -name '*.sql.gz' -mtime +"$DUMP_RETENTION_DAYS" -delete
+                  ls -lh "$out"
+              volumeMounts:
+                - name: dumps
+                  mountPath: /dumps
+          volumes:
+            - name: dumps
+              persistentVolumeClaim:
+                claimName: {{ $dump.pvc.name | quote }}
+---
+{{- end }}
+{{- if (default false $snapshot.enabled) }}
+apiVersion: longhorn.io/v1beta2
+kind: RecurringJob
+metadata:
+  name: {{ $snapshot.recurringJobName | quote }}
+  namespace: {{ $snapshot.namespace | quote }}
+  labels:
+    {{- include "grimmory-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mariadb-snapshot
+spec:
+  concurrency: 1
+  cron: {{ $snapshot.cron | quote }}
+  groups:
+    - {{ $snapshot.group | quote }}
+  labels:
+    managed-by: helm
+    scope: grimmory-db
+  name: {{ $snapshot.recurringJobName | quote }}
+  retain: {{ $snapshot.retain }}
+  task: snapshot
+{{- end }}
+{{- end }}
