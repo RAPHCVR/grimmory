@@ -4,6 +4,7 @@ import lombok.Builder;
 import lombok.Value;
 import org.booklore.model.enums.DownloadContentKind;
 import org.booklore.model.enums.DownloadFormat;
+import org.booklore.model.enums.DownloadSequenceNumberType;
 
 import java.util.List;
 
@@ -16,6 +17,8 @@ public class DownloadSearchCriteria {
     String isbn;
     String seriesName;
     Float seriesNumber;
+    @Builder.Default
+    DownloadSequenceNumberType sequenceNumberType = DownloadSequenceNumberType.AUTO;
     @Builder.Default
     DownloadContentKind contentKind = DownloadContentKind.AUTO;
     @Builder.Default

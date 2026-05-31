@@ -192,6 +192,74 @@ class DirectUrlAdapterTest {
     }
 
     @Test
+    void search_webtoonKeywordSearch_doesNotStampCanonicalQueryMetadataOnEveryCandidate() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/search", exchange -> {
+            byte[] body = """
+                    <html><body>
+                      <a href="https://www.webtoons.com/en/action/solo-leveling/list?title_no=9999" class="link _card_item" data-title-no="9999" data-webtoon-type="WEBTOON">
+                        <strong class="title">Solo Leveling</strong>
+                        <div class="author">Chugong</div>
+                      </a>
+                      <a href="https://www.webtoons.com/en/canvas/walmart-solo-leveling/list?title_no=8888" class="link _card_item" data-title-no="8888" data-webtoon-type="WEBTOON">
+                        <strong class="title">Walmart Solo Leveling</strong>
+                        <div class="author">Different Creator</div>
+                      </a>
+                    </body></html>
+                    """.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "text/html");
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+
+        try {
+            DownloadSourceEntity source = DownloadSourceEntity.builder()
+                    .name("Webtoons")
+                    .type(DownloadSourceType.DIRECT_URL)
+                    .configJson("""
+                            {
+                              "galleryDl": {
+                                "enabled": true,
+                                "metadataProbeEnabled": false,
+                                "webtoons": {
+                                  "searchUrlTemplate": "http://127.0.0.1:%d/search?keyword={query}",
+                                  "maxResults": 3
+                                }
+                              }
+                            }
+                            """.formatted(server.getAddress().getPort()))
+                    .build();
+            DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                    .query("solo leveling")
+                    .seriesName("Solo Leveling")
+                    .author("Chugong")
+                    .contentKind(DownloadContentKind.WEBTOON)
+                    .preferredFormats(List.of(DownloadFormat.CBZ))
+                    .build();
+
+            var results = adapter.search(source, criteria);
+
+            assertEquals(2, results.size());
+            var exact = results.stream()
+                    .filter(result -> "Solo Leveling".equals(result.getTitle()))
+                    .findFirst()
+                    .orElseThrow();
+            var falsePositive = results.stream()
+                    .filter(result -> "Walmart Solo Leveling".equals(result.getTitle()))
+                    .findFirst()
+                    .orElseThrow();
+            assertEquals("Solo Leveling", exact.getSeriesName());
+            assertEquals(List.of("Chugong"), exact.getAuthors());
+            assertEquals("Walmart Solo Leveling", falsePositive.getSeriesName());
+            assertEquals(List.of("Different Creator"), falsePositive.getAuthors());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     void search_webtoonKeywordSearch_ignoresConcreteMangaRequest() {
         DownloadSourceEntity source = DownloadSourceEntity.builder()
                 .name("Webtoons")

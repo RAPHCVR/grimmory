@@ -3,6 +3,7 @@ package org.booklore.service.downloads;
 import org.booklore.model.enums.DownloadAcquisitionType;
 import org.booklore.model.enums.DownloadContentKind;
 import org.booklore.model.enums.DownloadFormat;
+import org.booklore.model.enums.DownloadSequenceNumberType;
 import org.booklore.service.downloads.dto.DownloadSearchCriteria;
 import org.booklore.service.downloads.dto.NormalizedDownloadResult;
 import org.junit.jupiter.api.Test;
@@ -222,6 +223,7 @@ class DownloadScoringServiceTest {
     void score_mangaDexSeriesNumberMatchGetsMeasuredBonus() {
         DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
                 .query("Dragon Ball Super 24")
+                .sequenceNumberType(DownloadSequenceNumberType.CHAPTER)
                 .contentKind(DownloadContentKind.MANGA)
                 .preferredFormats(List.of(DownloadFormat.CBZ))
                 .build();
@@ -239,7 +241,45 @@ class DownloadScoringServiceTest {
         var score = service.score(criteria, result);
 
         assertTrue(score.getScore() >= 70);
-        assertTrue(score.getReasons().contains("+10 requested chapter/series number match"));
+        assertTrue(score.getReasons().contains("+10 requested chapter number match"));
+    }
+
+    @Test
+    void score_mangaDexChapterForBareMangaVolumeRequestIsPenalized() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("Dragon Ball Super")
+                .seriesName("Dragon Ball Super")
+                .seriesNumber(24f)
+                .sequenceNumberType(DownloadSequenceNumberType.VOLUME)
+                .contentKind(DownloadContentKind.MANGA)
+                .preferredFormats(List.of(DownloadFormat.CBZ))
+                .build();
+
+        NormalizedDownloadResult chapter = NormalizedDownloadResult.builder()
+                .title("Son Goku's Evolution")
+                .seriesName("Dragon Ball Super")
+                .seriesNumber(24f)
+                .format(DownloadFormat.CBZ)
+                .contentKind(DownloadContentKind.MANGA)
+                .acquisitionType(DownloadAcquisitionType.MANGADEX_CHAPTER)
+                .downloadUrl("chapter-24")
+                .build();
+
+        NormalizedDownloadResult volume = NormalizedDownloadResult.builder()
+                .title("Dragon Ball Super - Digital Colored Comics v24 (2026)")
+                .format(DownloadFormat.UNKNOWN)
+                .contentKind(DownloadContentKind.MANGA)
+                .acquisitionType(DownloadAcquisitionType.TORRENT)
+                .downloadUrl("magnet:?xt=urn:btih:abcdef")
+                .sizeBytes(530_000_000L)
+                .build();
+
+        var chapterScore = service.score(criteria, chapter);
+        var volumeScore = service.score(criteria, volume);
+
+        assertTrue(volumeScore.getScore() > chapterScore.getScore());
+        assertTrue(chapterScore.getReasons().contains("-60 chapter/episode result for volume/issue request"));
+        assertTrue(volumeScore.getReasons().contains("+20 requested volume number match"));
     }
 
     @Test
@@ -458,6 +498,46 @@ class DownloadScoringServiceTest {
 
         assertTrue(exactScore.getScore() > introScore.getScore());
         assertTrue(introScore.getReasons().contains("-50 explicit episode marker missing from result title"));
+    }
+
+    @Test
+    void score_webtoonSearchDoesNotClampLooseTitleContainmentToPerfectMatch() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("solo leveling")
+                .seriesName("Solo Leveling")
+                .author("Chugong")
+                .contentKind(DownloadContentKind.WEBTOON)
+                .preferredFormats(List.of(DownloadFormat.CBZ))
+                .build();
+
+        NormalizedDownloadResult exactSeries = NormalizedDownloadResult.builder()
+                .title("Solo Leveling")
+                .seriesName("Solo Leveling")
+                .authors(List.of("Chugong"))
+                .format(DownloadFormat.CBZ)
+                .contentKind(DownloadContentKind.WEBTOON)
+                .acquisitionType(DownloadAcquisitionType.CLI_GALLERY_DL)
+                .downloadUrl("https://www.webtoons.com/en/action/solo-leveling/list?title_no=9999")
+                .build();
+
+        NormalizedDownloadResult looseContainment = NormalizedDownloadResult.builder()
+                .title("Walmart Solo Leveling")
+                .seriesName("Walmart Solo Leveling")
+                .authors(List.of("Different Creator"))
+                .format(DownloadFormat.CBZ)
+                .contentKind(DownloadContentKind.WEBTOON)
+                .acquisitionType(DownloadAcquisitionType.CLI_GALLERY_DL)
+                .downloadUrl("https://www.webtoons.com/en/canvas/walmart-solo-leveling/list?title_no=8888")
+                .build();
+
+        var exactScore = service.score(criteria, exactSeries);
+        var looseScore = service.score(criteria, looseContainment);
+
+        assertEquals(100, exactScore.getScore());
+        assertTrue(looseScore.getScore() < 80);
+        assertTrue(exactScore.getScore() > looseScore.getScore());
+        assertTrue(looseScore.getReasons().contains("+35 title strong match"));
+        assertTrue(looseScore.getReasons().contains("-20 author mismatch"));
     }
 
     @Test

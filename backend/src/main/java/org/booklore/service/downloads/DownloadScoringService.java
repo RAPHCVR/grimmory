@@ -3,6 +3,7 @@ package org.booklore.service.downloads;
 import org.booklore.model.enums.DownloadFormat;
 import org.booklore.model.enums.DownloadAcquisitionType;
 import org.booklore.model.enums.DownloadContentKind;
+import org.booklore.model.enums.DownloadSequenceNumberType;
 import org.booklore.service.downloads.dto.DownloadScoreBreakdown;
 import org.booklore.service.downloads.dto.DownloadSearchCriteria;
 import org.booklore.service.downloads.dto.NormalizedDownloadResult;
@@ -386,8 +387,12 @@ public class DownloadScoringService {
 
         int number = requestedNumber.getAsInt();
         String evidence = String.join(" ", safe(result.getTitle()), safe(result.getSeriesName()));
-        if (hasExactNumberMarker(evidence, number)) {
-            reasons.add("+20 requested volume/chapter number match");
+        DownloadSequenceNumberType requestedSequenceType = criteria.getSequenceNumberType() == null
+                ? DownloadSequenceNumberType.AUTO
+                : criteria.getSequenceNumberType();
+
+        if (hasExactNumberMarker(evidence, number, requestedSequenceType)) {
+            reasons.add("+20 requested " + sequenceNumberLabel(requestedSequenceType) + " number match");
             return 20;
         }
         if (hasRangeContaining(evidence, number)) {
@@ -395,11 +400,15 @@ public class DownloadScoringService {
             return -5;
         }
         if (result.getSeriesNumber() != null && result.getContentKind() != null && result.getContentKind().isSequentialArt()) {
+            if (requestedSequenceType.isVolumeLike() && isChapterEpisodeSource(result)) {
+                reasons.add("-60 chapter/episode result for volume/issue request");
+                return -60;
+            }
             if (matchesSeriesNumber(result.getSeriesNumber(), number)) {
-                reasons.add("+10 requested chapter/series number match");
+                reasons.add("+10 requested " + sequenceNumberLabel(requestedSequenceType) + " number match");
                 return 10;
             }
-            reasons.add("-20 requested volume/chapter number mismatch");
+            reasons.add("-20 requested " + sequenceNumberLabel(requestedSequenceType) + " number mismatch");
             return -20;
         }
         if (hasLooseNumberToken(evidence, number)) {
@@ -424,6 +433,13 @@ public class DownloadScoringService {
         return Math.abs(seriesNumber - requestedNumber) < 0.01f;
     }
 
+    private boolean isChapterEpisodeSource(NormalizedDownloadResult result) {
+        DownloadAcquisitionType acquisitionType = result.getAcquisitionType();
+        return acquisitionType == DownloadAcquisitionType.MANGADEX_CHAPTER
+                || acquisitionType == DownloadAcquisitionType.KAGANE_CHAPTER
+                || acquisitionType == DownloadAcquisitionType.CLI_GALLERY_DL;
+    }
+
     private OptionalInt trailingNumber(String value) {
         String normalized = normalize(value);
         if (normalized.isBlank()) {
@@ -437,8 +453,13 @@ public class DownloadScoringService {
         return OptionalInt.of(Integer.parseInt(last));
     }
 
-    private boolean hasExactNumberMarker(String title, int number) {
-        String markerPattern = "(?iu)(?:\\b(?:vol(?:ume)?|v|t(?:ome|omo)?|ch(?:apter)?|chapitre)\\.?\\s*0*" + number + "\\b|#\\s*0*" + number + "\\b)";
+    private boolean hasExactNumberMarker(String title, int number, DownloadSequenceNumberType requestedSequenceType) {
+        String markerPattern = switch (requestedSequenceType) {
+            case VOLUME -> "(?iu)\\b(?:vol(?:ume)?|v|t(?:ome|omo)?)\\.?\\s*0*" + number + "\\b";
+            case ISSUE -> "(?iu)(?:\\b(?:issue|iss)\\.?\\s*0*" + number + "\\b|#\\s*0*" + number + "\\b)";
+            case CHAPTER, EPISODE -> "(?iu)(?:\\b(?:ch(?:apter)?|chapitre|episode|ep)\\.?\\s*0*" + number + "\\b|#\\s*0*" + number + "\\b)";
+            case AUTO -> "(?iu)(?:\\b(?:vol(?:ume)?|v|t(?:ome|omo)?|ch(?:apter)?|chapitre|episode|ep|issue|iss)\\.?\\s*0*" + number + "\\b|#\\s*0*" + number + "\\b)";
+        };
         return Pattern.compile(markerPattern).matcher(title).find();
     }
 
@@ -461,6 +482,16 @@ public class DownloadScoringService {
 
     private boolean hasAnyNumberMarker(String title) {
         return ANY_NUMBER_MARKER.matcher(title).find();
+    }
+
+    private String sequenceNumberLabel(DownloadSequenceNumberType type) {
+        return switch (type) {
+            case VOLUME -> "volume";
+            case ISSUE -> "issue";
+            case CHAPTER -> "chapter";
+            case EPISODE -> "episode";
+            case AUTO -> "volume/chapter";
+        };
     }
 
     private int scoreUnsupportedMedia(NormalizedDownloadResult result, List<String> reasons) {

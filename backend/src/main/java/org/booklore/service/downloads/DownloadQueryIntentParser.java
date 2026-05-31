@@ -2,6 +2,7 @@ package org.booklore.service.downloads;
 
 import org.booklore.model.enums.DownloadContentKind;
 import org.booklore.model.enums.DownloadFormat;
+import org.booklore.model.enums.DownloadSequenceNumberType;
 import org.booklore.service.downloads.dto.DownloadSearchCriteria;
 import org.springframework.stereotype.Service;
 
@@ -15,30 +16,35 @@ import java.util.regex.Pattern;
 public class DownloadQueryIntentParser {
 
     private static final Pattern EXPLICIT_NUMBER_MARKER = Pattern.compile(
-            "(?iu)(?:\\b(?:vol(?:ume)?|v|t(?:ome|omo)?|ch(?:apter)?|chap(?:itre)?|chapter|episode|ep)\\.?\\s*|#\\s*)0*(\\d{1,5}(?:\\.\\d+)?)\\b"
+            "(?iu)\\b(vol(?:ume)?|v|t(?:ome|omo)?|issue|iss|ch(?:apter)?|chap(?:itre)?|chapter|episode|ep)\\.?\\s*0*(\\d{1,5}(?:\\.\\d+)?)\\b|#\\s*0*(\\d{1,5}(?:\\.\\d+)?)\\b"
     );
     private static final Pattern TRAILING_NUMBER = Pattern.compile("(?iu)^(.+?)\\s+0*(\\d{1,5}(?:\\.\\d+)?)$");
     private static final Pattern DANGLING_SEPARATORS = Pattern.compile("(?iu)[\\s,;:_\\-–—#]+$|^[\\s,;:_\\-–—#]+");
     private static final Pattern MULTISPACE = Pattern.compile("\\s+");
 
     public DownloadSearchCriteria enrich(DownloadSearchCriteria criteria) {
-        if (criteria == null || criteria.getSeriesNumber() != null || !isSequentialSearch(criteria)) {
+        if (criteria == null || !isSequentialSearch(criteria)) {
             return criteria;
         }
 
         String source = firstNonBlank(criteria.getQuery(), criteria.getTitle(), criteria.getSeriesName());
-        if (source == null) {
+        if (source == null && criteria.getSeriesNumber() == null) {
             return criteria;
         }
 
-        Optional<ParsedNumberIntent> intent = parse(source);
+        Optional<ParsedNumberIntent> intent = parse(source, criteria.getContentKind());
         if (intent.isEmpty()) {
             return criteria;
         }
 
         ParsedNumberIntent parsed = intent.get();
-        DownloadSearchCriteria.DownloadSearchCriteriaBuilder builder = criteria.toBuilder()
-                .seriesNumber(parsed.number());
+        DownloadSearchCriteria.DownloadSearchCriteriaBuilder builder = criteria.toBuilder();
+        if (criteria.getSeriesNumber() == null) {
+            builder.seriesNumber(parsed.number());
+        }
+        if (criteria.getSequenceNumberType() == null || criteria.getSequenceNumberType().isAuto()) {
+            builder.sequenceNumberType(parsed.sequenceNumberType());
+        }
         if (criteria.getQuery() != null && !criteria.getQuery().isBlank()) {
             builder.query(parsed.cleanTitle());
         }
@@ -52,6 +58,10 @@ public class DownloadQueryIntentParser {
     }
 
     Optional<ParsedNumberIntent> parse(String value) {
+        return parse(value, DownloadContentKind.AUTO);
+    }
+
+    Optional<ParsedNumberIntent> parse(String value, DownloadContentKind contentKind) {
         if (value == null || value.isBlank()) {
             return Optional.empty();
         }
@@ -59,13 +69,15 @@ public class DownloadQueryIntentParser {
         Matcher explicit = EXPLICIT_NUMBER_MARKER.matcher(value);
         ParsedNumberIntent best = null;
         while (explicit.find()) {
-            Float number = parseNumber(explicit.group(1));
+            String marker = explicit.group(1);
+            String numberText = explicit.group(2) != null ? explicit.group(2) : explicit.group(3);
+            Float number = parseNumber(numberText);
             if (number == null || looksLikeYear(number)) {
                 continue;
             }
             String cleanTitle = cleanTitle(explicit.replaceFirst(" "));
             if (!cleanTitle.isBlank()) {
-                best = new ParsedNumberIntent(cleanTitle, number);
+                best = new ParsedNumberIntent(cleanTitle, number, sequenceTypeForExplicitMarker(marker, contentKind));
             }
         }
         if (best != null) {
@@ -81,7 +93,7 @@ public class DownloadQueryIntentParser {
             return Optional.empty();
         }
         String cleanTitle = cleanTitle(trailing.group(1));
-        return cleanTitle.isBlank() ? Optional.empty() : Optional.of(new ParsedNumberIntent(cleanTitle, number));
+        return cleanTitle.isBlank() ? Optional.empty() : Optional.of(new ParsedNumberIntent(cleanTitle, number, sequenceTypeForTrailingNumber(contentKind)));
     }
 
     private boolean isSequentialSearch(DownloadSearchCriteria criteria) {
@@ -130,10 +142,47 @@ public class DownloadQueryIntentParser {
         return null;
     }
 
-    record ParsedNumberIntent(String cleanTitle, Float number) {
+    private DownloadSequenceNumberType sequenceTypeForExplicitMarker(String marker, DownloadContentKind contentKind) {
+        if (marker == null || marker.isBlank()) {
+            return sequenceTypeForHashMarker(contentKind);
+        }
+        String normalized = marker.toLowerCase(Locale.ROOT);
+        if (normalized.startsWith("vol") || normalized.equals("v") || normalized.startsWith("tome") || normalized.startsWith("tomo")) {
+            return DownloadSequenceNumberType.VOLUME;
+        }
+        if (normalized.startsWith("issue") || normalized.startsWith("iss")) {
+            return DownloadSequenceNumberType.ISSUE;
+        }
+        if (normalized.startsWith("ep")) {
+            return DownloadSequenceNumberType.EPISODE;
+        }
+        return contentKind == DownloadContentKind.WEBTOON ? DownloadSequenceNumberType.EPISODE : DownloadSequenceNumberType.CHAPTER;
+    }
+
+    private DownloadSequenceNumberType sequenceTypeForTrailingNumber(DownloadContentKind contentKind) {
+        if (contentKind == DownloadContentKind.WEBTOON) {
+            return DownloadSequenceNumberType.EPISODE;
+        }
+        if (contentKind == DownloadContentKind.COMIC) {
+            return DownloadSequenceNumberType.ISSUE;
+        }
+        return DownloadSequenceNumberType.VOLUME;
+    }
+
+    private DownloadSequenceNumberType sequenceTypeForHashMarker(DownloadContentKind contentKind) {
+        if (contentKind == DownloadContentKind.WEBTOON) {
+            return DownloadSequenceNumberType.EPISODE;
+        }
+        if (contentKind == DownloadContentKind.COMIC) {
+            return DownloadSequenceNumberType.ISSUE;
+        }
+        return DownloadSequenceNumberType.VOLUME;
+    }
+
+    record ParsedNumberIntent(String cleanTitle, Float number, DownloadSequenceNumberType sequenceNumberType) {
         @Override
         public String toString() {
-            return cleanTitle + " #" + String.format(Locale.ROOT, "%.2f", number);
+            return cleanTitle + " " + sequenceNumberType + " " + String.format(Locale.ROOT, "%.2f", number);
         }
     }
 }

@@ -2,6 +2,7 @@ package org.booklore.service.downloads;
 
 import org.booklore.model.enums.DownloadContentKind;
 import org.booklore.model.enums.DownloadFormat;
+import org.booklore.model.enums.DownloadSequenceNumberType;
 import org.booklore.service.downloads.dto.DownloadSearchCriteria;
 import org.junit.jupiter.api.Test;
 
@@ -26,6 +27,20 @@ class DownloadQueryIntentParserTest {
         assertEquals("Dragon Ball Super", enriched.getTitle());
         assertEquals("Dragon Ball Super", enriched.getSeriesName());
         assertEquals(24f, enriched.getSeriesNumber());
+        assertEquals(DownloadSequenceNumberType.VOLUME, enriched.getSequenceNumberType());
+    }
+
+    @Test
+    void enrich_mangaQueryWithExplicitChapter_setsChapterIntent() {
+        DownloadSearchCriteria enriched = parser.enrich(DownloadSearchCriteria.builder()
+                .query("Dragon Ball Super chapitre 24")
+                .contentKind(DownloadContentKind.MANGA)
+                .preferredFormats(List.of(DownloadFormat.CBZ))
+                .build());
+
+        assertEquals("Dragon Ball Super", enriched.getQuery());
+        assertEquals(24f, enriched.getSeriesNumber());
+        assertEquals(DownloadSequenceNumberType.CHAPTER, enriched.getSequenceNumberType());
     }
 
     @Test
@@ -38,6 +53,7 @@ class DownloadQueryIntentParserTest {
 
         assertEquals("Lore Olympus", enriched.getQuery());
         assertEquals(1f, enriched.getSeriesNumber());
+        assertEquals(DownloadSequenceNumberType.EPISODE, enriched.getSequenceNumberType());
     }
 
     @Test

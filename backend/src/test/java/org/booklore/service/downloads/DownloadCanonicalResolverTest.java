@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -128,6 +129,77 @@ class DownloadCanonicalResolverTest {
             assertThat(resolved.getAuthor()).isEqualTo("Rachel Smythe");
             assertThat(resolved.getQuery()).isEqualTo("Lore Olympus");
             assertThat(resolved.getContentKind()).isEqualTo(DownloadContentKind.WEBTOON);
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void resolvesWebtoonCanonicalSeriesAfterRemovingKindHintFromProviderQuery() throws Exception {
+        AtomicReference<String> seenRawQuery = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/en/search", exchange -> {
+            seenRawQuery.set(exchange.getRequestURI().getRawQuery());
+            respond(exchange, "text/html", """
+                    <html><body>
+                      <a href="/en/sports/the-boxer/list?title_no=2027">
+                        <span class="title">The Boxer</span>
+                        <span class="author">JH</span>
+                      </a>
+                    </body></html>
+                    """);
+        });
+        server.start();
+        try {
+            DownloadCanonicalResolver resolver = resolver();
+            resolver.openLibraryEnabled = false;
+            resolver.googleBooksEnabled = false;
+            resolver.mangaDexEnabled = false;
+            resolver.webtoonsSearchUrlTemplates = baseUrl(server) + "/en/search?keyword={query}";
+
+            DownloadSearchCriteria resolved = resolver.resolve(DownloadSearchCriteria.builder()
+                    .query("the boxer webtoon")
+                    .contentKind(DownloadContentKind.WEBTOON)
+                    .build());
+
+            assertThat(seenRawQuery.get()).contains("keyword=the+boxer");
+            assertThat(seenRawQuery.get()).doesNotContain("webtoon");
+            assertThat(resolved.getTitle()).isEqualTo("The Boxer");
+            assertThat(resolved.getSeriesName()).isEqualTo("The Boxer");
+            assertThat(resolved.getAuthor()).isEqualTo("JH");
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void ignoresWeakSingleTokenWebtoonCanonicalCandidate() throws Exception {
+        HttpServer server = htmlServer("/en/search", """
+                <html><body>
+                  <a href="/en/canvas/the-adventures-of-boxer-shorts-hero/list?title_no=8888">
+                    <span class="title">The Adventures of Boxer Shorts Hero</span>
+                    <span class="author">Different Creator</span>
+                  </a>
+                </body></html>
+                """);
+        server.start();
+        try {
+            DownloadCanonicalResolver resolver = resolver();
+            resolver.openLibraryEnabled = false;
+            resolver.googleBooksEnabled = false;
+            resolver.mangaDexEnabled = false;
+            resolver.webtoonsSearchUrlTemplates = baseUrl(server) + "/en/search?keyword={query}";
+
+            DownloadSearchCriteria original = DownloadSearchCriteria.builder()
+                    .query("the boxer")
+                    .contentKind(DownloadContentKind.WEBTOON)
+                    .build();
+            DownloadSearchCriteria resolved = resolver.resolve(original);
+
+            assertThat(resolved.getTitle()).isNull();
+            assertThat(resolved.getSeriesName()).isNull();
+            assertThat(resolved.getAuthor()).isNull();
+            assertThat(resolved.getQuery()).isEqualTo("the boxer");
         } finally {
             server.stop(0);
         }

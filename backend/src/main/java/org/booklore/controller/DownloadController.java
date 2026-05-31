@@ -216,6 +216,7 @@ public class DownloadController {
                 .isbn(request.getIsbn())
                 .seriesName(request.getSeriesName())
                 .seriesNumber(request.getSeriesNumber())
+                .sequenceNumberType(request.getSequenceNumberType() == null ? DownloadSequenceNumberType.AUTO : request.getSequenceNumberType())
                 .contentKind(request.getContentKind() == null ? DownloadContentKind.AUTO : request.getContentKind())
                 .preferredFormats(request.getPreferredFormats() == null ? List.of() : request.getPreferredFormats())
                 .directUrl(request.getDirectUrl())

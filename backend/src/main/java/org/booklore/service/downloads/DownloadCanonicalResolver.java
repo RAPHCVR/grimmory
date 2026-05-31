@@ -42,6 +42,14 @@ public class DownloadCanonicalResolver {
             "vol", "volume", "v", "tome", "tomo", "chapter", "chapitre", "chap", "ch",
             "episode", "ep", "book", "livre", "manga", "comic", "webtoon", "manhwa", "manhua"
     );
+    private static final Set<String> QUERY_KIND_HINT_WORDS = Set.of(
+            "book", "books", "livre", "livres",
+            "manga", "mangas",
+            "comic", "comics",
+            "webtoon", "webtoons",
+            "manhwa", "manhwas",
+            "manhua", "manhuas"
+    );
     private static final List<String> TITLE_LANGUAGE_ORDER = List.of("en", "fr", "ja-ro", "ja", "ko", "zh", "es", "de", "it");
 
     private final HttpClient httpClient;
@@ -93,7 +101,7 @@ public class DownloadCanonicalResolver {
             return criteria;
         }
 
-        String term = canonicalInput(criteria);
+        String term = providerSearchTerm(canonicalInput(criteria));
         if (isBlank(term)) {
             return criteria;
         }
@@ -440,6 +448,28 @@ public class DownloadCanonicalResolver {
         return firstNonBlank(criteria.getSeriesName(), criteria.getTitle(), criteria.getQuery(), criteria.getIsbn(), criteria.effectiveQuery());
     }
 
+    private String providerSearchTerm(String term) {
+        if (isBlank(term)) {
+            return term;
+        }
+        String trimmed = term.trim().replaceAll("\\s+", " ");
+        String[] rawTokens = trimmed.split("\\s+");
+        if (rawTokens.length <= 1) {
+            return trimmed;
+        }
+
+        List<String> kept = new ArrayList<>();
+        for (String rawToken : rawTokens) {
+            String token = rawToken.toLowerCase(Locale.ROOT)
+                    .replaceAll("^[^\\p{L}\\p{N}]+", "")
+                    .replaceAll("[^\\p{L}\\p{N}]+$", "");
+            if (!QUERY_KIND_HINT_WORDS.contains(token)) {
+                kept.add(rawToken);
+            }
+        }
+        return kept.isEmpty() ? trimmed : compactJoin(kept.toArray(String[]::new));
+    }
+
     private DownloadContentKind requestedKind(DownloadSearchCriteria criteria) {
         return criteria.getContentKind() == null ? DownloadContentKind.AUTO : criteria.getContentKind();
     }
@@ -478,7 +508,11 @@ public class DownloadCanonicalResolver {
         double leftCoverage = intersection / (double) leftTokens.size();
         double rightCoverage = intersection / (double) rightTokens.size();
         double jaccard = intersection / (double) (leftTokens.size() + rightTokens.size() - intersection);
-        return Math.max(jaccard, leftCoverage * 0.65D + rightCoverage * 0.35D);
+        double score = Math.max(jaccard, leftCoverage * 0.65D + rightCoverage * 0.35D);
+        if (leftTokens.size() == 1 && rightTokens.size() > 2 && intersection == 1) {
+            return Math.min(score, 0.50D);
+        }
+        return score;
     }
 
     private Set<String> tokens(String value) {
