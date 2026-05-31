@@ -60,7 +60,7 @@
 
 .search-main-row {
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) auto auto;
+  grid-template-columns: minmax(260px, 1fr) auto auto auto;
   gap: 0.75rem;
   align-items: center;
 
@@ -83,6 +83,80 @@
   input {
     width: 100%;
     padding-left: 2.35rem;
+  }
+}
+
+.canonical-candidates {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--p-primary-color) 28%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--p-primary-color) 6%, transparent);
+}
+
+.canonical-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+
+  strong {
+    display: block;
+    color: var(--p-text-color);
+    margin-bottom: 0.2rem;
+  }
+
+  span {
+    color: var(--p-text-muted-color);
+    font-size: 0.85rem;
+  }
+}
+
+.canonical-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.75rem;
+}
+
+.canonical-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--p-content-border-color);
+  border-radius: 8px;
+  background: var(--card-background);
+}
+
+.canonical-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+
+  span {
+    color: var(--p-text-muted-color);
+    font-size: 0.82rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.canonical-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+
+  strong {
+    color: var(--p-text-color);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 

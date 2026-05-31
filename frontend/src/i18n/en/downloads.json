@@ -8,7 +8,9 @@
     "refreshJobs": "Refresh Jobs",
     "cleanup": "Cleanup",
     "process": "Process job",
-    "retry": "Retry"
+    "retry": "Retry",
+    "resolve": "Resolve work",
+    "useCanonical": "Use this work"
   },
   "search": {
     "placeholder": "Search by title, author, ISBN, series, or paste a direct URL below",
@@ -25,7 +27,12 @@
     "directUrl": "Direct URL",
     "progressStarting": "Searching fast sources... {{seconds}} s",
     "progressFlareSolverr": "Anna / FlareSolverr can take a few seconds; sources are queried in parallel... {{seconds}} s",
-    "progressSlow": "Still running: one slow source is isolated and results will be ranked as soon as it returns... {{seconds}} s"
+    "progressSlow": "Still running: one slow source is isolated and results will be ranked as soon as it returns... {{seconds}} s",
+    "targetLibrary": "Target library",
+    "targetPath": "Target path",
+    "targetLibraryPlaceholder": "Choose a library",
+    "targetPathPlaceholder": "Choose a path",
+    "autoFinalizeTargetRequired": "Choose a target library and path before auto-finalizing."
   },
   "results": {
     "title": "Results",
@@ -86,6 +93,39 @@
     "jobRetryDetail": "Job #{{oldId}} has been retried as job #{{id}}.",
     "jobFinishedSummary": "Job finished",
     "jobFinishedDetail": "Job #{{id}} ended with status {{status}}.",
-    "jobFailedSummary": "Job failed"
+    "jobFailedSummary": "Job failed",
+    "resolveRequiredDetail": "Enter a query, title, ISBN, or series before resolving a canonical work.",
+    "targetRequiredSummary": "Target required",
+    "targetRequiredDetail": "Choose a library and path before acquiring with auto-finalize enabled."
+  },
+  "resolve": {
+    "title": "Canonical work candidates",
+    "description": "Pick the public/catalog identity first, then search acquisition sources with the work locked.",
+    "noneSummary": "No canonical match",
+    "noneDetail": "No public resolver returned a confident work candidate.",
+    "error": "Canonical resolution failed.",
+    "appliedSummary": "Canonical work selected",
+    "appliedDetail": "{{title}} is now locked into the search fields.",
+    "skippedDirectUrlSummary": "Resolver skipped",
+    "skippedDirectUrlDetail": "Direct URLs already identify a concrete acquisition target."
+  },
+  "contentKinds": {
+    "AUTO": "Auto",
+    "BOOK": "Book",
+    "MANGA": "Manga",
+    "COMIC": "Comics",
+    "WEBTOON": "Webtoon"
+  },
+  "acquisitionTypes": {
+    "DIRECT_FILE": "Direct file",
+    "TORRENT": "Torrent",
+    "NZB": "NZB",
+    "OPDS_ACQUISITION": "OPDS",
+    "MANGADEX_CHAPTER": "MangaDex chapter",
+    "IMAGE_SEQUENCE_CBZ": "Images to CBZ",
+    "CLI_GALLERY_DL": "gallery-dl",
+    "EXTERNAL_STACKS": "Stacks",
+    "WEB_PLUGIN": "Web plugin",
+    "UNKNOWN": "Unknown"
   }
 }

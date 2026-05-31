@@ -1,5 +1,6 @@
 export type DownloadSourceType = 'OPDS' | 'PROWLARR_TORZNAB' | 'DIRECT_URL' | 'MANGADEX' | 'ANNAS_ARCHIVE_API' | 'CUSTOM_WEB_PLUGIN';
 export type DownloadContentKind = 'AUTO' | 'BOOK' | 'MANGA' | 'COMIC' | 'WEBTOON';
+export type DownloadSequenceNumberType = 'AUTO' | 'VOLUME' | 'ISSUE' | 'CHAPTER' | 'EPISODE';
 export type DownloadFormat = 'EPUB' | 'PDF' | 'CBZ' | 'CBR' | 'CB7' | 'MOBI' | 'AZW' | 'AZW3' | 'FB2' | 'UNKNOWN';
 export type DownloadAcquisitionType =
   | 'DIRECT_FILE'
@@ -53,6 +54,7 @@ export interface DownloadSearchRequest {
   isbn?: string | null;
   seriesName?: string | null;
   seriesNumber?: number | null;
+  sequenceNumberType?: DownloadSequenceNumberType;
   contentKind?: DownloadContentKind;
   preferredFormats?: DownloadFormat[];
   directUrl?: string | null;
@@ -79,6 +81,23 @@ export interface DownloadSearchResponse {
   query: string;
   errorMessage?: string | null;
   results: DownloadResult[];
+}
+
+export interface DownloadCanonicalCandidate {
+  provider: string;
+  contentKind: DownloadContentKind;
+  title?: string | null;
+  author?: string | null;
+  isbn?: string | null;
+  seriesName?: string | null;
+  confidence: number;
+  query?: string | null;
+  resolvedTitle?: string | null;
+  resolvedAuthor?: string | null;
+  resolvedIsbn?: string | null;
+  resolvedSeriesName?: string | null;
+  seriesNumber?: number | null;
+  sequenceNumberType?: DownloadSequenceNumberType | null;
 }
 
 export interface DownloadResult {

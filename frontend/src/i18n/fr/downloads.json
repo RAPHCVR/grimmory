@@ -8,7 +8,9 @@
         "refreshJobs": "Actualiser les jobs",
         "cleanup": "Nettoyer",
         "process": "Traiter le job",
-        "retry": "Réessayer"
+        "retry": "Réessayer",
+        "resolve": "Résoudre l’œuvre",
+        "useCanonical": "Utiliser cette œuvre"
     },
     "search": {
         "placeholder": "Rechercher par titre, auteur, ISBN, série, ou coller une URL directe ci-dessous",
@@ -112,6 +114,18 @@
         "jobRetryDetail": "Le job #{{oldId}} a été relancé sous le job #{{id}}.",
         "jobFinishedSummary": "Job terminé",
         "jobFinishedDetail": "Le job #{{id}} s'est terminé avec le statut {{status}}.",
-        "jobFailedSummary": "Job en échec"
+        "jobFailedSummary": "Job en échec",
+        "resolveRequiredDetail": "Renseigne une requête, un titre, un ISBN ou une série avant de résoudre l'œuvre canonique."
+    },
+    "resolve": {
+        "title": "Œuvres canoniques candidates",
+        "description": "Choisis d'abord l'identité publique/catalogue, puis lance la recherche avec l'œuvre verrouillée.",
+        "noneSummary": "Aucune correspondance canonique",
+        "noneDetail": "Aucun resolver public n'a retourné de candidat assez fiable.",
+        "error": "La résolution canonique a échoué.",
+        "appliedSummary": "Œuvre canonique sélectionnée",
+        "appliedDetail": "{{title}} est maintenant verrouillée dans les champs de recherche.",
+        "skippedDirectUrlSummary": "Resolver ignoré",
+        "skippedDirectUrlDetail": "Une URL directe identifie déjà une cible d’acquisition concrète."
     }
 }

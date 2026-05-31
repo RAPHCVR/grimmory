@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.booklore.model.enums.DownloadContentKind;
 import org.booklore.model.enums.DownloadFormat;
+import org.booklore.model.enums.DownloadSequenceNumberType;
 import org.booklore.service.downloads.dto.DownloadSearchCriteria;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -107,31 +108,7 @@ public class DownloadCanonicalResolver {
         }
 
         try {
-            List<Candidate> candidates = new ArrayList<>();
-            DownloadContentKind requested = requestedKind(criteria);
-            boolean sequential = likelySequentialArt(criteria);
-
-            if (mangaDexEnabled && (requested == DownloadContentKind.MANGA || requested == DownloadContentKind.AUTO && sequential)) {
-                candidates.addAll(resolveMangaDex(term));
-            }
-            if (webtoonsEnabled && requested == DownloadContentKind.WEBTOON) {
-                candidates.addAll(resolveWebtoons(term));
-            }
-            if (asuraWebtoonsEnabled && requested == DownloadContentKind.WEBTOON) {
-                candidates.addAll(resolveAsuraWebtoons(term));
-            }
-            if (comicVineEnabled && !isBlank(comicVineApiKey) && requested == DownloadContentKind.COMIC) {
-                candidates.addAll(resolveComicVine(term));
-            }
-            if (requested == DownloadContentKind.BOOK || requested == DownloadContentKind.AUTO || requested == DownloadContentKind.COMIC) {
-                if (openLibraryEnabled) {
-                    candidates.addAll(resolveOpenLibrary(term));
-                }
-                if (googleBooksEnabled) {
-                    candidates.addAll(resolveGoogleBooks(term));
-                }
-            }
-
+            List<Candidate> candidates = collectCandidates(criteria, term);
             Optional<Candidate> best = candidates.stream()
                     .filter(candidate -> candidate.confidence() >= minimumConfidence)
                     .max((left, right) -> Double.compare(left.confidence(), right.confidence()));
@@ -150,6 +127,69 @@ public class DownloadCanonicalResolver {
             log.debug("Canonical resolver skipped for '{}': {}", criteria.effectiveQuery(), e.getMessage(), e);
             return criteria;
         }
+    }
+
+    public List<CanonicalCandidate> resolveCandidates(DownloadSearchCriteria criteria) {
+        if (!enabled || criteria == null || !isBlank(criteria.getDirectUrl())) {
+            return List.of();
+        }
+
+        String term = providerSearchTerm(canonicalInput(criteria));
+        if (isBlank(term)) {
+            return List.of();
+        }
+
+        try {
+            return collectCandidates(criteria, term).stream()
+                    .filter(candidate -> candidate.confidence() >= minimumConfidence)
+                    .sorted((left, right) -> Double.compare(right.confidence(), left.confidence()))
+                    .limit(candidateLimit(criteria))
+                    .map(candidate -> toCanonicalCandidate(criteria, candidate))
+                    .toList();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.debug("Canonical resolver candidate lookup interrupted for '{}'", criteria.effectiveQuery(), e);
+            return List.of();
+        } catch (Exception e) {
+            log.debug("Canonical resolver candidate lookup skipped for '{}': {}", criteria.effectiveQuery(), e.getMessage(), e);
+            return List.of();
+        }
+    }
+
+    private List<Candidate> collectCandidates(DownloadSearchCriteria criteria, String term) throws Exception {
+        List<Candidate> candidates = new ArrayList<>();
+        DownloadContentKind requested = requestedKind(criteria);
+        boolean sequential = likelySequentialArt(criteria);
+
+        if (mangaDexEnabled && (requested == DownloadContentKind.MANGA || requested == DownloadContentKind.AUTO && sequential)) {
+            candidates.addAll(resolveMangaDex(term));
+        }
+        if (webtoonsEnabled && requested == DownloadContentKind.WEBTOON) {
+            candidates.addAll(resolveWebtoons(term));
+        }
+        if (asuraWebtoonsEnabled && requested == DownloadContentKind.WEBTOON) {
+            candidates.addAll(resolveAsuraWebtoons(term));
+        }
+        if (comicVineEnabled && !isBlank(comicVineApiKey) && requested == DownloadContentKind.COMIC) {
+            candidates.addAll(resolveComicVine(term));
+        }
+        if (requested == DownloadContentKind.BOOK || requested == DownloadContentKind.AUTO || requested == DownloadContentKind.COMIC) {
+            if (openLibraryEnabled) {
+                candidates.addAll(resolveOpenLibrary(term));
+            }
+            if (googleBooksEnabled) {
+                candidates.addAll(resolveGoogleBooks(term));
+            }
+        }
+        return candidates;
+    }
+
+    private int candidateLimit(DownloadSearchCriteria criteria) {
+        int requestedLimit = criteria == null ? 0 : criteria.getMaxResults();
+        if (requestedLimit <= 0) {
+            return 10;
+        }
+        return Math.min(requestedLimit, 10);
     }
 
     private List<Candidate> resolveOpenLibrary(String term) throws Exception {
@@ -431,6 +471,26 @@ public class DownloadCanonicalResolver {
             builder.query(canonicalQuery);
         }
         return builder.build();
+    }
+
+    private CanonicalCandidate toCanonicalCandidate(DownloadSearchCriteria criteria, Candidate candidate) {
+        DownloadSearchCriteria resolved = applyCandidate(criteria, candidate);
+        return new CanonicalCandidate(
+                candidate.provider(),
+                candidate.contentKind(),
+                candidate.title(),
+                candidate.author(),
+                candidate.isbn(),
+                candidate.seriesName(),
+                Math.round(candidate.confidence() * 1000D) / 1000D,
+                resolved.getQuery(),
+                resolved.getTitle(),
+                resolved.getAuthor(),
+                resolved.getIsbn(),
+                resolved.getSeriesName(),
+                resolved.getSeriesNumber(),
+                resolved.getSequenceNumberType()
+        );
     }
 
     private String canonicalOutputQuery(DownloadSearchCriteria criteria, Candidate candidate, boolean sequential) {
@@ -807,5 +867,21 @@ public class DownloadCanonicalResolver {
         String displayTitle() {
             return seriesName != null && !seriesName.isBlank() ? seriesName : title;
         }
+    }
+
+    public record CanonicalCandidate(String provider,
+                                     DownloadContentKind contentKind,
+                                     String title,
+                                     String author,
+                                     String isbn,
+                                     String seriesName,
+                                     double confidence,
+                                     String query,
+                                     String resolvedTitle,
+                                     String resolvedAuthor,
+                                     String resolvedIsbn,
+                                     String resolvedSeriesName,
+                                     Float seriesNumber,
+                                     DownloadSequenceNumberType sequenceNumberType) {
     }
 }

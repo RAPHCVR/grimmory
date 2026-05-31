@@ -5,6 +5,11 @@ USER_ID="${USER_ID:-1000}"
 GROUP_ID="${GROUP_ID:-1000}"
 APP_USER="${APP_USER:-booklore}"
 
+if [ "$(id -u)" != "0" ]; then
+    mkdir -p /app/data /bookdrop /books 2>/dev/null || true
+    exec "$@"
+fi
+
 if getent group "$APP_USER" >/dev/null 2>&1; then
     existing_group_id="$(getent group "$APP_USER" | cut -d: -f3)"
     if [ "$existing_group_id" != "$GROUP_ID" ]; then

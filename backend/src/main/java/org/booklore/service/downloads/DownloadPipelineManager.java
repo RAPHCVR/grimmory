@@ -82,6 +82,10 @@ public class DownloadPipelineManager {
     private final DownloadCanonicalResolver canonicalResolver;
     private final ObjectMapper objectMapper;
 
+    public List<DownloadCanonicalResolver.CanonicalCandidate> resolveCandidates(DownloadSearchCriteria criteria) {
+        return canonicalResolver.resolveCandidates(queryIntentParser.enrich(criteria));
+    }
+
     @Transactional
     public DownloadSearchEntity search(DownloadSearchCriteria criteria) {
         criteria = queryIntentParser.enrich(criteria);

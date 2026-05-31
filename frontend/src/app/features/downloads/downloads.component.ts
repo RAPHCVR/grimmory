@@ -22,12 +22,14 @@ import {DownloadsService} from './downloads.service';
 import {
   DOWNLOAD_CONTENT_KINDS,
   DOWNLOAD_FORMATS,
+  DownloadCanonicalCandidate,
   DownloadContentKind,
   DownloadFormat,
   DownloadJob,
   DownloadJobStatus,
   DownloadResult,
-  DownloadSearchRequest
+  DownloadSearchRequest,
+  DownloadSequenceNumberType
 } from './downloads.model';
 
 interface SelectOption<T> {
@@ -68,6 +70,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
   isbn = '';
   seriesName = '';
   seriesNumber: number | null = null;
+  sequenceNumberType: DownloadSequenceNumberType = 'AUTO';
   directUrl = '';
   contentKind: DownloadContentKind = 'AUTO';
   preferredFormats: DownloadFormat[] = [...DOWNLOAD_FORMATS];
@@ -78,11 +81,13 @@ export class DownloadsComponent implements OnInit, OnDestroy {
   targetLibraryPathId: number | null = null;
 
   results: DownloadResult[] = [];
+  canonicalCandidates: DownloadCanonicalCandidate[] = [];
   jobs: DownloadJob[] = [];
   libraries: Library[] = [];
   searchId: number | null = null;
   searchError: string | null = null;
   loadingResults = false;
+  resolvingCanonical = false;
   searchElapsedSeconds = 0;
   lastSearchDurationMs: number | null = null;
   searchProgressKey = 'downloads.search.progressStarting';
@@ -221,6 +226,68 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     });
   }
 
+  resolveCanonical(): void {
+    const request = this.buildSearchRequest();
+    if (!request.query && !request.title && !request.isbn && !request.seriesName) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: this.t.translate('downloads.toast.searchRequiredSummary'),
+        detail: this.t.translate('downloads.toast.resolveRequiredDetail')
+      });
+      return;
+    }
+    if (request.directUrl) {
+      this.messageService.add({
+        severity: 'info',
+        summary: this.t.translate('downloads.resolve.skippedDirectUrlSummary'),
+        detail: this.t.translate('downloads.resolve.skippedDirectUrlDetail')
+      });
+      return;
+    }
+
+    this.resolvingCanonical = true;
+    this.downloadsService.resolve(request).pipe(
+      finalize(() => this.resolvingCanonical = false)
+    ).subscribe({
+      next: candidates => {
+        this.canonicalCandidates = candidates ?? [];
+        if (!this.canonicalCandidates.length) {
+          this.messageService.add({
+            severity: 'info',
+            summary: this.t.translate('downloads.resolve.noneSummary'),
+            detail: this.t.translate('downloads.resolve.noneDetail')
+          });
+        }
+      },
+      error: err => {
+        this.messageService.add({
+          severity: 'error',
+          summary: this.t.translate('common.error'),
+          detail: err?.error?.message || err?.message || this.t.translate('downloads.resolve.error')
+        });
+      }
+    });
+  }
+
+  applyCanonical(candidate: DownloadCanonicalCandidate): void {
+    this.query = candidate.query || this.query;
+    this.title = candidate.resolvedTitle || candidate.title || this.title;
+    this.author = candidate.resolvedAuthor || candidate.author || this.author;
+    this.isbn = candidate.resolvedIsbn || candidate.isbn || this.isbn;
+    this.seriesName = candidate.resolvedSeriesName || candidate.seriesName || this.seriesName;
+    this.seriesNumber = candidate.seriesNumber ?? this.seriesNumber;
+    this.sequenceNumberType = candidate.sequenceNumberType || this.sequenceNumberType || 'AUTO';
+    if (candidate.contentKind && candidate.contentKind !== 'AUTO') {
+      this.contentKind = candidate.contentKind;
+    }
+    this.canonicalCandidates = [];
+    this.messageService.add({
+      severity: 'success',
+      summary: this.t.translate('downloads.resolve.appliedSummary'),
+      detail: this.t.translate('downloads.resolve.appliedDetail', {title: this.canonicalCandidateTitle(candidate)})
+    });
+  }
+
   retryJob(job: DownloadJob): void {
     if (!this.canRetry(job) || this.retryingJobIds.has(job.id)) return;
     this.retryingJobIds.add(job.id);
@@ -292,11 +359,13 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     this.isbn = '';
     this.seriesName = '';
     this.seriesNumber = null;
+    this.sequenceNumberType = 'AUTO';
     this.directUrl = '';
     this.contentKind = 'AUTO';
     this.preferredFormats = [...DOWNLOAD_FORMATS];
     this.maxResults = 25;
     this.results = [];
+    this.canonicalCandidates = [];
     this.searchId = null;
     this.searchError = null;
   }
@@ -368,6 +437,27 @@ export class DownloadsComponent implements OnInit, OnDestroy {
 
   contentKindLabel(kind: DownloadContentKind): string {
     return this.t.translate(`downloads.contentKinds.${kind}`);
+  }
+
+  canonicalCandidateTitle(candidate: DownloadCanonicalCandidate): string {
+    return candidate.resolvedSeriesName || candidate.seriesName || candidate.resolvedTitle || candidate.title || candidate.query || '-';
+  }
+
+  canonicalCandidateMeta(candidate: DownloadCanonicalCandidate): string {
+    const number = candidate.seriesNumber == null
+      ? null
+      : `${candidate.sequenceNumberType && candidate.sequenceNumberType !== 'AUTO' ? candidate.sequenceNumberType.toLowerCase() : '#'} ${candidate.seriesNumber}`;
+    return [
+      candidate.provider,
+      this.contentKindLabel(candidate.contentKind),
+      candidate.resolvedAuthor || candidate.author,
+      candidate.resolvedIsbn || candidate.isbn ? `ISBN ${candidate.resolvedIsbn || candidate.isbn}` : null,
+      number
+    ].filter(Boolean).join(' · ');
+  }
+
+  canonicalConfidence(candidate: DownloadCanonicalCandidate): string {
+    return `${Math.round((candidate.confidence ?? 0) * 100)}%`;
   }
 
   acquisitionLabel(acquisitionType: string): string {
@@ -478,6 +568,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
       isbn: this.clean(this.isbn),
       seriesName: this.clean(this.seriesName),
       seriesNumber: this.seriesNumber,
+      sequenceNumberType: this.sequenceNumberType,
       directUrl: this.clean(this.directUrl),
       contentKind: this.contentKind,
       preferredFormats: this.preferredFormats,

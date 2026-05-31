@@ -46,6 +46,14 @@
           (onClick)="search()">
         </p-button>
         <p-button
+          icon="pi pi-sitemap"
+          [label]="t('actions.resolve')"
+          severity="secondary"
+          [outlined]="true"
+          [loading]="resolvingCanonical"
+          (onClick)="resolveCanonical()">
+        </p-button>
+        <p-button
           icon="pi pi-times"
           [label]="t('actions.reset')"
           severity="secondary"
@@ -58,6 +66,38 @@
         <div class="search-progress-strip" role="status" aria-live="polite">
           <i class="pi pi-spin pi-spinner"></i>
           <span>{{ searchProgressMessage() }}</span>
+        </div>
+      }
+
+      @if (canonicalCandidates.length) {
+        <div class="canonical-candidates">
+          <div class="canonical-header">
+            <div>
+              <strong>{{ t('resolve.title') }}</strong>
+              <span>{{ t('resolve.description') }}</span>
+            </div>
+          </div>
+          <div class="canonical-list">
+            @for (candidate of canonicalCandidates; track candidate.provider + ':' + canonicalCandidateTitle(candidate)) {
+              <div class="canonical-card">
+                <div class="canonical-main">
+                  <div class="canonical-title-row">
+                    <strong>{{ canonicalCandidateTitle(candidate) }}</strong>
+                    <p-tag [value]="canonicalConfidence(candidate)" [severity]="scoreSeverity(candidate.confidence * 100)"></p-tag>
+                  </div>
+                  <span>{{ canonicalCandidateMeta(candidate) }}</span>
+                </div>
+                <p-button
+                  icon="pi pi-check"
+                  [label]="t('actions.useCanonical')"
+                  size="small"
+                  severity="success"
+                  [outlined]="true"
+                  (onClick)="applyCanonical(candidate)">
+                </p-button>
+              </div>
+            }
+          </div>
         </div>
       }
 

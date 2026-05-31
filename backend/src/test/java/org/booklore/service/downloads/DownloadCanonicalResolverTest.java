@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -93,6 +94,50 @@ class DownloadCanonicalResolverTest {
             assertThat(resolved.getAuthor()).isEqualTo("Akira Toriyama");
             assertThat(resolved.getQuery()).isEqualTo("Dragon Ball Super");
             assertThat(resolved.getContentKind()).isEqualTo(DownloadContentKind.MANGA);
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void exposesCanonicalCandidatesWithParsedSequenceIntent() throws Exception {
+        HttpServer server = jsonServer("/manga", """
+                {
+                  "data": [
+                    {
+                      "id": "manga-1",
+                      "attributes": {
+                        "title": {"en": "Dragon Ball Super"}
+                      },
+                      "relationships": [
+                        {"type": "author", "attributes": {"name": "Akira Toriyama"}}
+                      ]
+                    }
+                  ]
+                }
+                """);
+        server.start();
+        try {
+            DownloadCanonicalResolver resolver = resolver();
+            resolver.openLibraryEnabled = false;
+            resolver.googleBooksEnabled = false;
+            resolver.mangaDexBaseUrl = baseUrl(server);
+            resolver.webtoonsEnabled = false;
+
+            DownloadSearchCriteria parsed = parser.enrich(DownloadSearchCriteria.builder()
+                    .query("Dragon Ball Super 24")
+                    .contentKind(DownloadContentKind.MANGA)
+                    .build());
+
+            List<DownloadCanonicalResolver.CanonicalCandidate> candidates = resolver.resolveCandidates(parsed);
+
+            assertThat(candidates).hasSize(1);
+            DownloadCanonicalResolver.CanonicalCandidate candidate = candidates.getFirst();
+            assertThat(candidate.provider()).isEqualTo("mangadex");
+            assertThat(candidate.resolvedSeriesName()).isEqualTo("Dragon Ball Super");
+            assertThat(candidate.seriesNumber()).isEqualTo(24F);
+            assertThat(candidate.sequenceNumberType().name()).isEqualTo("VOLUME");
+            assertThat(candidate.resolvedAuthor()).isEqualTo("Akira Toriyama");
         } finally {
             server.stop(0);
         }

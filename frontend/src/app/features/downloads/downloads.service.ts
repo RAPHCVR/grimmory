@@ -3,6 +3,7 @@ import {HttpClient, HttpParams} from '@angular/common/http';
 import {Observable} from 'rxjs';
 import {API_CONFIG} from '../../core/config/api-config';
 import {
+  DownloadCanonicalCandidate,
   DownloadAcquireRequest,
   DownloadJob,
   DownloadJobStatus,
@@ -38,6 +39,10 @@ export class DownloadsService {
 
   search(request: DownloadSearchRequest): Observable<DownloadSearchResponse> {
     return this.http.post<DownloadSearchResponse>(`${this.baseUrl}/search`, request);
+  }
+
+  resolve(request: DownloadSearchRequest): Observable<DownloadCanonicalCandidate[]> {
+    return this.http.post<DownloadCanonicalCandidate[]>(`${this.baseUrl}/resolve`, request);
   }
 
   queueBestMatch(request: DownloadAcquireRequest): Observable<DownloadJob> {

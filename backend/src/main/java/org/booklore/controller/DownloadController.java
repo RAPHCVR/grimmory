@@ -18,6 +18,7 @@ import org.booklore.model.enums.*;
 import org.booklore.repository.DownloadJobRepository;
 import org.booklore.repository.DownloadResultRepository;
 import org.booklore.repository.DownloadSourceRepository;
+import org.booklore.service.downloads.DownloadCanonicalResolver;
 import org.booklore.service.downloads.DownloadJobCleanupService;
 import org.booklore.service.downloads.DownloadJobRunner;
 import org.booklore.service.downloads.DownloadPipelineManager;
@@ -101,6 +102,13 @@ public class DownloadController {
                 search.getErrorMessage(),
                 results
         );
+    }
+
+    @Operation(summary = "Resolve canonical work candidates")
+    @ApiResponse(responseCode = "200", description = "Canonical candidates returned successfully")
+    @PostMapping("/resolve")
+    public List<DownloadCanonicalResolver.CanonicalCandidate> resolve(@Parameter(description = "Download canonical resolve request") @RequestBody DownloadSearchRequest request) {
+        return pipelineManager.resolveCandidates(toCriteria(request));
     }
 
     @Operation(summary = "Queue best matching download result")

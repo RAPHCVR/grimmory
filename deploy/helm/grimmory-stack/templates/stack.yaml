@@ -257,6 +257,11 @@ spec:
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      securityContext:
+        fsGroup: {{ .Values.grimmory.groupId | int }}
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
       initContainers:
         - name: wait-for-db
           image: "{{ .Values.images.busybox.repository }}:{{ .Values.images.busybox.tag }}"
@@ -267,7 +272,7 @@ spec:
             - |
               until nc -z mariadb 3306; do echo waiting for mariadb; sleep 3; done
               mkdir -p /bookdrop/.downloads /bookdrop/.downloads/stacks-cache /books /app/data
-              chown -R 1000:1000 /bookdrop /books /app/data || true
+              chown -R {{ .Values.grimmory.userId | int }}:{{ .Values.grimmory.groupId | int }} /bookdrop /books /app/data || true
               chmod 775 /bookdrop /books /app/data || true
               chmod 755 /bookdrop/lost+found /books/lost+found 2>/dev/null || true
           volumeMounts:
@@ -281,6 +286,16 @@ spec:
         - name: grimmory
           image: "{{ .Values.images.grimmory.repository }}:{{ .Values.images.grimmory.tag }}"
           imagePullPolicy: {{ .Values.images.grimmory.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsGroup: {{ .Values.grimmory.groupId | int }}
+            runAsNonRoot: true
+            runAsUser: {{ .Values.grimmory.userId | int }}
+            seccompProfile:
+              type: RuntimeDefault
           ports:
             - name: http
               containerPort: {{ .Values.grimmory.port }}
