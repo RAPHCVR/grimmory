@@ -11,9 +11,9 @@ Current confirmed baseline:
 
 - Grimmory branch is pushed/synced to origin.
 - Runtime image tag: `ghcr.io/raphcvr/grimmory:downloads-acquisition`.
-- Runtime version after last rollout: `downloads-acquisition-ba00db41`.
-- Runtime digest after last rollout: `sha256:d3468fdad803c0c8e71a995c2923c3041759aa2aa87f740664d19ca5a7b24805`.
-- Current DB counts previously verified: users=1, books=2, libraries=1, download_sources=5.
+- Runtime version after last rollout: `downloads-acquisition-f820ebe3`.
+- Runtime digest after last rollout: `sha256:9906854902e8b99c5ee0f4376e1d2152d72ddc1010abe72e37e901198f410f85`.
+- Current DB counts verified after post-rollout smoke cleanup: users=1, books=2, libraries=1, download_sources=5, download_jobs=0.
 - Current known good DB dump previously verified: `/dumps/grimmory/20260531T174114Z_users-1_books-2_libraries-1.sql.gz`.
 - BookLore local folder is only a placeholder/shortcut, not a Git repo.
 
@@ -129,3 +129,55 @@ Work items from the last two conversations:
   - `frontend/dist/`
   - `frontend/test-results/`
   - `frontend/node_modules/`
+
+### 2026-05-31 rollout revision 19 and post-rollout smoke
+
+- Built and pushed Docker image:
+  - tag: `ghcr.io/raphcvr/grimmory:downloads-acquisition`.
+  - revision: `f820ebe38b3bfc470d3ee922191d23624add61e0`.
+  - digest: `sha256:9906854902e8b99c5ee0f4376e1d2152d72ddc1010abe72e37e901198f410f85`.
+- Helm rollout:
+  - release: `grimmory-stack`.
+  - namespace: `grimmory`.
+  - revision: `19`.
+  - status: `deployed`.
+- Runtime health:
+  - pod: `grimmory-56cd55b5f6-n4hr7`.
+  - image: `ghcr.io/raphcvr/grimmory:downloads-acquisition`.
+  - imageID: `ghcr.io/raphcvr/grimmory@sha256:9906854902e8b99c5ee0f4376e1d2152d72ddc1010abe72e37e901198f410f85`.
+  - healthcheck: `UP`.
+  - version: `downloads-acquisition-f820ebe3`.
+- Grimmory container security:
+  - `runAsUser=1000`, `runAsGroup=1000`, `runAsNonRoot=true`.
+  - `allowPrivilegeEscalation=false`.
+  - `capabilities.drop=["ALL"]`.
+  - `seccompProfile.type=RuntimeDefault`.
+  - runtime `id`: `uid=1000 gid=1000 groups=1000`.
+- Source bootstrap after rollout completed:
+  - Prowlarr (Auto-Deploy)
+  - MangaDex (Native)
+  - Anna's Archive (Stacks)
+  - Webtoons (Gallery-dl)
+  - Kagane (FlareSolverr)
+- Prowlarr post-bootstrap state:
+  - LinuxTracker absent.
+  - Internet Archive absent.
+  - 1337x enabled and tagged for FlareSolverr.
+  - Native Prowlarr searches against 1337x returned results for `ubuntu`, `solo leveling`, and `dragon ball super 24`.
+- Resolver/search runtime spot checks:
+  - `dragon ball super 24` as MANGA resolves to `VOLUME` intent and volume results outrank MangaDex chapter 24.
+  - `dragon ball super chapitre 24` as MANGA resolves to `CHAPTER` intent and MangaDex chapter 24 scores high.
+  - `solo leveling` as WEBTOON returns Webtoons/Asura candidates.
+  - `batman 404` as COMIC returns ComicVine candidates, confirming runtime ComicVine secret wiring.
+- Controlled acquisition smoke after rollout, with temporary sources and temporary in-cluster provider:
+  - `DIRECT_FILE` EPUB: job `6`, `PENDING_REVIEW`, score `100`, delivered file verified.
+  - `MANGADEX_CHAPTER` CBZ: job `7`, `PENDING_REVIEW`, score `100`, delivered file verified.
+  - `CLI_GALLERY_DL` CBZ: job `8`, `PENDING_REVIEW`, score `100`, delivered file verified.
+  - `KAGANE_CHAPTER` CBZ through real FlareSolverr: job `9`, `PENDING_REVIEW`, score `100`, delivered file verified.
+  - `TORRENT` EPUB through fake Prowlarr + fake qBittorrent APIs: job `10`, `PENDING_REVIEW`, score `80`, delivered file verified.
+- Cleanup after post-rollout smoke:
+  - smoke sources: `0`.
+  - smoke jobs/searches: `0`.
+  - smoke Kubernetes Deployment/Services/ConfigMap: absent.
+  - smoke files under `/bookdrop`: absent.
+  - DB counts: users=1, books=2, libraries=1, download_sources=5, download_jobs=0.
