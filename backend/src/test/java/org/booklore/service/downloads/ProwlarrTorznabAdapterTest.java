@@ -166,6 +166,16 @@ class ProwlarrTorznabAdapterTest {
                         "protocol": "torrent"
                       },
                       {
+                        "guid": "adult-video-noise",
+                        "infoHash": "4444444444444444444444444444444444444444",
+                        "title": "HD GS 323 cleaning staff began my time one piece pants girl into the adult toys in Masturbation",
+                        "indexer": "1337x",
+                        "categories": [{"name": "XXX"}],
+                        "size": 570000000,
+                        "downloadUrl": "magnet:?xt=urn:btih:4444444444444444444444444444444444444444",
+                        "protocol": "torrent"
+                      },
+                      {
                         "guid": "manga-release",
                         "infoHash": "2222222222222222222222222222222222222222",
                         "title": "Dragon Ball Super - Vol.24 - Full Color (Ch101 - Ch104)",
