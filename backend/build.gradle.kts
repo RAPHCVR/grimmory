@@ -9,7 +9,7 @@ plugins {
     java
     id("org.springframework.boot") version "4.0.6"
     id("io.spring.dependency-management") version "1.1.7"
-    id("org.hibernate.orm") version "7.3.3.Final"
+    id("org.hibernate.orm") version "7.3.4.Final"
     id("com.github.ben-manes.versions") version "0.54.0"
     jacoco
 }
@@ -245,9 +245,6 @@ dependencies {
     testImplementation("org.assertj:assertj-core:3.27.7")
     testRuntimeOnly("com.h2database:h2")
     add(openApiExportRuntimeOnly.name, "com.h2database:h2")
-
-    // PDFBox for test PDF creation only (production code uses PDFium4j)
-    testImplementation("org.apache.pdfbox:pdfbox:3.0.7")
 }
 
 dependencyLocking {

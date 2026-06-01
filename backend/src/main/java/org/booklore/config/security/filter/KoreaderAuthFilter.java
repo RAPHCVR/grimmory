@@ -71,7 +71,7 @@ public class KoreaderAuthFilter extends OncePerRequestFilter {
                 user.getUsername(),
                 user.getPasswordMD5(),
                 user.isSyncEnabled(),
-                user.isSyncWithBookloreReader(),
+                user.isSyncWithWebReader(),
                 bookLoreUserId,
                 List.of(new SimpleGrantedAuthority("ROLE_USER"))
         );
