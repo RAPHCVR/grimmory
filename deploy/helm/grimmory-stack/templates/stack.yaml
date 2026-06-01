@@ -446,6 +446,16 @@ spec:
         - name: flaresolverr
           image: "{{ .Values.images.flaresolverr.repository }}:{{ .Values.images.flaresolverr.tag }}"
           imagePullPolicy: {{ .Values.images.flaresolverr.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
           ports:
             - name: http
               containerPort: 8191
@@ -987,6 +997,12 @@ spec:
         app.kubernetes.io/component: bootstrap
     spec:
       restartPolicy: OnFailure
+      securityContext:
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
       {{- include "grimmory-stack.imagePullSecrets" . | nindent 6 }}
       {{- with .Values.global.nodeSelector }}
       nodeSelector:
@@ -996,6 +1012,16 @@ spec:
         - name: source-bootstrap
           image: "{{ .Values.images.bootstrap.repository }}:{{ .Values.images.bootstrap.tag }}"
           imagePullPolicy: {{ .Values.images.bootstrap.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
           env:
             - name: GRIMMORY_API_BASE
               value: "http://grimmory:{{ .Values.grimmory.port }}/api/v1"
