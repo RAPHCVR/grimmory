@@ -1,4 +1,4 @@
-import {Component, effect, inject, OnDestroy, OnInit} from '@angular/core';
+import {ChangeDetectorRef, Component, effect, inject, OnDestroy, OnInit} from '@angular/core';
 import {DatePipe} from '@angular/common';
 import {FormsModule} from '@angular/forms';
 import {Button} from 'primeng/button';
@@ -64,6 +64,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
   private readonly messageService = inject(MessageService);
   private readonly pageTitle = inject(PageTitleService);
   private readonly t = inject(TranslocoService);
+  private readonly cdr = inject(ChangeDetectorRef);
 
   query = '';
   title = '';
@@ -166,6 +167,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
             detail: this.searchError || this.t.translate('downloads.toast.noResultsDetail')
           });
         }
+        this.markViewDirty();
       },
       error: err => {
         this.searchError = err?.error?.message || err?.message || this.t.translate('downloads.toast.searchError');
@@ -174,6 +176,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
           summary: this.t.translate('common.error'),
           detail: this.searchError ?? this.t.translate('downloads.toast.searchError')
         });
+        this.markViewDirty();
       }
     });
   }
@@ -191,20 +194,28 @@ export class DownloadsComponent implements OnInit, OnDestroy {
       switchMap(job => {
         this.processingJobIds.add(job.id);
         this.loadJobs(false);
+        this.markViewDirty();
         this.messageService.add({
           severity: 'info',
           summary: this.t.translate('downloads.toast.jobQueuedSummary'),
           detail: this.t.translate('downloads.toast.jobQueuedDetail', {id: job.id})
         });
         return this.downloadsService.processJob(job.id).pipe(
-          finalize(() => this.processingJobIds.delete(job.id))
+          finalize(() => {
+            this.processingJobIds.delete(job.id);
+            this.markViewDirty();
+          })
         );
       }),
-      finalize(() => this.acquiringResultIds.delete(result.id))
+      finalize(() => {
+        this.acquiringResultIds.delete(result.id);
+        this.markViewDirty();
+      })
     ).subscribe({
       next: job => {
         this.loadJobs(false);
         this.showJobToast(job);
+        this.markViewDirty();
       },
       error: err => {
         this.loadJobs(false);
@@ -213,6 +224,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
           summary: this.t.translate('common.error'),
           detail: err?.error?.message || err?.message || this.t.translate('downloads.toast.acquireError')
         });
+        this.markViewDirty();
       }
     });
   }
@@ -221,11 +233,15 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     if (this.processingJobIds.has(job.id)) return;
     this.processingJobIds.add(job.id);
     this.downloadsService.processJob(job.id).pipe(
-      finalize(() => this.processingJobIds.delete(job.id))
+      finalize(() => {
+        this.processingJobIds.delete(job.id);
+        this.markViewDirty();
+      })
     ).subscribe({
       next: processed => {
         this.loadJobs(false);
         this.showJobToast(processed);
+        this.markViewDirty();
       },
       error: err => {
         this.loadJobs(false);
@@ -234,6 +250,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
           summary: this.t.translate('common.error'),
           detail: err?.error?.message || err?.message || this.t.translate('downloads.toast.processError')
         });
+        this.markViewDirty();
       }
     });
   }
@@ -242,7 +259,10 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     this.resolvingCanonical = true;
     this.searchError = null;
     this.downloadsService.resolve(request).pipe(
-      finalize(() => this.resolvingCanonical = false)
+      finalize(() => {
+        this.resolvingCanonical = false;
+        this.markViewDirty();
+      })
     ).subscribe({
       next: candidates => {
         this.canonicalCandidates = candidates ?? [];
@@ -254,9 +274,11 @@ export class DownloadsComponent implements OnInit, OnDestroy {
             summary: this.t.translate('downloads.resolve.title'),
             detail: this.t.translate('downloads.resolve.description')
           });
+          this.markViewDirty();
           return;
         }
         this.runSourceSearch(request);
+        this.markViewDirty();
       },
       error: err => {
         this.searchError = err?.error?.message || err?.message || this.t.translate('downloads.resolve.error');
@@ -265,6 +287,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
           summary: this.t.translate('common.error'),
           detail: this.searchError ?? this.t.translate('downloads.resolve.error')
         });
+        this.markViewDirty();
       }
     });
   }
@@ -291,7 +314,10 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     this.clearCanonicalLock();
     this.resolvingCanonical = true;
     this.downloadsService.resolve(request).pipe(
-      finalize(() => this.resolvingCanonical = false)
+      finalize(() => {
+        this.resolvingCanonical = false;
+        this.markViewDirty();
+      })
     ).subscribe({
       next: candidates => {
         this.canonicalCandidates = candidates ?? [];
@@ -302,6 +328,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
             detail: this.t.translate('downloads.resolve.noneDetail')
           });
         }
+        this.markViewDirty();
       },
       error: err => {
         this.messageService.add({
@@ -309,6 +336,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
           summary: this.t.translate('common.error'),
           detail: err?.error?.message || err?.message || this.t.translate('downloads.resolve.error')
         });
+        this.markViewDirty();
       }
     });
   }
@@ -332,6 +360,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
       summary: this.t.translate('downloads.resolve.appliedSummary'),
       detail: this.t.translate('downloads.resolve.appliedDetail', {title: this.canonicalCandidateTitle(candidate)})
     });
+    this.markViewDirty();
     this.search();
   }
 
@@ -339,7 +368,10 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     if (!this.canRetry(job) || this.retryingJobIds.has(job.id)) return;
     this.retryingJobIds.add(job.id);
     this.downloadsService.retryJob(job.id).pipe(
-      finalize(() => this.retryingJobIds.delete(job.id))
+      finalize(() => {
+        this.retryingJobIds.delete(job.id);
+        this.markViewDirty();
+      })
     ).subscribe({
       next: retried => {
         this.loadJobs(false);
@@ -349,6 +381,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
           detail: this.t.translate('downloads.toast.jobRetryDetail', {oldId: job.id, id: retried.id})
         });
         this.showJobToast(retried);
+        this.markViewDirty();
       },
       error: err => {
         this.loadJobs(false);
@@ -357,6 +390,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
           summary: this.t.translate('common.error'),
           detail: err?.error?.message || err?.message || this.t.translate('downloads.toast.retryError')
         });
+        this.markViewDirty();
       }
     });
   }
@@ -369,9 +403,11 @@ export class DownloadsComponent implements OnInit, OnDestroy {
       next: jobs => {
         this.jobs = jobs ?? [];
         this.loadingJobs = false;
+        this.markViewDirty();
       },
       error: () => {
         this.loadingJobs = false;
+        this.markViewDirty();
       }
     });
   }
@@ -379,7 +415,10 @@ export class DownloadsComponent implements OnInit, OnDestroy {
   cleanup(): void {
     this.cleanupRunning = true;
     this.downloadsService.cleanupNow().pipe(
-      finalize(() => this.cleanupRunning = false)
+      finalize(() => {
+        this.cleanupRunning = false;
+        this.markViewDirty();
+      })
     ).subscribe({
       next: () => {
         this.loadJobs(false);
@@ -388,6 +427,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
           summary: this.t.translate('common.success'),
           detail: this.t.translate('downloads.toast.cleanupDone')
         });
+        this.markViewDirty();
       },
       error: err => {
         this.messageService.add({
@@ -395,6 +435,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
           summary: this.t.translate('common.error'),
           detail: err?.error?.message || this.t.translate('downloads.toast.cleanupError')
         });
+        this.markViewDirty();
       }
     });
   }
@@ -417,6 +458,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     this.canonicalSearchSignature = null;
     this.searchId = null;
     this.searchError = null;
+    this.markViewDirty();
   }
 
   authors(result: DownloadResult): string {
@@ -516,6 +558,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
   clearCanonicalLock(): void {
     this.selectedCanonicalCandidate = null;
     this.canonicalSearchSignature = null;
+    this.markViewDirty();
   }
 
   acquisitionLabel(acquisitionType: string): string {
@@ -716,7 +759,9 @@ export class DownloadsComponent implements OnInit, OnDestroy {
       } else {
         this.searchProgressKey = 'downloads.search.progressStarting';
       }
+      this.markViewDirty();
     }, 500);
+    this.markViewDirty();
   }
 
   private stopSearchProgress(): void {
@@ -725,6 +770,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     }
     this.loadingResults = false;
     this.clearSearchProgressTimer();
+    this.markViewDirty();
   }
 
   private clearSearchProgressTimer(): void {
@@ -732,6 +778,10 @@ export class DownloadsComponent implements OnInit, OnDestroy {
       clearInterval(this.searchProgressTimer);
       this.searchProgressTimer = undefined;
     }
+  }
+
+  private markViewDirty(): void {
+    this.cdr.markForCheck();
   }
 
   private applyDefaultTargetIfSingle(): void {
