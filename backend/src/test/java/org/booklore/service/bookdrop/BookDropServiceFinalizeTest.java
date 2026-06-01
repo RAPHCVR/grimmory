@@ -5,6 +5,7 @@ import org.booklore.model.dto.request.BookdropFinalizeRequest;
 import org.booklore.repository.BookdropFileRepository;
 import org.booklore.repository.LibraryRepository;
 import org.booklore.service.NotificationService;
+import org.booklore.service.downloads.DownloadBookdropReviewService;
 import org.booklore.service.file.FileMovingHelper;
 import org.booklore.service.kobo.KoboAutoShelfService;
 import org.booklore.service.monitoring.MonitoringRegistrationService;
@@ -43,6 +44,8 @@ class BookDropServiceFinalizeTest {
     private BookdropNotificationService bookdropNotificationService;
     @Mock
     private KoboAutoShelfService koboAutoShelfService;
+    @Mock
+    private DownloadBookdropReviewService downloadBookdropReviewService;
 
     @InjectMocks
     private BookDropService bookDropService;

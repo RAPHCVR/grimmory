@@ -19,6 +19,8 @@ public interface DownloadJobRepository extends JpaRepository<DownloadJobEntity, 
 
     List<DownloadJobEntity> findAllByStatusInAndLastProgressAtBefore(Collection<DownloadJobStatus> statuses, Instant cutoff);
 
+    List<DownloadJobEntity> findAllByStatusAndDeliveredFilePath(DownloadJobStatus status, String deliveredFilePath);
+
     @EntityGraph(attributePaths = {"search", "result", "source"})
     Optional<DownloadJobEntity> findWithSearchAndResultAndSourceById(Long id);
 }

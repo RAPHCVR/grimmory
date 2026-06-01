@@ -35,19 +35,23 @@ images:
   flaresolverr:
     repository: ghcr.io/flaresolverr/flaresolverr
     tag: v3.5.0
-    pullPolicy: Always
+    digest: sha256:139dfee1c6f89249c8d665d1333a42e8ec74ec0a86bc6bb1c8461e10d3a66a47
+    pullPolicy: IfNotPresent
   prowlarr:
     repository: lscr.io/linuxserver/prowlarr
     tag: latest
-    pullPolicy: Always
+    digest: sha256:c9fe528f34b1fd3715438b6f6d6991d64e2965f2c055db36398bc66a0e7eab01
+    pullPolicy: IfNotPresent
   qbittorrent:
     repository: lscr.io/linuxserver/qbittorrent
     tag: latest
-    pullPolicy: Always
+    digest: sha256:715d2bfbcf1cd3d734cbbd4fbd599eb7ea0642eaa079a372dd0d343f59516700
+    pullPolicy: IfNotPresent
   stacks:
     repository: zelest/stacks
     tag: latest
-    pullPolicy: Always
+    digest: sha256:596d02602f80cef566b61b8abd3c1eee2bc6110c1a39b96401704d20cff71667
+    pullPolicy: IfNotPresent
   bootstrap:
     repository: python
     tag: 3.13-alpine

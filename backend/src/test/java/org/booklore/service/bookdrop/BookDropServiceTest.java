@@ -22,6 +22,7 @@ import org.booklore.service.event.BookAddedEvent;
 import org.booklore.service.file.FileMovingHelper;
 import org.booklore.service.fileprocessor.BookFileProcessor;
 import org.booklore.service.fileprocessor.BookFileProcessorRegistry;
+import org.booklore.service.downloads.DownloadBookdropReviewService;
 import org.booklore.service.metadata.MetadataRefreshService;
 import org.booklore.service.monitoring.MonitoringRegistrationService;
 import org.junit.jupiter.api.AfterEach;
@@ -89,6 +90,8 @@ class BookDropServiceTest {
     private FileMovingHelper fileMovingHelper;
     @Mock
     private ApplicationEventPublisher eventPublisher;
+    @Mock
+    private DownloadBookdropReviewService downloadBookdropReviewService;
 
     @InjectMocks
     private BookDropService bookDropService;

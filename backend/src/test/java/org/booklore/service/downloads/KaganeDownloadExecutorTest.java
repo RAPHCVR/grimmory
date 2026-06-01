@@ -10,6 +10,7 @@ import org.booklore.service.downloads.client.FlareSolverrClient;
 import org.booklore.service.downloads.dto.NormalizedDownloadResult;
 import org.booklore.service.downloads.executor.DownloadExecutionRequest;
 import org.booklore.service.downloads.executor.KaganeDownloadExecutor;
+import org.booklore.service.downloads.exception.DownloadSourceException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import tools.jackson.databind.ObjectMapper;
@@ -28,6 +29,7 @@ import java.util.zip.ZipInputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class KaganeDownloadExecutorTest {
@@ -144,6 +146,71 @@ class KaganeDownloadExecutorTest {
             assertEquals(List.of("001.jpg", "002.png"), zipEntries(targetPartFile));
             assertFalse(Files.exists(tempDir.resolve("kagane-pages")));
             assertEquals(100, progress.getLast());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void download_reportsMaintenancePageWhenKaganeDoesNotExposeReaderImages() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+        String chapterUrl = "https://kagane.example/series/current/reader/chapter";
+
+        server.createContext("/v1", exchange -> {
+            String html = """
+                    <html>
+                      <head><title>Site Under Maintenance</title></head>
+                      <body>Site Under Maintenance</body>
+                    </html>
+                    """;
+            byte[] response = objectMapper.writeValueAsBytes(Map.of(
+                    "status", "ok",
+                    "solution", Map.of(
+                            "response", html,
+                            "userAgent", "Mozilla/5.0 KaganeTest",
+                            "cookies", List.of()
+                    )
+            ));
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.start();
+
+        try {
+            DownloadSourceEntity source = DownloadSourceEntity.builder()
+                    .name("Kagane")
+                    .type(DownloadSourceType.DIRECT_URL)
+                    .configJson(objectMapper.writeValueAsString(Map.of(
+                            "flareSolverr", Map.of("baseUrl", baseUrl, "maxTimeoutMs", 5000)
+                    )))
+                    .build();
+            NormalizedDownloadResult result = NormalizedDownloadResult.builder()
+                    .title("Chapter")
+                    .contentKind(DownloadContentKind.WEBTOON)
+                    .format(DownloadFormat.CBZ)
+                    .downloadUrl(chapterUrl)
+                    .acquisitionType(DownloadAcquisitionType.KAGANE_CHAPTER)
+                    .build();
+            Path targetPartFile = tempDir.resolve("kagane.part");
+            DownloadSourceConfigReader configReader = new DownloadSourceConfigReader(objectMapper);
+            KaganeDownloadExecutor executor = new KaganeDownloadExecutor(
+                    new FlareSolverrClient(HttpClient.newHttpClient(), objectMapper, configReader),
+                    HttpClient.newHttpClient(),
+                    configReader
+            );
+
+            DownloadSourceException exception = assertThrows(DownloadSourceException.class, () -> executor.download(DownloadExecutionRequest.builder()
+                    .source(source)
+                    .result(result)
+                    .stagingDir(tempDir)
+                    .targetPartFile(targetPartFile)
+                    .build(), ignored -> { }));
+
+            assertTrue(exception.getMessage().contains("maintenance page"));
+            assertFalse(Files.exists(targetPartFile));
         } finally {
             server.stop(0);
         }

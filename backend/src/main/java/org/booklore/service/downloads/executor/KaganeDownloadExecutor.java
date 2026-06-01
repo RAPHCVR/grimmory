@@ -76,7 +76,7 @@ public class KaganeDownloadExecutor implements DownloadExecutor {
 
             List<String> imageUrls = extractImageUrls(solvedPage.response(), chapterUrl, config.imageSelector());
             if (imageUrls.isEmpty()) {
-                throw new DownloadSourceException("Kagane chapter page did not contain readable image URLs");
+                throw pageStateException(solvedPage.response());
             }
 
             List<PageFile> pages = downloadImages(chapterUrl, solvedPage, imageUrls, pagesDir, config.timeoutSeconds(), progressSink);
@@ -109,6 +109,23 @@ public class KaganeDownloadExecutor implements DownloadExecutor {
             addImageUrl(urls, resolveSrcSetUrl(image.attr("srcset"), chapterUrl));
         }
         return List.copyOf(urls);
+    }
+
+    private DownloadSourceException pageStateException(String html) {
+        Document document = Jsoup.parse(html == null ? "" : html);
+        String title = document.title();
+        String normalizedTitle = title == null ? "" : title.toLowerCase(Locale.ROOT);
+        String normalizedBody = document.text().toLowerCase(Locale.ROOT);
+        if (normalizedTitle.contains("site under maintenance") || normalizedBody.contains("site under maintenance")) {
+            return new DownloadSourceException("Kagane is currently serving a maintenance page instead of a reader chapter");
+        }
+        if (normalizedTitle.contains("404") || normalizedBody.contains("404 page not found")) {
+            return new DownloadSourceException("Kagane chapter URL returned a 404 page instead of readable chapter images");
+        }
+        if (normalizedBody.contains("sign in") || normalizedBody.contains("welcome back") || normalizedBody.contains("login")) {
+            return new DownloadSourceException("Kagane chapter URL requires authentication and did not expose readable chapter images");
+        }
+        return new DownloadSourceException("Kagane chapter page did not contain readable image URLs");
     }
 
     private void addImageUrl(Set<String> urls, String candidate) {

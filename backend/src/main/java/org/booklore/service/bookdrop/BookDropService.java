@@ -31,6 +31,7 @@ import org.booklore.service.event.BookAddedEvent;
 import org.booklore.service.file.FileMovingHelper;
 import org.booklore.service.fileprocessor.BookFileProcessor;
 import org.booklore.service.fileprocessor.BookFileProcessorRegistry;
+import org.booklore.service.downloads.DownloadBookdropReviewService;
 import org.booklore.service.metadata.MetadataRefreshService;
 import org.booklore.service.monitoring.MonitoringRegistrationService;
 import org.booklore.util.FileUtils;
@@ -76,6 +77,7 @@ public class BookDropService {
     private final FileMovingHelper fileMovingHelper;
     private final MonitoringRegistrationService monitoringRegistrationService;
     private final ApplicationEventPublisher eventPublisher;
+    private final DownloadBookdropReviewService downloadBookdropReviewService;
 
     private static final int CHUNK_SIZE = 100;
 
@@ -128,6 +130,9 @@ public class BookDropService {
             }
 
             List<BookdropFileEntity> filesToDelete = getFilesToDelete(selectAll, excludedIds, selectedIds);
+            markDownloadJobsCancelled(filesToDelete.stream()
+                    .map(BookdropFileEntity::getFilePath)
+                    .toList());
             deleteFilesAndCovers(filesToDelete, deletedFiles, deletedCovers);
             deleteEmptyDirectories(bookdropPath, deletedDirs);
 
@@ -437,6 +442,7 @@ public class BookDropService {
             }
 
             if (result.isSuccess()) {
+                markDownloadJobCompleted(source.toString());
                 try {
                     Files.delete(source);
                     log.info("Successfully deleted source file '{}' after successful import for file id={}", source, bookdropFile.getId());
@@ -455,6 +461,22 @@ public class BookDropService {
             return failureResult(bookdropFile.getFileName(), "Failed to move file: " + e.getMessage());
         } finally {
             cleanupTempFile(tempPath);
+        }
+    }
+
+    private void markDownloadJobCompleted(String sourcePath) {
+        try {
+            downloadBookdropReviewService.markCompletedForBookdropPath(sourcePath);
+        } catch (Exception e) {
+            log.warn("Failed to mark download job as completed after Bookdrop import for '{}': {}", sourcePath, e.getMessage());
+        }
+    }
+
+    private void markDownloadJobsCancelled(List<String> sourcePaths) {
+        try {
+            downloadBookdropReviewService.markCancelledForBookdropPaths(sourcePaths);
+        } catch (Exception e) {
+            log.warn("Failed to mark download jobs as cancelled after Bookdrop discard: {}", e.getMessage());
         }
     }
 

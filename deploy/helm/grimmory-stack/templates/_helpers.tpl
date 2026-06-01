@@ -31,6 +31,14 @@ imagePullSecrets:
 {{- end }}
 {{- end -}}
 
+{{- define "grimmory-stack.image" -}}
+{{- if .digest -}}
+{{- printf "%s@%s" .repository .digest -}}
+{{- else -}}
+{{- printf "%s:%s" .repository .tag -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "grimmory-stack.keelAnnotations" -}}
 {{- if .Values.global.keel.enabled }}
 keel.sh/policy: {{ .Values.global.keel.policy | quote }}

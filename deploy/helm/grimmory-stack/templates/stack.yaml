@@ -128,7 +128,7 @@ spec:
       {{- end }}
       initContainers:
         - name: guard-existing-mariadb-datadir
-          image: "{{ .Values.images.busybox.repository }}:{{ .Values.images.busybox.tag }}"
+          image: "{{ include "grimmory-stack.image" .Values.images.busybox }}"
           imagePullPolicy: {{ .Values.images.busybox.pullPolicy }}
           command:
             - sh
@@ -163,7 +163,7 @@ spec:
               mountPath: /var/lib/mysql
       containers:
         - name: mariadb
-          image: "{{ .Values.images.mariadb.repository }}:{{ .Values.images.mariadb.tag }}"
+          image: "{{ include "grimmory-stack.image" .Values.images.mariadb }}"
           imagePullPolicy: {{ .Values.images.mariadb.pullPolicy }}
           ports:
             - name: mysql
@@ -264,7 +264,7 @@ spec:
           type: RuntimeDefault
       initContainers:
         - name: wait-for-db
-          image: "{{ .Values.images.busybox.repository }}:{{ .Values.images.busybox.tag }}"
+          image: "{{ include "grimmory-stack.image" .Values.images.busybox }}"
           imagePullPolicy: {{ .Values.images.busybox.pullPolicy }}
           command:
             - sh
@@ -284,7 +284,7 @@ spec:
               mountPath: /app/data
       containers:
         - name: grimmory
-          image: "{{ .Values.images.grimmory.repository }}:{{ .Values.images.grimmory.tag }}"
+          image: "{{ include "grimmory-stack.image" .Values.images.grimmory }}"
           imagePullPolicy: {{ .Values.images.grimmory.pullPolicy }}
           securityContext:
             allowPrivilegeEscalation: false
@@ -444,7 +444,7 @@ spec:
       {{- end }}
       containers:
         - name: flaresolverr
-          image: "{{ .Values.images.flaresolverr.repository }}:{{ .Values.images.flaresolverr.tag }}"
+          image: "{{ include "grimmory-stack.image" .Values.images.flaresolverr }}"
           imagePullPolicy: {{ .Values.images.flaresolverr.pullPolicy }}
           securityContext:
             allowPrivilegeEscalation: false
@@ -524,7 +524,7 @@ spec:
       {{- end }}
       initContainers:
         - name: init-prowlarr-config
-          image: "{{ .Values.images.busybox.repository }}:{{ .Values.images.busybox.tag }}"
+          image: "{{ include "grimmory-stack.image" .Values.images.busybox }}"
           imagePullPolicy: {{ .Values.images.busybox.pullPolicy }}
           env:
             - name: PROWLARR_API_KEY
@@ -561,7 +561,7 @@ spec:
               mountPath: /config
       containers:
         - name: prowlarr
-          image: "{{ .Values.images.prowlarr.repository }}:{{ .Values.images.prowlarr.tag }}"
+          image: "{{ include "grimmory-stack.image" .Values.images.prowlarr }}"
           imagePullPolicy: {{ .Values.images.prowlarr.pullPolicy }}
           ports:
             - name: http
@@ -648,7 +648,7 @@ spec:
       {{- end }}
       initContainers:
         - name: init-qbittorrent-config
-          image: "{{ .Values.images.busybox.repository }}:{{ .Values.images.busybox.tag }}"
+          image: "{{ include "grimmory-stack.image" .Values.images.busybox }}"
           imagePullPolicy: {{ .Values.images.busybox.pullPolicy }}
           env:
             - name: QBIT_PASSWORD_PBKDF2
@@ -688,7 +688,7 @@ spec:
               mountPath: /bookdrop
       containers:
         - name: qbittorrent
-          image: "{{ .Values.images.qbittorrent.repository }}:{{ .Values.images.qbittorrent.tag }}"
+          image: "{{ include "grimmory-stack.image" .Values.images.qbittorrent }}"
           imagePullPolicy: {{ .Values.images.qbittorrent.pullPolicy }}
           ports:
             - name: http
@@ -782,7 +782,7 @@ spec:
       {{- end }}
       initContainers:
         - name: init-stacks-config
-          image: "{{ .Values.images.busybox.repository }}:{{ .Values.images.busybox.tag }}"
+          image: "{{ include "grimmory-stack.image" .Values.images.busybox }}"
           imagePullPolicy: {{ .Values.images.busybox.pullPolicy }}
           env:
             - name: STACKS_USERNAME
@@ -862,7 +862,7 @@ spec:
               mountPath: /bookdrop
       containers:
         - name: stacks
-          image: "{{ .Values.images.stacks.repository }}:{{ .Values.images.stacks.tag }}"
+          image: "{{ include "grimmory-stack.image" .Values.images.stacks }}"
           imagePullPolicy: {{ .Values.images.stacks.pullPolicy }}
           command: ["/bin/sh", "/opt/stacks/bootstrap/entrypoint.sh"]
           ports:
@@ -1010,7 +1010,7 @@ spec:
       {{- end }}
       containers:
         - name: source-bootstrap
-          image: "{{ .Values.images.bootstrap.repository }}:{{ .Values.images.bootstrap.tag }}"
+          image: "{{ include "grimmory-stack.image" .Values.images.bootstrap }}"
           imagePullPolicy: {{ .Values.images.bootstrap.pullPolicy }}
           securityContext:
             allowPrivilegeEscalation: false
