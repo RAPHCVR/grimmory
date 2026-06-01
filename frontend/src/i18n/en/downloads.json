@@ -11,7 +11,9 @@
     "retry": "Retry",
     "resolve": "Resolve work",
     "useCanonical": "Use this work",
-    "clearCanonical": "Unlock"
+    "clearCanonical": "Unlock",
+    "details": "Details",
+    "close": "Close"
   },
   "search": {
     "placeholder": "Search by title, author, ISBN, series, or paste a direct URL below",
@@ -110,7 +112,18 @@
     "lockedTitle": "Canonical work locked",
     "lockedDetail": "{{title}} will be sent to acquisition sources as the selected catalogue identity.",
     "skippedDirectUrlSummary": "Resolver skipped",
-    "skippedDirectUrlDetail": "Direct URLs already identify a concrete acquisition target."
+    "skippedDirectUrlDetail": "Direct URLs already identify a concrete acquisition target.",
+    "detailsTitle": "Canonical work details",
+    "provider": "Provider",
+    "kind": "Kind",
+    "titleLabel": "Title",
+    "seriesLabel": "Series",
+    "authorLabel": "Author",
+    "isbnLabel": "ISBN",
+    "yearLabel": "Year",
+    "sequenceLabel": "Number",
+    "confidence": "Confidence",
+    "openProvider": "Open provider page"
   },
   "contentKinds": {
     "AUTO": "Auto",

@@ -146,6 +146,105 @@
             </div>
           </div>
 
+          @if (sourceForm.controls.type.value === 'PROWLARR_TORZNAB') {
+            <div class="guided-source-card">
+              <div class="guided-header">
+                <div>
+                  <strong>{{ t('guided.title') }}</strong>
+                  <span>{{ t('guided.description') }}</span>
+                </div>
+                <p-button
+                  icon="pi pi-sync"
+                  size="small"
+                  [label]="t('actions.syncJson')"
+                  severity="secondary"
+                  [outlined]="true"
+                  (onClick)="syncTorznabQbitJson()">
+                </p-button>
+              </div>
+
+              <div class="guided-grid">
+                <div class="form-field">
+                  <label for="download-source-preset">{{ t('guided.profile') }}</label>
+                  <p-select
+                    inputId="download-source-preset"
+                    [options]="torznabPresetOptions"
+                    [(ngModel)]="torznabPreset"
+                    [ngModelOptions]="{standalone: true}"
+                    optionLabel="label"
+                    optionValue="value"
+                    [appendTo]="'body'"
+                    (onChange)="onTorznabPresetChanged($event.value)">
+                  </p-select>
+                </div>
+                <div class="form-field">
+                  <label for="download-source-torznab-url">{{ t('guided.sourceUrl') }}</label>
+                  <input id="download-source-torznab-url" pInputText [(ngModel)]="torznabBaseUrl" [ngModelOptions]="{standalone: true}" autocomplete="off"/>
+                </div>
+                <div class="form-field">
+                  <label for="download-source-torznab-key">{{ t('guided.apiKey') }}</label>
+                  <input id="download-source-torznab-key" pInputText [(ngModel)]="torznabApiKey" [ngModelOptions]="{standalone: true}" autocomplete="off"/>
+                </div>
+                <div class="form-field">
+                  <label for="download-source-indexer">{{ t('guided.indexer') }}</label>
+                  <input id="download-source-indexer" pInputText [(ngModel)]="torznabIndexer" [ngModelOptions]="{standalone: true}" autocomplete="off"/>
+                </div>
+                <div class="form-field">
+                  <label for="download-source-indexer-ids">{{ t('guided.indexerIds') }}</label>
+                  <input id="download-source-indexer-ids" pInputText [(ngModel)]="torznabIndexerIds" [ngModelOptions]="{standalone: true}" autocomplete="off"/>
+                </div>
+                <div class="form-field">
+                  <label for="download-source-categories">{{ t('guided.categories') }}</label>
+                  <input id="download-source-categories" pInputText [(ngModel)]="torznabCategories" [ngModelOptions]="{standalone: true}" autocomplete="off"/>
+                </div>
+                <div class="form-field compact">
+                  <label for="download-source-timeout">{{ t('guided.timeoutSeconds') }}</label>
+                  <p-inputnumber inputId="download-source-timeout" [(ngModel)]="torznabTimeoutSeconds" [ngModelOptions]="{standalone: true}" [min]="3" [max]="300" [showButtons]="true"></p-inputnumber>
+                </div>
+              </div>
+
+              <div class="guided-subtitle">{{ t('guided.qbitTitle') }}</div>
+              <div class="guided-grid qbit-grid">
+                <div class="form-field">
+                  <label for="download-source-qbit-url">{{ t('guided.qbitUrl') }}</label>
+                  <input id="download-source-qbit-url" pInputText [(ngModel)]="qbitBaseUrl" [ngModelOptions]="{standalone: true}" autocomplete="off"/>
+                </div>
+                <div class="form-field">
+                  <label for="download-source-qbit-user">{{ t('guided.qbitUsername') }}</label>
+                  <input id="download-source-qbit-user" pInputText [(ngModel)]="qbitUsername" [ngModelOptions]="{standalone: true}" autocomplete="off"/>
+                </div>
+                <div class="form-field">
+                  <label for="download-source-qbit-pass">{{ t('guided.qbitPassword') }}</label>
+                  <input id="download-source-qbit-pass" pInputText type="password" [(ngModel)]="qbitPassword" [ngModelOptions]="{standalone: true}" autocomplete="new-password"/>
+                </div>
+                <div class="form-field">
+                  <label for="download-source-qbit-category">{{ t('guided.qbitCategory') }}</label>
+                  <input id="download-source-qbit-category" pInputText [(ngModel)]="qbitCategory" [ngModelOptions]="{standalone: true}" autocomplete="off"/>
+                </div>
+                <div class="form-field">
+                  <label for="download-source-qbit-tags">{{ t('guided.qbitTags') }}</label>
+                  <input id="download-source-qbit-tags" pInputText [(ngModel)]="qbitTags" [ngModelOptions]="{standalone: true}" autocomplete="off"/>
+                </div>
+                <div class="form-field compact">
+                  <label for="download-source-qbit-timeout">{{ t('guided.qbitTimeoutMinutes') }}</label>
+                  <p-inputnumber inputId="download-source-qbit-timeout" [(ngModel)]="qbitTimeoutMinutes" [ngModelOptions]="{standalone: true}" [min]="1" [max]="1440" [showButtons]="true"></p-inputnumber>
+                </div>
+                <div class="form-field compact">
+                  <label for="download-source-qbit-poll">{{ t('guided.qbitPollSeconds') }}</label>
+                  <p-inputnumber inputId="download-source-qbit-poll" [(ngModel)]="qbitPollIntervalSeconds" [ngModelOptions]="{standalone: true}" [min]="2" [max]="120" [showButtons]="true"></p-inputnumber>
+                </div>
+                <div class="form-field toggle-field">
+                  <label for="download-source-qbit-delete-torrent">{{ t('guided.deleteTorrent') }}</label>
+                  <p-toggleswitch inputId="download-source-qbit-delete-torrent" [(ngModel)]="qbitDeleteTorrentOnComplete" [ngModelOptions]="{standalone: true}"></p-toggleswitch>
+                </div>
+                <div class="form-field toggle-field">
+                  <label for="download-source-qbit-delete-files">{{ t('guided.deleteFiles') }}</label>
+                  <p-toggleswitch inputId="download-source-qbit-delete-files" [(ngModel)]="qbitDeleteFilesOnComplete" [ngModelOptions]="{standalone: true}"></p-toggleswitch>
+                </div>
+              </div>
+            </div>
+          }
+
           <div class="json-grid">
             <div class="form-field">
               <div class="field-header">

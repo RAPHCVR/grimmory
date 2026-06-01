@@ -3,13 +3,14 @@
   "description": "Configure acquisition adapters used by the automated downloads pipeline.",
   "sources": {
     "sectionTitle": "Sources",
-    "sectionDesc": "Add Prowlarr, MangaDex, OPDS, direct URL, or custom plugin sources."
+    "sectionDesc": "Add Prowlarr, Jackett/Torznab, MangaDex, Anna/Stacks, OPDS, direct URL, or custom plugin sources."
   },
   "actions": {
     "addSource": "Add Source",
     "edit": "Edit",
     "delete": "Delete",
-    "formatJson": "Format JSON"
+    "formatJson": "Format JSON",
+    "syncJson": "Sync JSON"
   },
   "table": {
     "name": "Name",
@@ -47,7 +48,8 @@
     "PROWLARR_TORZNAB": "Prowlarr / Torznab",
     "DIRECT_URL": "Direct URL",
     "MANGADEX": "MangaDex",
-    "CUSTOM_WEB_PLUGIN": "Custom Web Plugin"
+    "CUSTOM_WEB_PLUGIN": "Custom Web Plugin",
+    "ANNAS_ARCHIVE_API": "Anna's Archive / Stacks"
   },
   "delete": {
     "header": "Delete source",
@@ -66,5 +68,26 @@
   },
   "empty": "No download source configured yet.",
   "accessRestricted": "Admin access required",
-  "accessDenied": "Download source management is restricted to instance administrators."
+  "accessDenied": "Download source management is restricted to instance administrators.",
+  "guided": {
+    "title": "Guided Prowlarr / Jackett + qBittorrent setup",
+    "description": "Fill these fields for your indexer aggregator and associated downloader; Grimmory writes the required credentials/config JSON for you.",
+    "profile": "Profile",
+    "sourceUrl": "Prowlarr / Jackett URL",
+    "apiKey": "API key",
+    "indexer": "Torznab indexer",
+    "indexerIds": "Prowlarr indexer IDs",
+    "categories": "Categories",
+    "timeoutSeconds": "Search timeout",
+    "qbitTitle": "qBittorrent downloader",
+    "qbitUrl": "qBittorrent URL",
+    "qbitUsername": "Username",
+    "qbitPassword": "Password",
+    "qbitCategory": "Category",
+    "qbitTags": "Tags",
+    "qbitTimeoutMinutes": "Download timeout",
+    "qbitPollSeconds": "Poll seconds",
+    "deleteTorrent": "Delete torrent",
+    "deleteFiles": "Delete files"
+  }
 }

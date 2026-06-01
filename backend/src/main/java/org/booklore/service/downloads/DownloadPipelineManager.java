@@ -36,6 +36,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -165,6 +166,7 @@ public class DownloadPipelineManager {
                 .confidenceScore(best.getScore())
                 .autoFinalize(autoFinalize)
                 .confidenceThreshold(confidenceThreshold)
+                .fallbackEnabled(Boolean.TRUE)
                 .targetLibraryId(target.libraryId())
                 .targetLibraryPathId(target.libraryPathId())
                 .build();
@@ -198,6 +200,7 @@ public class DownloadPipelineManager {
                 .confidenceScore(result.getScore())
                 .autoFinalize(autoFinalize)
                 .confidenceThreshold(confidenceThreshold)
+                .fallbackEnabled(Boolean.FALSE)
                 .targetLibraryId(target.libraryId())
                 .targetLibraryPathId(target.libraryPathId())
                 .build();
@@ -243,6 +246,7 @@ public class DownloadPipelineManager {
                 .confidenceScore(previous.getConfidenceScore())
                 .autoFinalize(Boolean.TRUE.equals(previous.getAutoFinalize()))
                 .confidenceThreshold(previous.getConfidenceThreshold() == null ? 90 : previous.getConfidenceThreshold())
+                .fallbackEnabled(Boolean.TRUE.equals(previous.getFallbackEnabled()))
                 .targetLibraryId(target.libraryId())
                 .targetLibraryPathId(target.libraryPathId())
                 .externalTaskId(previous.getExternalTaskId())
@@ -259,61 +263,105 @@ public class DownloadPipelineManager {
     public DownloadJobEntity processQueuedJob(Long jobId) {
         DownloadJobEntity job = jobRepository.findWithSearchAndResultAndSourceById(jobId)
                 .orElseThrow(() -> new DownloadException("Download job not found: " + jobId));
-        try {
-            NormalizedDownloadResult result = toNormalizedResult(job.getResult());
-            DownloadExecutor executor = executorRegistry.executorFor(result.getAcquisitionType());
-
-            Path stagingDir = createStagingDir(job.getId());
-            Path partFile = stagingDir.resolve(UUID.randomUUID() + ".part");
-            updateJob(job, DownloadJobStatus.DOWNLOADING, 0, null);
-            job.setStagingDir(stagingDir.toString());
-            job.setPartFilePath(partFile.toString());
-            job.setLastProgressAt(Instant.now());
-            jobRepository.save(job);
-
-            Path downloadedFile = executor.download(DownloadExecutionRequest.builder()
-                    .job(job)
-                    .source(job.getSource())
-                    .result(result)
-                    .stagingDir(stagingDir)
-                    .targetPartFile(partFile)
-                    .build(), percent -> updateProgress(job.getId(), percent));
-            throwIfSupersededByRetry(job);
-            if (downloadedFile != null && !downloadedFile.equals(partFile)) {
-                partFile = downloadedFile;
-                job.setPartFilePath(partFile.toString());
-                jobRepository.save(job);
+        List<Long> attemptedResultIds = new ArrayList<>();
+        while (true) {
+            attemptedResultIds.add(job.getResult().getId());
+            try {
+                return processJobAttempt(job);
+            } catch (Exception e) {
+                log.error("Download job {} failed on result {}: {}", jobId, job.getResult().getId(), e.getMessage(), e);
+                if (isSupersededByRetry(jobId)) {
+                    return jobRepository.findById(jobId).orElse(job);
+                }
+                Optional<DownloadResultEntity> fallback = fallbackResult(job, attemptedResultIds);
+                if (fallback.isPresent()) {
+                    DownloadResultEntity next = fallback.get();
+                    log.warn("Download job {} falling back from result {} to result {} after failure: {}",
+                            jobId, job.getResult().getId(), next.getId(), e.getMessage());
+                    job = switchJobToFallbackResult(job, next);
+                    continue;
+                }
+                job.setCompletedAt(Instant.now());
+                updateJob(job, DownloadJobStatus.FAILED, job.getProgressPercent(), e.getMessage());
+                return jobRepository.save(job);
             }
-
-            updateJob(job, DownloadJobStatus.VALIDATING, 100, null);
-            DownloadFormat detectedFormat = validateDownloadedFile(partFile, result);
-            if (detectedFormat != result.getFormat()) {
-                result = result.toBuilder().format(detectedFormat).build();
-            }
-            String finalFileName = namingService.buildFinalFileName(result, detectedFormat);
-            downloadedCbxMetadataService.embedIfApplicable(partFile, result, detectedFormat);
-            Path stagedFile = stagingDir.resolve(finalFileName + ".staged");
-            Files.move(partFile, stagedFile, StandardCopyOption.REPLACE_EXISTING);
-            job.setStagedFilePath(stagedFile.toString());
-            updateJob(job, DownloadJobStatus.STAGED, 100, null);
-
-            updateJob(job, DownloadJobStatus.DELIVERING, 100, null);
-            throwIfSupersededByRetry(job);
-            BookdropDeliveryService.DeliveryResult deliveryResult = bookdropDeliveryService.deliver(job, result, stagedFile, finalFileName);
-            job.setDeliveredFilePath(deliveryResult.finalPath().toString());
-            job.setCompletedAt(Instant.now());
-            updateJob(job, deliveryResult.autoFinalized() ? DownloadJobStatus.COMPLETED : DownloadJobStatus.PENDING_REVIEW, 100, null);
-            cleanupEmptyStagingDirectories(stagingDir);
-            return jobRepository.save(job);
-        } catch (Exception e) {
-            log.error("Download job {} failed: {}", jobId, e.getMessage(), e);
-            if (isSupersededByRetry(jobId)) {
-                return jobRepository.findById(jobId).orElse(job);
-            }
-            job.setCompletedAt(Instant.now());
-            updateJob(job, DownloadJobStatus.FAILED, job.getProgressPercent(), e.getMessage());
-            return jobRepository.save(job);
         }
+    }
+
+    private DownloadJobEntity processJobAttempt(DownloadJobEntity job) throws Exception {
+        NormalizedDownloadResult result = toNormalizedResult(job.getResult());
+        DownloadExecutor executor = executorRegistry.executorFor(result.getAcquisitionType());
+
+        Path stagingDir = createStagingDir(job.getId());
+        Path partFile = stagingDir.resolve(UUID.randomUUID() + ".part");
+        updateJob(job, DownloadJobStatus.DOWNLOADING, 0, null);
+        job.setStagingDir(stagingDir.toString());
+        job.setPartFilePath(partFile.toString());
+        job.setLastProgressAt(Instant.now());
+        jobRepository.save(job);
+
+        Path downloadedFile = executor.download(DownloadExecutionRequest.builder()
+                .job(job)
+                .source(job.getSource())
+                .result(result)
+                .stagingDir(stagingDir)
+                .targetPartFile(partFile)
+                .build(), percent -> updateProgress(job.getId(), percent));
+        throwIfSupersededByRetry(job);
+        if (downloadedFile != null && !downloadedFile.equals(partFile)) {
+            partFile = downloadedFile;
+            job.setPartFilePath(partFile.toString());
+            jobRepository.save(job);
+        }
+
+        updateJob(job, DownloadJobStatus.VALIDATING, 100, null);
+        DownloadFormat detectedFormat = validateDownloadedFile(partFile, result);
+        if (detectedFormat != result.getFormat()) {
+            result = result.toBuilder().format(detectedFormat).build();
+        }
+        String finalFileName = namingService.buildFinalFileName(result, detectedFormat);
+        downloadedCbxMetadataService.embedIfApplicable(partFile, result, detectedFormat);
+        Path stagedFile = stagingDir.resolve(finalFileName + ".staged");
+        Files.move(partFile, stagedFile, StandardCopyOption.REPLACE_EXISTING);
+        job.setStagedFilePath(stagedFile.toString());
+        updateJob(job, DownloadJobStatus.STAGED, 100, null);
+
+        updateJob(job, DownloadJobStatus.DELIVERING, 100, null);
+        throwIfSupersededByRetry(job);
+        BookdropDeliveryService.DeliveryResult deliveryResult = bookdropDeliveryService.deliver(job, result, stagedFile, finalFileName);
+        job.setDeliveredFilePath(deliveryResult.finalPath().toString());
+        job.setCompletedAt(Instant.now());
+        updateJob(job, deliveryResult.autoFinalized() ? DownloadJobStatus.COMPLETED : DownloadJobStatus.PENDING_REVIEW, 100, null);
+        cleanupEmptyStagingDirectories(stagingDir);
+        return jobRepository.save(job);
+    }
+
+    private Optional<DownloadResultEntity> fallbackResult(DownloadJobEntity job, List<Long> attemptedResultIds) {
+        if (!Boolean.TRUE.equals(job.getFallbackEnabled()) || job.getSearch() == null || job.getSearch().getId() == null) {
+            return Optional.empty();
+        }
+        return resultRepository.findAllBySearchIdOrderByScoreDescIdAsc(job.getSearch().getId()).stream()
+                .filter(candidate -> candidate.getId() != null && !attemptedResultIds.contains(candidate.getId()))
+                .filter(candidate -> candidate.getScore() != null && candidate.getScore() >= MIN_DOWNLOADABLE_SCORE)
+                .findFirst();
+    }
+
+    private DownloadJobEntity switchJobToFallbackResult(DownloadJobEntity job, DownloadResultEntity result) {
+        job.setResult(result);
+        job.setSource(result.getSource());
+        job.setStatus(DownloadJobStatus.QUEUED);
+        job.setProgressPercent(0);
+        job.setConfidenceScore(result.getScore());
+        job.setStagingDir(null);
+        job.setPartFilePath(null);
+        job.setExternalTaskId(null);
+        job.setExternalTaskType(null);
+        job.setStagedFilePath(null);
+        job.setDeliveredFilePath(null);
+        job.setErrorMessage(null);
+        job.setCompletedAt(null);
+        job.setLastProgressAt(null);
+        return jobRepository.save(job);
     }
 
     private List<SourceSearchOutcome> runSourceSearches(List<DownloadSourceEntity> sources, DownloadSearchCriteria criteria) {

@@ -21,6 +21,13 @@ interface SourceTypeOption {
   translationKey: string;
 }
 
+type TorznabPreset = 'PROWLARR' | 'JACKETT';
+
+interface SelectOption<T> {
+  label: string;
+  value: T;
+}
+
 @Component({
   selector: 'app-download-sources',
   imports: [
@@ -58,11 +65,31 @@ export class DownloadSourcesComponent implements OnInit {
   editingSource: DownloadSource | null = null;
   flareSolverrEnabled = false;
   flareSolverrBaseUrl = 'http://localhost:8191';
+  torznabPreset: TorznabPreset = 'PROWLARR';
+  torznabBaseUrl = 'http://prowlarr:9696';
+  torznabApiKey = '';
+  torznabIndexer = 'all';
+  torznabIndexerIds = '';
+  torznabCategories = '';
+  torznabTimeoutSeconds = 30;
+  qbitBaseUrl = 'http://qbittorrent:8080';
+  qbitUsername = '';
+  qbitPassword = '';
+  qbitCategory = 'grimmory';
+  qbitTags = 'grimmory';
+  qbitTimeoutMinutes = 180;
+  qbitPollIntervalSeconds = 10;
+  qbitDeleteTorrentOnComplete = true;
+  qbitDeleteFilesOnComplete = true;
 
   sourceTypeOptions: SourceTypeOption[] = DOWNLOAD_SOURCE_TYPES.map(type => ({
     value: type,
     translationKey: `settingsDownloadSources.types.${type}`
   }));
+  torznabPresetOptions: SelectOption<TorznabPreset>[] = [
+    {label: 'Prowlarr', value: 'PROWLARR'},
+    {label: 'Jackett / Torznab', value: 'JACKETT'}
+  ];
 
   sourceForm = this.fb.group({
     name: ['', [Validators.required, Validators.maxLength(255)]],
@@ -120,6 +147,7 @@ export class DownloadSourcesComponent implements OnInit {
       configJson: this.prettyJsonOrRaw(source.configJson)
     });
     this.extractFlareSolverrSettings(source.configJson, source.credentialsJson);
+    this.extractTorznabQbitSettings(source.configJson, source.credentialsJson);
     this.sourceDialogVisible = true;
   }
 
@@ -129,12 +157,27 @@ export class DownloadSourcesComponent implements OnInit {
     }
   }
 
+  onTorznabPresetChanged(preset: TorznabPreset): void {
+    this.torznabPreset = preset;
+    if (preset === 'PROWLARR') {
+      this.torznabBaseUrl = this.torznabBaseUrl?.includes('jackett') ? 'http://prowlarr:9696' : this.torznabBaseUrl || 'http://prowlarr:9696';
+      this.torznabIndexer = 'all';
+    } else {
+      this.torznabBaseUrl = this.torznabBaseUrl?.includes('prowlarr') ? 'http://jackett:9117' : this.torznabBaseUrl || 'http://jackett:9117';
+      this.torznabIndexer = this.torznabIndexer === 'all' ? 'all' : this.torznabIndexer;
+    }
+    this.syncTorznabQbitJson();
+  }
+
   saveSource(): void {
     if (this.sourceForm.invalid) {
       this.sourceForm.markAllAsTouched();
       return;
     }
 
+    if (this.sourceForm.controls.type.value === 'PROWLARR_TORZNAB') {
+      this.syncTorznabQbitJson();
+    }
     const credentialsJson = this.normalizeJson(this.sourceForm.controls.credentialsJson.value, 'credentials');
     if (credentialsJson === undefined) return;
     const configJson = this.normalizeConfigJson(this.sourceForm.controls.configJson.value);
@@ -218,6 +261,39 @@ export class DownloadSourcesComponent implements OnInit {
     return this.t.translate(`settingsDownloadSources.types.${type}`);
   }
 
+  syncTorznabQbitJson(): void {
+    if (this.sourceForm.controls.type.value !== 'PROWLARR_TORZNAB') {
+      return;
+    }
+    this.sourceForm.controls.credentialsJson.setValue(this.prettyJson({
+      baseUrl: this.torznabBaseUrl?.trim() || (this.torznabPreset === 'JACKETT' ? 'http://jackett:9117' : 'http://prowlarr:9696'),
+      apiKey: this.torznabApiKey?.trim() || '',
+      apiMode: this.torznabPreset === 'JACKETT' ? 'TORZNAB' : 'PROWLARR',
+      indexer: this.torznabIndexer?.trim() || 'all',
+      indexerIds: this.torznabIndexerIds?.trim() || '',
+      function: 'search',
+      categories: this.torznabCategories?.trim() || '',
+      timeoutSeconds: Math.max(3, Number(this.torznabTimeoutSeconds || 30))
+    }));
+    this.sourceForm.controls.configJson.setValue(this.prettyJson({
+      ...(this.parseObject(this.sourceForm.controls.configJson.value) ?? {}),
+      qbittorrent: {
+        baseUrl: this.qbitBaseUrl?.trim() || 'http://qbittorrent:8080',
+        username: this.qbitUsername?.trim() || '',
+        password: this.qbitPassword ?? '',
+        category: this.qbitCategory?.trim() || 'grimmory',
+        tags: this.qbitTags?.trim() || 'grimmory',
+        remoteSavePath: '{stagingDir}',
+        localSavePath: '{stagingDir}',
+        pollIntervalSeconds: Math.max(2, Number(this.qbitPollIntervalSeconds || 10)),
+        timeoutMinutes: Math.max(1, Number(this.qbitTimeoutMinutes || 180)),
+        deleteTorrentOnComplete: this.qbitDeleteTorrentOnComplete,
+        deleteFilesOnComplete: this.qbitDeleteFilesOnComplete
+      }
+    }));
+    this.extractFlareSolverrSettings(this.sourceForm.controls.configJson.value, this.sourceForm.controls.credentialsJson.value);
+  }
+
   private applyTypeDefaults(type: DownloadSourceType, force: boolean): void {
     const currentCredentials = this.sourceForm.controls.credentialsJson.value?.trim();
     const currentConfig = this.sourceForm.controls.configJson.value?.trim();
@@ -228,6 +304,7 @@ export class DownloadSourcesComponent implements OnInit {
       this.sourceForm.controls.configJson.setValue(this.prettyJson(this.defaultConfig(type)));
     }
     this.extractFlareSolverrSettings(this.sourceForm.controls.configJson.value, this.sourceForm.controls.credentialsJson.value);
+    this.extractTorznabQbitSettings(this.sourceForm.controls.configJson.value, this.sourceForm.controls.credentialsJson.value);
   }
 
   private normalizeJson(value: string | null | undefined, label: string): string | null | undefined {
@@ -290,6 +367,29 @@ export class DownloadSourcesComponent implements OnInit {
       this.stringValue(config?.['flareSolverrBaseUrl']) ||
       this.stringValue(credentials?.['flareSolverrBaseUrl']) ||
       'http://flaresolverr:8191';
+  }
+
+  private extractTorznabQbitSettings(configJson?: string | null, credentialsJson?: string | null): void {
+    const config = this.parseObject(configJson);
+    const credentials = this.parseObject(credentialsJson);
+    const qbit = this.objectValue(config?.['qbittorrent']);
+    const apiMode = this.stringValue(credentials?.['apiMode']);
+    this.torznabPreset = apiMode?.toUpperCase() === 'TORZNAB' ? 'JACKETT' : 'PROWLARR';
+    this.torznabBaseUrl = this.stringValue(credentials?.['baseUrl']) || (this.torznabPreset === 'JACKETT' ? 'http://jackett:9117' : 'http://prowlarr:9696');
+    this.torznabApiKey = this.stringValue(credentials?.['apiKey']) || '';
+    this.torznabIndexer = this.stringValue(credentials?.['indexer']) || 'all';
+    this.torznabIndexerIds = this.stringValue(credentials?.['indexerIds']) || '';
+    this.torznabCategories = this.stringValue(credentials?.['categories']) || '';
+    this.torznabTimeoutSeconds = Number(credentials?.['timeoutSeconds'] ?? 30);
+    this.qbitBaseUrl = this.stringValue(qbit?.['baseUrl']) || 'http://qbittorrent:8080';
+    this.qbitUsername = this.stringValue(qbit?.['username']) || '';
+    this.qbitPassword = typeof qbit?.['password'] === 'string' ? qbit['password'] : '';
+    this.qbitCategory = this.stringValue(qbit?.['category']) || 'grimmory';
+    this.qbitTags = this.stringValue(qbit?.['tags']) || 'grimmory';
+    this.qbitTimeoutMinutes = Number(qbit?.['timeoutMinutes'] ?? 180);
+    this.qbitPollIntervalSeconds = Number(qbit?.['pollIntervalSeconds'] ?? 10);
+    this.qbitDeleteTorrentOnComplete = typeof qbit?.['deleteTorrentOnComplete'] === 'boolean' ? qbit['deleteTorrentOnComplete'] : true;
+    this.qbitDeleteFilesOnComplete = typeof qbit?.['deleteFilesOnComplete'] === 'boolean' ? qbit['deleteFilesOnComplete'] : true;
   }
 
   private defaultCredentials(type: DownloadSourceType): Record<string, unknown> {

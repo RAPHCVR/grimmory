@@ -101,6 +101,11 @@ export interface DownloadCanonicalSelection {
   resolvedSeriesName?: string | null;
   seriesNumber?: number | null;
   sequenceNumberType?: DownloadSequenceNumberType | null;
+  coverUrl?: string | null;
+  detailsUrl?: string | null;
+  description?: string | null;
+  year?: string | null;
+  extraMetadata?: Record<string, string> | null;
 }
 
 export type DownloadCanonicalCandidate = DownloadCanonicalSelection;

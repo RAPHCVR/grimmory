@@ -80,26 +80,115 @@
           <div class="canonical-list">
             @for (candidate of canonicalCandidates; track candidate.provider + ':' + canonicalCandidateTitle(candidate) + ':' + (candidate.sequenceNumberType || 'AUTO')) {
               <div class="canonical-card">
+                <div class="canonical-cover" [class.empty]="!candidate.coverUrl">
+                  @if (candidate.coverUrl) {
+                    <img [src]="candidate.coverUrl" [alt]="canonicalCandidateTitle(candidate)" loading="lazy"/>
+                  } @else {
+                    <i class="pi pi-image"></i>
+                  }
+                </div>
                 <div class="canonical-main">
                   <div class="canonical-title-row">
                     <strong>{{ canonicalCandidateTitle(candidate) }}</strong>
                     <p-tag [value]="canonicalConfidence(candidate)" [severity]="scoreSeverity(candidate.confidence * 100)"></p-tag>
                   </div>
                   <span>{{ canonicalCandidateMeta(candidate) }}</span>
+                  @if (candidate.description) {
+                    <small class="canonical-description">{{ candidate.description }}</small>
+                  }
                 </div>
-                <p-button
-                  icon="pi pi-check"
-                  [label]="t('actions.useCanonical')"
-                  size="small"
-                  severity="success"
-                  [outlined]="true"
-                  (onClick)="applyCanonical(candidate)">
-                </p-button>
+                <div class="canonical-actions">
+                  <p-button
+                    icon="pi pi-info-circle"
+                    [label]="t('actions.details')"
+                    size="small"
+                    severity="secondary"
+                    [outlined]="true"
+                    (onClick)="openCanonicalDetails(candidate)">
+                  </p-button>
+                  <p-button
+                    icon="pi pi-check"
+                    [label]="t('actions.useCanonical')"
+                    size="small"
+                    severity="success"
+                    [outlined]="true"
+                    (onClick)="applyCanonical(candidate)">
+                  </p-button>
+                </div>
               </div>
             }
           </div>
         </div>
       }
+
+      <p-dialog
+        [visible]="canonicalDetailsCandidate !== null"
+        (visibleChange)="!$event && closeCanonicalDetails()"
+        [modal]="true"
+        [header]="canonicalDetailsCandidate ? canonicalCandidateTitle(canonicalDetailsCandidate) : t('resolve.detailsTitle')"
+        [style]="{width: 'min(760px, 96vw)'}"
+        [draggable]="false"
+        (onHide)="closeCanonicalDetails()">
+        @if (canonicalDetailsCandidate) {
+          <div class="canonical-details">
+            <div class="canonical-details-cover" [class.empty]="!canonicalDetailsCandidate.coverUrl">
+              @if (canonicalDetailsCandidate.coverUrl) {
+                <img [src]="canonicalDetailsCandidate.coverUrl" [alt]="canonicalCandidateTitle(canonicalDetailsCandidate)" loading="lazy"/>
+              } @else {
+                <i class="pi pi-image"></i>
+              }
+            </div>
+            <div class="canonical-details-body">
+              <div class="canonical-details-grid">
+                @for (detail of canonicalCandidateDetails(canonicalDetailsCandidate); track detail.label) {
+                  <div>
+                    <span>{{ detail.label }}</span>
+                    <strong>{{ detail.value }}</strong>
+                  </div>
+                }
+                <div>
+                  <span>{{ t('resolve.confidence') }}</span>
+                  <strong>{{ canonicalConfidence(canonicalDetailsCandidate) }}</strong>
+                </div>
+              </div>
+              @if (canonicalDetailsCandidate.description) {
+                <p class="canonical-details-description">{{ canonicalDetailsCandidate.description }}</p>
+              }
+              @if (canonicalExtraEntries(canonicalDetailsCandidate).length) {
+                <div class="canonical-extra">
+                  @for (entry of canonicalExtraEntries(canonicalDetailsCandidate); track entry.key) {
+                    <span>{{ entry.key }}: {{ entry.value }}</span>
+                  }
+                </div>
+              }
+              @if (canonicalDetailsCandidate.detailsUrl) {
+                <a class="canonical-details-link" [href]="canonicalDetailsCandidate.detailsUrl" target="_blank" rel="noopener">
+                  <i class="pi pi-external-link"></i>
+                  {{ t('resolve.openProvider') }}
+                </a>
+              }
+            </div>
+          </div>
+        }
+        <ng-template pTemplate="footer">
+          <div class="dialog-actions">
+            <p-button
+              [label]="t('actions.close')"
+              severity="secondary"
+              [outlined]="true"
+              (onClick)="closeCanonicalDetails()">
+            </p-button>
+            @if (canonicalDetailsCandidate) {
+              <p-button
+                icon="pi pi-check"
+                [label]="t('actions.useCanonical')"
+                severity="success"
+                (onClick)="applyCanonical(canonicalDetailsCandidate)">
+              </p-button>
+            }
+          </div>
+        </ng-template>
+      </p-dialog>
 
       @if (isCanonicalLocked() && selectedCanonicalCandidate) {
         <div class="canonical-lock" role="status" aria-live="polite">

@@ -1,13 +1,24 @@
 package org.booklore.service.downloads;
 
 import org.booklore.config.AppProperties;
+import org.booklore.model.entity.DownloadJobEntity;
+import org.booklore.model.entity.DownloadResultEntity;
+import org.booklore.model.entity.DownloadSearchEntity;
+import org.booklore.model.entity.DownloadSourceEntity;
+import org.booklore.model.enums.DownloadAcquisitionType;
+import org.booklore.model.enums.DownloadContentKind;
 import org.booklore.model.enums.DownloadFormat;
+import org.booklore.model.enums.DownloadJobStatus;
+import org.booklore.model.enums.DownloadSourceType;
 import org.booklore.repository.DownloadJobRepository;
 import org.booklore.repository.DownloadResultRepository;
 import org.booklore.repository.DownloadSearchRepository;
 import org.booklore.repository.DownloadSourceRepository;
 import org.booklore.service.downloads.adapter.DownloadAdapterRegistry;
 import org.booklore.service.downloads.dto.NormalizedDownloadResult;
+import org.booklore.service.downloads.exception.DownloadSourceException;
+import org.booklore.service.downloads.executor.DownloadExecutionRequest;
+import org.booklore.service.downloads.executor.DownloadExecutor;
 import org.booklore.service.downloads.executor.DownloadExecutorRegistry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -16,9 +27,16 @@ import tools.jackson.databind.ObjectMapper;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class DownloadPipelineManagerTest {
 
@@ -65,5 +83,114 @@ class DownloadPipelineManagerTest {
         );
 
         assertEquals(DownloadFormat.PDF, detected);
+    }
+
+    @Test
+    void processQueuedJob_whenBestMatchFailsFallsBackToNextScoredResult() {
+        AppProperties appProperties = new AppProperties();
+        appProperties.setBookdropFolder(tempDir.toString());
+
+        DownloadResultRepository resultRepository = mock(DownloadResultRepository.class);
+        DownloadJobRepository jobRepository = mock(DownloadJobRepository.class);
+        DownloadExecutorRegistry executorRegistry = mock(DownloadExecutorRegistry.class);
+        DownloadNamingService namingService = mock(DownloadNamingService.class);
+        DownloadedCbxMetadataService downloadedCbxMetadataService = mock(DownloadedCbxMetadataService.class);
+        BookdropDeliveryService bookdropDeliveryService = mock(BookdropDeliveryService.class);
+
+        DownloadPipelineManager manager = new DownloadPipelineManager(
+                appProperties,
+                mock(DownloadSourceRepository.class),
+                mock(DownloadSearchRepository.class),
+                resultRepository,
+                jobRepository,
+                mock(DownloadAdapterRegistry.class),
+                executorRegistry,
+                mock(DownloadScoringService.class),
+                namingService,
+                mock(DownloadTargetResolver.class),
+                downloadedCbxMetadataService,
+                bookdropDeliveryService,
+                mock(DownloadQueryIntentParser.class),
+                mock(DownloadCanonicalResolver.class),
+                new ObjectMapper()
+        );
+
+        DownloadSourceEntity failingSource = source(1L, "Stacks", DownloadSourceType.ANNAS_ARCHIVE_API);
+        DownloadSourceEntity fallbackSource = source(2L, "Direct", DownloadSourceType.DIRECT_URL);
+        DownloadSearchEntity search = DownloadSearchEntity.builder()
+                .id(10L)
+                .query("public domain test")
+                .contentKind(DownloadContentKind.BOOK)
+                .build();
+        DownloadResultEntity failingResult = result(100L, search, failingSource, "Mirror candidate", 100, DownloadAcquisitionType.EXTERNAL_STACKS);
+        DownloadResultEntity fallbackResult = result(101L, search, fallbackSource, "Fallback candidate", 90, DownloadAcquisitionType.DIRECT_FILE);
+        DownloadJobEntity job = DownloadJobEntity.builder()
+                .id(55L)
+                .search(search)
+                .result(failingResult)
+                .source(failingSource)
+                .status(DownloadJobStatus.QUEUED)
+                .confidenceScore(100)
+                .autoFinalize(false)
+                .confidenceThreshold(90)
+                .fallbackEnabled(true)
+                .build();
+
+        DownloadExecutor failingExecutor = mock(DownloadExecutor.class);
+        DownloadExecutor fallbackExecutor = mock(DownloadExecutor.class);
+
+        when(jobRepository.findWithSearchAndResultAndSourceById(55L)).thenReturn(Optional.of(job));
+        when(jobRepository.findById(55L)).thenReturn(Optional.of(job));
+        when(jobRepository.save(any(DownloadJobEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(resultRepository.findAllBySearchIdOrderByScoreDescIdAsc(10L)).thenReturn(List.of(failingResult, fallbackResult));
+        when(executorRegistry.executorFor(DownloadAcquisitionType.EXTERNAL_STACKS)).thenReturn(failingExecutor);
+        when(executorRegistry.executorFor(DownloadAcquisitionType.DIRECT_FILE)).thenReturn(fallbackExecutor);
+        when(failingExecutor.download(any(), any())).thenThrow(new DownloadSourceException("Mirror archive.org failed"));
+        when(fallbackExecutor.download(any(), any())).thenAnswer(invocation -> {
+            DownloadExecutionRequest request = invocation.getArgument(0);
+            Path downloaded = request.getTargetPartFile().resolveSibling("fallback.epub");
+            Files.writeString(downloaded, "EPUB payload");
+            return downloaded;
+        });
+        when(namingService.buildFinalFileName(any(), eq(DownloadFormat.EPUB))).thenReturn("Fallback candidate.epub");
+        doNothing().when(downloadedCbxMetadataService).embedIfApplicable(any(), any(), any());
+        when(bookdropDeliveryService.deliver(any(), any(), any(), eq("Fallback candidate.epub")))
+                .thenReturn(new BookdropDeliveryService.DeliveryResult(tempDir.resolve("Fallback candidate.epub"), false));
+
+        DownloadJobEntity processed = manager.processQueuedJob(55L);
+
+        assertEquals(DownloadJobStatus.PENDING_REVIEW, processed.getStatus());
+        assertEquals(101L, processed.getResult().getId());
+        assertEquals(2L, processed.getSource().getId());
+        assertEquals(90, processed.getConfidenceScore());
+        verify(failingExecutor).download(any(), any());
+        verify(fallbackExecutor).download(any(), any());
+    }
+
+    private DownloadSourceEntity source(Long id, String name, DownloadSourceType type) {
+        return DownloadSourceEntity.builder()
+                .id(id)
+                .name(name)
+                .type(type)
+                .enabled(true)
+                .build();
+    }
+
+    private DownloadResultEntity result(Long id,
+                                        DownloadSearchEntity search,
+                                        DownloadSourceEntity source,
+                                        String title,
+                                        int score,
+                                        DownloadAcquisitionType acquisitionType) {
+        return DownloadResultEntity.builder()
+                .id(id)
+                .search(search)
+                .source(source)
+                .title(title)
+                .contentKind(DownloadContentKind.BOOK)
+                .format(DownloadFormat.EPUB)
+                .acquisitionType(acquisitionType)
+                .score(score)
+                .build();
     }
 }

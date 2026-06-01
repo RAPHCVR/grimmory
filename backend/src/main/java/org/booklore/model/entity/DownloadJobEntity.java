@@ -57,6 +57,10 @@ public class DownloadJobEntity {
     @Builder.Default
     private Integer confidenceThreshold = 90;
 
+    @Column(name = "fallback_enabled", nullable = false)
+    @Builder.Default
+    private Boolean fallbackEnabled = Boolean.FALSE;
+
     @Column(name = "target_library_id")
     private Long targetLibraryId;
 

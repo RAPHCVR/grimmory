@@ -395,6 +395,10 @@ public class DownloadScoringService {
             reasons.add("+20 requested " + sequenceNumberLabel(requestedSequenceType) + " number match");
             return 20;
         }
+        if (hasConflictingNumberMarker(evidence, number, requestedSequenceType)) {
+            reasons.add("-60 conflicting " + conflictingSequenceNumberLabel(requestedSequenceType) + " marker for requested " + sequenceNumberLabel(requestedSequenceType));
+            return -60;
+        }
         if (hasRangeContaining(evidence, number)) {
             reasons.add("-5 bundled range contains requested number");
             return -5;
@@ -463,6 +467,15 @@ public class DownloadScoringService {
         return Pattern.compile(markerPattern).matcher(title).find();
     }
 
+    private boolean hasConflictingNumberMarker(String title, int number, DownloadSequenceNumberType requestedSequenceType) {
+        String markerPattern = switch (requestedSequenceType) {
+            case CHAPTER, EPISODE -> "(?iu)\\b(?:vol(?:ume)?|v|t(?:ome|omo)?|issue|iss)\\.?\\s*0*" + number + "\\b";
+            case VOLUME, ISSUE -> "(?iu)(?:\\b(?:ch(?:apter)?|chapitre|episode|ep)\\.?\\s*0*" + number + "\\b|#\\s*0*" + number + "\\b)";
+            case AUTO -> null;
+        };
+        return markerPattern != null && Pattern.compile(markerPattern).matcher(title).find();
+    }
+
     private boolean hasRangeContaining(String title, int number) {
         var matcher = NUMBER_RANGE.matcher(title);
         while (matcher.find()) {
@@ -491,6 +504,14 @@ public class DownloadScoringService {
             case CHAPTER -> "chapter";
             case EPISODE -> "episode";
             case AUTO -> "volume/chapter";
+        };
+    }
+
+    private String conflictingSequenceNumberLabel(DownloadSequenceNumberType type) {
+        return switch (type) {
+            case CHAPTER, EPISODE -> "volume/issue";
+            case VOLUME, ISSUE -> "chapter/episode";
+            case AUTO -> "sequence";
         };
     }
 

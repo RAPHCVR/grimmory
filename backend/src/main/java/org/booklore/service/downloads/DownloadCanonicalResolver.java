@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -232,6 +233,9 @@ public class DownloadCanonicalResolver {
             }
             String author = firstArrayText(doc.path("author_name"));
             String isbn = firstIsbn(doc.path("isbn"), term);
+            String coverUrl = openLibraryCoverUrl(doc, isbn);
+            String detailsUrl = openLibraryDetailsUrl(doc);
+            String year = text(doc.path("first_publish_year"));
             candidates.add(new Candidate(
                     "openlibrary",
                     DownloadContentKind.BOOK,
@@ -239,7 +243,12 @@ public class DownloadCanonicalResolver {
                     author,
                     isbn,
                     null,
-                    bookScore(term, title, author, isbn)
+                    bookScore(term, title, author, isbn),
+                    coverUrl,
+                    detailsUrl,
+                    null,
+                    year,
+                    Map.of()
             ));
         }
         return candidates;
@@ -267,6 +276,10 @@ public class DownloadCanonicalResolver {
             }
             String author = firstArrayText(info.path("authors"));
             String isbn = googleBooksIsbn(info.path("industryIdentifiers"), term);
+            String coverUrl = googleBooksCoverUrl(info.path("imageLinks"));
+            String detailsUrl = text(info.path("infoLink"));
+            String description = text(info.path("description"));
+            String year = yearFromDate(text(info.path("publishedDate")));
             candidates.add(new Candidate(
                     "google-books",
                     DownloadContentKind.BOOK,
@@ -274,7 +287,12 @@ public class DownloadCanonicalResolver {
                     author,
                     isbn,
                     null,
-                    bookScore(term, title, author, isbn)
+                    bookScore(term, title, author, isbn),
+                    coverUrl,
+                    detailsUrl,
+                    description,
+                    year,
+                    Map.of()
             ));
         }
         return candidates;
@@ -287,6 +305,7 @@ public class DownloadCanonicalResolver {
                 .queryParam("limit", boundedProviderLimit())
                 .queryParam("includes[]", "author")
                 .queryParam("includes[]", "artist")
+                .queryParam("includes[]", "cover_art")
                 .queryParam("order[relevance]", "desc")
                 .queryParam("contentRating[]", "safe")
                 .queryParam("contentRating[]", "suggestive")
@@ -306,6 +325,12 @@ public class DownloadCanonicalResolver {
                 continue;
             }
             String author = relationshipNames(manga, Set.of("author", "artist"));
+            String mangaId = text(manga.path("id"));
+            String coverFile = relationshipAttribute(manga, "cover_art", "fileName");
+            String coverUrl = mangaDexCoverUrl(mangaId, coverFile);
+            String detailsUrl = isBlank(mangaId) ? null : "https://mangadex.org/title/" + mangaId;
+            String description = localizedDescription(manga.path("attributes"));
+            String year = text(manga.path("attributes").path("year"));
             candidates.add(new Candidate(
                     "mangadex",
                     DownloadContentKind.MANGA,
@@ -313,7 +338,12 @@ public class DownloadCanonicalResolver {
                     author,
                     null,
                     title,
-                    score(term, title, author)
+                    score(term, title, author),
+                    coverUrl,
+                    detailsUrl,
+                    description,
+                    year,
+                    Map.of()
             ));
         }
         return candidates;
@@ -339,6 +369,7 @@ public class DownloadCanonicalResolver {
                     continue;
                 }
                 String author = textOf(anchor, ".author");
+                String coverUrl = firstNonBlank(attrOf(anchor, "img", "src"), attrOf(anchor, "img", "data-src"));
                 candidates.add(new Candidate(
                         "webtoons",
                         DownloadContentKind.WEBTOON,
@@ -346,7 +377,12 @@ public class DownloadCanonicalResolver {
                         author,
                         null,
                         title,
-                        score(term, title, author)
+                        score(term, title, author),
+                        coverUrl,
+                        href,
+                        null,
+                        null,
+                        Map.of()
                 ));
             }
             if (!candidates.isEmpty()) {
@@ -388,6 +424,7 @@ public class DownloadCanonicalResolver {
                 if (confidence < 0.40D) {
                     continue;
                 }
+                String coverUrl = firstNonBlank(attrOf(anchor, "img", "src"), attrOf(anchor, "img", "data-src"));
                 candidates.add(new Candidate(
                         "asura",
                         DownloadContentKind.WEBTOON,
@@ -395,7 +432,12 @@ public class DownloadCanonicalResolver {
                         null,
                         null,
                         title,
-                        confidence
+                        confidence,
+                        coverUrl,
+                        href,
+                        null,
+                        null,
+                        Map.of()
                 ));
             }
             if (!candidates.isEmpty()) {
@@ -427,6 +469,10 @@ public class DownloadCanonicalResolver {
                 continue;
             }
             String publisher = text(result.path("publisher").path("name"));
+            String coverUrl = firstNonBlank(text(result.path("image").path("small_url")), text(result.path("image").path("medium_url")), text(result.path("image").path("super_url")));
+            String detailsUrl = text(result.path("site_detail_url"));
+            String description = stripHtml(text(result.path("description")));
+            String year = yearFromDate(text(result.path("start_year")));
             candidates.add(new Candidate(
                     "comicvine",
                     DownloadContentKind.COMIC,
@@ -434,7 +480,12 @@ public class DownloadCanonicalResolver {
                     publisher,
                     null,
                     title,
-                    score(term, title, publisher)
+                    score(term, title, publisher),
+                    coverUrl,
+                    detailsUrl,
+                    description,
+                    year,
+                    Map.of()
             ));
         }
         return candidates;
@@ -571,7 +622,12 @@ public class DownloadCanonicalResolver {
                 resolved.getIsbn(),
                 resolved.getSeriesName(),
                 resolved.getSeriesNumber(),
-                resolved.getSequenceNumberType()
+                resolved.getSequenceNumberType(),
+                candidate.coverUrl(),
+                candidate.detailsUrl(),
+                candidate.description(),
+                candidate.year(),
+                candidate.extraMetadata()
         );
     }
 
@@ -897,6 +953,84 @@ public class DownloadCanonicalResolver {
         return selected == null ? null : selected.attr(attribute).trim();
     }
 
+    private String openLibraryCoverUrl(JsonNode doc, String isbn) {
+        String coverId = text(doc.path("cover_i"));
+        if (!isBlank(coverId)) {
+            return "https://covers.openlibrary.org/b/id/" + coverId + "-M.jpg";
+        }
+        if (!isBlank(isbn)) {
+            return "https://covers.openlibrary.org/b/isbn/" + isbn + "-M.jpg";
+        }
+        return null;
+    }
+
+    private String openLibraryDetailsUrl(JsonNode doc) {
+        String key = text(doc.path("key"));
+        if (isBlank(key)) {
+            return null;
+        }
+        String normalized = key.startsWith("/") ? key : "/" + key;
+        return trimTrailingSlash(openLibraryBaseUrl) + normalized;
+    }
+
+    private String googleBooksCoverUrl(JsonNode imageLinks) {
+        return firstNonBlank(
+                text(imageLinks.path("thumbnail")),
+                text(imageLinks.path("smallThumbnail"))
+        );
+    }
+
+    private String mangaDexCoverUrl(String mangaId, String coverFile) {
+        if (isBlank(mangaId) || isBlank(coverFile)) {
+            return null;
+        }
+        return "https://uploads.mangadex.org/covers/" + mangaId + "/" + coverFile + ".256.jpg";
+    }
+
+    private String relationshipAttribute(JsonNode item, String type, String attribute) {
+        for (JsonNode relationship : array(item.path("relationships"))) {
+            if (type.equals(text(relationship.path("type")))) {
+                String value = text(relationship.path("attributes").path(attribute));
+                if (!isBlank(value)) {
+                    return value;
+                }
+            }
+        }
+        return null;
+    }
+
+    private String localizedDescription(JsonNode attributes) {
+        JsonNode descriptions = attributes.path("description");
+        for (String language : TITLE_LANGUAGE_ORDER) {
+            String value = text(descriptions.path(language));
+            if (!isBlank(value)) {
+                return value;
+            }
+        }
+        for (var property : descriptions.properties()) {
+            String value = text(property.getValue());
+            if (!isBlank(value)) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private String stripHtml(String value) {
+        if (isBlank(value)) {
+            return null;
+        }
+        return Jsoup.parse(value).text();
+    }
+
+    private String yearFromDate(String value) {
+        if (isBlank(value)) {
+            return null;
+        }
+        var matcher = Pattern.compile("(?<!\\d)(\\d{4})(?!\\d)").matcher(value);
+        return matcher.find() ? matcher.group(1) : null;
+    }
+
     private boolean isAsuraSeriesUrl(String href) {
         if (isBlank(href)) {
             return false;
@@ -1017,6 +1151,17 @@ public class DownloadCanonicalResolver {
         return null;
     }
 
+    private String trimTrailingSlash(String value) {
+        if (value == null) {
+            return "";
+        }
+        String trimmed = value.trim();
+        while (trimmed.endsWith("/")) {
+            trimmed = trimmed.substring(0, trimmed.length() - 1);
+        }
+        return trimmed;
+    }
+
     private boolean isBlank(String value) {
         return value == null || value.isBlank();
     }
@@ -1031,7 +1176,26 @@ public class DownloadCanonicalResolver {
                              String author,
                              String isbn,
                              String seriesName,
-                             double confidence) {
+                             double confidence,
+                             String coverUrl,
+                             String detailsUrl,
+                             String description,
+                             String year,
+                             Map<String, String> extraMetadata) {
+        Candidate(String provider,
+                  DownloadContentKind contentKind,
+                  String title,
+                  String author,
+                  String isbn,
+                  String seriesName,
+                  double confidence) {
+            this(provider, contentKind, title, author, isbn, seriesName, confidence, null, null, null, null, Map.of());
+        }
+
+        Candidate {
+            extraMetadata = extraMetadata == null ? Map.of() : extraMetadata;
+        }
+
         String displayTitle() {
             return seriesName != null && !seriesName.isBlank() ? seriesName : title;
         }
@@ -1047,9 +1211,14 @@ public class DownloadCanonicalResolver {
                                      String query,
                                      String resolvedTitle,
                                      String resolvedAuthor,
-                                     String resolvedIsbn,
-                                     String resolvedSeriesName,
-                                     Float seriesNumber,
-                                     DownloadSequenceNumberType sequenceNumberType) {
+                                      String resolvedIsbn,
+                                      String resolvedSeriesName,
+                                      Float seriesNumber,
+                                      DownloadSequenceNumberType sequenceNumberType,
+                                      String coverUrl,
+                                      String detailsUrl,
+                                      String description,
+                                      String year,
+                                      Map<String, String> extraMetadata) {
     }
 }

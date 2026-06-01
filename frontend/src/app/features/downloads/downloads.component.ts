@@ -11,6 +11,7 @@ import {Tag} from 'primeng/tag';
 import {ProgressBar} from 'primeng/progressbar';
 import {ToggleSwitch} from 'primeng/toggleswitch';
 import {Tooltip} from 'primeng/tooltip';
+import {Dialog} from 'primeng/dialog';
 import {MessageService} from 'primeng/api';
 import {TranslocoDirective, TranslocoService} from '@jsverse/transloco';
 import {finalize, switchMap} from 'rxjs/operators';
@@ -51,6 +52,7 @@ interface SelectOption<T> {
     ProgressBar,
     ToggleSwitch,
     Tooltip,
+    Dialog,
     FormsModule,
     DatePipe,
     TranslocoDirective
@@ -85,6 +87,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
   results: DownloadResult[] = [];
   canonicalCandidates: DownloadCanonicalCandidate[] = [];
   selectedCanonicalCandidate: DownloadCanonicalCandidate | null = null;
+  canonicalDetailsCandidate: DownloadCanonicalCandidate | null = null;
   jobs: DownloadJob[] = [];
   libraries: Library[] = [];
   searchId: number | null = null;
@@ -364,6 +367,16 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     this.search();
   }
 
+  openCanonicalDetails(candidate: DownloadCanonicalCandidate): void {
+    this.canonicalDetailsCandidate = candidate;
+    this.markViewDirty();
+  }
+
+  closeCanonicalDetails(): void {
+    this.canonicalDetailsCandidate = null;
+    this.markViewDirty();
+  }
+
   retryJob(job: DownloadJob): void {
     if (!this.canRetry(job) || this.retryingJobIds.has(job.id)) return;
     this.retryingJobIds.add(job.id);
@@ -545,6 +558,36 @@ export class DownloadsComponent implements OnInit, OnDestroy {
       candidate.resolvedIsbn || candidate.isbn ? `ISBN ${candidate.resolvedIsbn || candidate.isbn}` : null,
       number
     ].filter(Boolean).join(' · ');
+  }
+
+  canonicalCandidateDetails(candidate: DownloadCanonicalCandidate): {label: string; value: string}[] {
+    const details = [
+      {label: this.t.translate('downloads.resolve.provider'), value: candidate.provider},
+      {label: this.t.translate('downloads.resolve.kind'), value: this.contentKindLabel(candidate.contentKind)},
+      {label: this.t.translate('downloads.resolve.titleLabel'), value: candidate.resolvedTitle || candidate.title || ''},
+      {label: this.t.translate('downloads.resolve.seriesLabel'), value: candidate.resolvedSeriesName || candidate.seriesName || ''},
+      {label: this.t.translate('downloads.resolve.authorLabel'), value: candidate.resolvedAuthor || candidate.author || ''},
+      {label: this.t.translate('downloads.resolve.isbnLabel'), value: candidate.resolvedIsbn || candidate.isbn || ''},
+      {label: this.t.translate('downloads.resolve.yearLabel'), value: candidate.year || ''},
+      {label: this.t.translate('downloads.resolve.sequenceLabel'), value: this.canonicalSequenceLabel(candidate)}
+    ];
+    return details.filter(detail => !!detail.value);
+  }
+
+  canonicalSequenceLabel(candidate: DownloadCanonicalCandidate): string {
+    if (candidate.seriesNumber == null) {
+      return '';
+    }
+    const type = candidate.sequenceNumberType && candidate.sequenceNumberType !== 'AUTO'
+      ? candidate.sequenceNumberType.toLowerCase()
+      : '#';
+    return `${type} ${candidate.seriesNumber}`;
+  }
+
+  canonicalExtraEntries(candidate: DownloadCanonicalCandidate): {key: string; value: string}[] {
+    return Object.entries(candidate.extraMetadata ?? {})
+      .filter((entry): entry is [string, string] => typeof entry[1] === 'string' && !!entry[1].trim())
+      .map(([key, value]) => ({key, value}));
   }
 
   canonicalConfidence(candidate: DownloadCanonicalCandidate): string {

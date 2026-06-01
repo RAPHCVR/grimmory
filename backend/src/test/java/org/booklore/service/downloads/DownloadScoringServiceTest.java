@@ -93,6 +93,45 @@ class DownloadScoringServiceTest {
     }
 
     @Test
+    void score_explicitChapterRequestPenalizesVolumeMarker() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("One Piece chapter 100")
+                .title("One Piece")
+                .seriesName("One Piece")
+                .seriesNumber(100f)
+                .sequenceNumberType(DownloadSequenceNumberType.CHAPTER)
+                .contentKind(DownloadContentKind.MANGA)
+                .preferredFormats(List.of(DownloadFormat.CBZ))
+                .build();
+
+        NormalizedDownloadResult volumeResult = NormalizedDownloadResult.builder()
+                .title("[ENG] One Piece - Vol. 100 (FULL COLOR Digital Colored Comics)")
+                .format(DownloadFormat.UNKNOWN)
+                .contentKind(DownloadContentKind.MANGA)
+                .acquisitionType(DownloadAcquisitionType.TORRENT)
+                .downloadUrl("http://localhost:9696/1/download?file=one-piece-100")
+                .sizeBytes(159_593_264L)
+                .build();
+
+        NormalizedDownloadResult chapterResult = NormalizedDownloadResult.builder()
+                .title("The Legend Begins")
+                .seriesName("One Piece")
+                .seriesNumber(100f)
+                .format(DownloadFormat.CBZ)
+                .contentKind(DownloadContentKind.MANGA)
+                .acquisitionType(DownloadAcquisitionType.MANGADEX_CHAPTER)
+                .downloadUrl("chapter-100")
+                .build();
+
+        var volumeScore = service.score(criteria, volumeResult);
+        var chapterScore = service.score(criteria, chapterResult);
+
+        assertTrue(volumeScore.getScore() < 50);
+        assertTrue(chapterScore.getScore() > volumeScore.getScore());
+        assertTrue(volumeScore.getReasons().contains("-60 conflicting volume/issue marker for requested chapter"));
+    }
+
+    @Test
     void score_numberedRelease_ranksExactVolumeAboveBundleRange() {
         DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
                 .query("One Piece 100")
