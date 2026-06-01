@@ -32,6 +32,11 @@ grimmory:
       url: ${GRIMMORY_DOWNLOADS_FLARESOLVERR_URL:http://localhost:8191/v1}
       timeout-ms: ${GRIMMORY_DOWNLOADS_FLARESOLVERR_TIMEOUT_MS:60000}
 
+booklore:
+  downloads:
+    resolver:
+      timeout-seconds: ${BOOKLORE_DOWNLOADS_RESOLVER_TIMEOUT_SECONDS:10}
+
 server:
   forward-headers-strategy: native
   port: ${BOOKLORE_PORT:6060}

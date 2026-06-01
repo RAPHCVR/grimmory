@@ -219,6 +219,54 @@ class DownloadCanonicalResolverTest {
     }
 
     @Test
+    void exposesComicVineCandidateWithParsedIssueIntent() throws Exception {
+        AtomicReference<String> seenRawQuery = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/search/", exchange -> {
+            seenRawQuery.set(exchange.getRequestURI().getRawQuery());
+            respond(exchange, "application/json", """
+                    {
+                      "results": [
+                        {
+                          "name": "Batman",
+                          "publisher": {"name": "DC Comics"}
+                        }
+                      ]
+                    }
+                    """);
+        });
+        server.start();
+        try {
+            DownloadCanonicalResolver resolver = resolver();
+            resolver.openLibraryEnabled = false;
+            resolver.googleBooksEnabled = false;
+            resolver.mangaDexEnabled = false;
+            resolver.webtoonsEnabled = false;
+            resolver.comicVineEnabled = true;
+            resolver.comicVineApiKey = "test-key";
+            resolver.comicVineBaseUrl = baseUrl(server);
+
+            DownloadSearchCriteria parsed = parser.enrich(DownloadSearchCriteria.builder()
+                    .query("Batman 1")
+                    .contentKind(DownloadContentKind.COMIC)
+                    .build());
+
+            List<DownloadCanonicalResolver.CanonicalCandidate> candidates = resolver.resolveCandidates(parsed);
+
+            assertThat(seenRawQuery.get()).contains("query=Batman");
+            assertThat(seenRawQuery.get()).doesNotContain("Batman+1");
+            assertThat(candidates).hasSize(1);
+            DownloadCanonicalResolver.CanonicalCandidate candidate = candidates.getFirst();
+            assertThat(candidate.provider()).isEqualTo("comicvine");
+            assertThat(candidate.resolvedSeriesName()).isEqualTo("Batman");
+            assertThat(candidate.seriesNumber()).isEqualTo(1F);
+            assertThat(candidate.sequenceNumberType()).isEqualTo(DownloadSequenceNumberType.ISSUE);
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     void resolvesWebtoonCanonicalSeriesFromSearchHtml() throws Exception {
         HttpServer server = htmlServer("/en/search", """
                 <html><body>

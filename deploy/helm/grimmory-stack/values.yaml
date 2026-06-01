@@ -152,6 +152,7 @@ grimmory:
       url: http://flaresolverr:8191/v1
       timeoutMs: "60000"
     resolver:
+      timeoutSeconds: "10"
       webtoons:
         asura:
           enabled: "true"

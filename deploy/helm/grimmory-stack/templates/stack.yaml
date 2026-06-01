@@ -342,6 +342,8 @@ spec:
               value: {{ .Values.grimmory.downloads.flaresolverr.url | quote }}
             - name: GRIMMORY_DOWNLOADS_FLARESOLVERR_TIMEOUT_MS
               value: {{ .Values.grimmory.downloads.flaresolverr.timeoutMs | quote }}
+            - name: BOOKLORE_DOWNLOADS_RESOLVER_TIMEOUT_SECONDS
+              value: {{ .Values.grimmory.downloads.resolver.timeoutSeconds | quote }}
             - name: BOOKLORE_DOWNLOADS_RESOLVER_WEBTOONS_ASURA_ENABLED
               value: {{ .Values.grimmory.downloads.resolver.webtoons.asura.enabled | quote }}
             - name: BOOKLORE_DOWNLOADS_RESOLVER_WEBTOONS_ASURA_SEARCH_URL_TEMPLATES
