@@ -401,8 +401,8 @@ public class DownloadScoringService {
         }
         if (hasRangeContaining(evidence, number)) {
             if (requestedSequenceType.isChapterLike()) {
-                reasons.add("-45 bundled range cannot satisfy requested " + sequenceNumberLabel(requestedSequenceType) + " exactly");
-                return -45;
+                reasons.add("-65 bundled range cannot satisfy requested " + sequenceNumberLabel(requestedSequenceType) + " exactly");
+                return -65;
             }
             reasons.add("-5 bundled range contains requested number");
             return -5;
@@ -416,7 +416,7 @@ public class DownloadScoringService {
                 reasons.add("+10 requested " + sequenceNumberLabel(requestedSequenceType) + " number match");
                 return 10;
             }
-            int penalty = requestedSequenceType.isChapterLike() ? -45 : -20;
+            int penalty = requestedSequenceType.isChapterLike() ? -65 : -20;
             reasons.add(penalty + " requested " + sequenceNumberLabel(requestedSequenceType) + " number mismatch");
             return penalty;
         }
@@ -425,7 +425,7 @@ public class DownloadScoringService {
             return 5;
         }
         if (result.getContentKind() != null && result.getContentKind().isSequentialArt() && hasAnyNumberMarker(evidence)) {
-            int penalty = requestedSequenceType.isChapterLike() ? -45 : -20;
+            int penalty = requestedSequenceType.isChapterLike() ? -65 : -20;
             reasons.add(penalty + " requested " + sequenceNumberLabel(requestedSequenceType) + " number mismatch");
             return penalty;
         }

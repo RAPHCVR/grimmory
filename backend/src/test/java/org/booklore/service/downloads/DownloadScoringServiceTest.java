@@ -166,7 +166,7 @@ class DownloadScoringServiceTest {
 
         assertTrue(bundleScore.getScore() < 30);
         assertTrue(chapterScore.getScore() > bundleScore.getScore());
-        assertTrue(bundleScore.getReasons().contains("-45 bundled range cannot satisfy requested chapter exactly"));
+        assertTrue(bundleScore.getReasons().contains("-65 bundled range cannot satisfy requested chapter exactly"));
         assertTrue(chapterScore.getReasons().contains("+20 requested chapter number match"));
     }
 
