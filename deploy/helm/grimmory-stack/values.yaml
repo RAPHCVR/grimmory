@@ -34,7 +34,7 @@ images:
     pullPolicy: IfNotPresent
   flaresolverr:
     repository: ghcr.io/flaresolverr/flaresolverr
-    tag: latest
+    tag: v3.5.0
     pullPolicy: Always
   prowlarr:
     repository: lscr.io/linuxserver/prowlarr

@@ -15,6 +15,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class FlareSolverrClientTest {
 
@@ -125,6 +126,51 @@ class FlareSolverrClientTest {
             assertEquals(1, returnOnlyCookies.get());
             assertEquals("Mozilla/5.0 CookieOnly", headers.get("User-Agent"));
             assertEquals("cf_clearance=solved", headers.get("Cookie"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void fetchPage_rejectsBrowserInternalFallbackPages() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/v1", exchange -> {
+            byte[] response = objectMapper.writeValueAsBytes(Map.of(
+                    "status", "ok",
+                    "solution", Map.of(
+                            "url", "chrome://new-tab-page/",
+                            "status", 200,
+                            "response", "<html><title>New Tab</title></html>",
+                            "userAgent", "Mozilla/5.0 Flare",
+                            "cookies", List.of()
+                    )
+            ));
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.start();
+
+        try {
+            String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+            DownloadSourceEntity source = DownloadSourceEntity.builder()
+                    .name("Flare source")
+                    .type(DownloadSourceType.DIRECT_URL)
+                    .configJson(objectMapper.writeValueAsString(Map.of(
+                            "flareSolverr", Map.of("baseUrl", baseUrl)
+                    )))
+                    .build();
+            FlareSolverrClient client = new FlareSolverrClient(
+                    HttpClient.newHttpClient(),
+                    objectMapper,
+                    new DownloadSourceConfigReader(objectMapper)
+            );
+
+            assertThrows(
+                    org.booklore.service.downloads.exception.DownloadSourceException.class,
+                    () -> client.fetchPage(source, "https://kagane.example/chapter")
+            );
         } finally {
             server.stop(0);
         }

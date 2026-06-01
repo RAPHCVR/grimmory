@@ -42,7 +42,7 @@
         <p-button
           icon="pi pi-search"
           [label]="t('actions.search')"
-          [loading]="loadingResults"
+          [loading]="loadingResults || resolvingCanonical"
           (onClick)="search()">
         </p-button>
         <p-button

@@ -83,6 +83,7 @@ public class FlareSolverrClient {
             if (solution.isMissingNode() || solution.isNull()) {
                 throw new DownloadSourceException("FlareSolverr response did not contain a solution");
             }
+            validateSolution(solution, url, returnOnlyCookies);
             return parseSolution(solution);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -92,6 +93,33 @@ public class FlareSolverrClient {
         } catch (Exception e) {
             throw new DownloadSourceException("FlareSolverr request failed: " + e.getMessage(), e);
         }
+    }
+
+    private void validateSolution(JsonNode solution, String requestedUrl, boolean returnOnlyCookies) {
+        String solvedUrl = blankToNull(solution.path("url").asText(null));
+        if (isBrowserInternalUrl(solvedUrl)) {
+            throw new DownloadSourceException("FlareSolverr did not navigate to " + requestedUrl + " and returned " + solvedUrl);
+        }
+
+        int statusCode = solution.path("status").asInt(0);
+        if (statusCode >= 400) {
+            throw new DownloadSourceException("FlareSolverr solved page returned HTTP status " + statusCode + " for " + requestedUrl);
+        }
+
+        if (!returnOnlyCookies && blankToNull(solution.path("response").asText(null)) == null) {
+            throw new DownloadSourceException("FlareSolverr response did not contain rendered HTML for " + requestedUrl);
+        }
+    }
+
+    private boolean isBrowserInternalUrl(String value) {
+        if (value == null) {
+            return false;
+        }
+        String normalized = value.toLowerCase();
+        return normalized.startsWith("chrome:")
+                || normalized.startsWith("about:")
+                || normalized.startsWith("edge:")
+                || normalized.startsWith("browser:");
     }
 
     private ResolvedPage parseSolution(JsonNode solution) {

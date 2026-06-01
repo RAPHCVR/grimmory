@@ -8,6 +8,7 @@ export type DownloadAcquisitionType =
   | 'NZB'
   | 'OPDS_ACQUISITION'
   | 'MANGADEX_CHAPTER'
+  | 'KAGANE_CHAPTER'
   | 'IMAGE_SEQUENCE_CBZ'
   | 'CLI_GALLERY_DL'
   | 'EXTERNAL_STACKS'

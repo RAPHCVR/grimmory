@@ -122,6 +122,7 @@
     "NZB": "NZB",
     "OPDS_ACQUISITION": "OPDS",
     "MANGADEX_CHAPTER": "MangaDex chapter",
+    "KAGANE_CHAPTER": "Kagane chapter",
     "IMAGE_SEQUENCE_CBZ": "Images to CBZ",
     "CLI_GALLERY_DL": "gallery-dl",
     "EXTERNAL_STACKS": "Stacks",

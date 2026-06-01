@@ -103,6 +103,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
   private pollSub?: Subscription;
   private searchProgressTimer?: ReturnType<typeof setInterval>;
   private searchStartedAt = 0;
+  private canonicalSearchSignature: string | null = null;
 
   constructor() {
     effect(() => {
@@ -136,6 +137,15 @@ export class DownloadsComponent implements OnInit, OnDestroy {
       return;
     }
 
+    if (this.shouldResolveBeforeSearch(request)) {
+      this.resolveBeforeSearch(request);
+      return;
+    }
+
+    this.runSourceSearch(request);
+  }
+
+  private runSourceSearch(request: DownloadSearchRequest): void {
     this.startSearchProgress();
     this.searchError = null;
     this.downloadsService.search(request).pipe(
@@ -226,6 +236,37 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     });
   }
 
+  private resolveBeforeSearch(request: DownloadSearchRequest): void {
+    this.resolvingCanonical = true;
+    this.searchError = null;
+    this.downloadsService.resolve(request).pipe(
+      finalize(() => this.resolvingCanonical = false)
+    ).subscribe({
+      next: candidates => {
+        this.canonicalCandidates = candidates ?? [];
+        if (this.canonicalCandidates.length) {
+          this.results = [];
+          this.searchId = null;
+          this.messageService.add({
+            severity: 'info',
+            summary: this.t.translate('downloads.resolve.title'),
+            detail: this.t.translate('downloads.resolve.description')
+          });
+          return;
+        }
+        this.runSourceSearch(request);
+      },
+      error: err => {
+        this.searchError = err?.error?.message || err?.message || this.t.translate('downloads.resolve.error');
+        this.messageService.add({
+          severity: 'error',
+          summary: this.t.translate('common.error'),
+          detail: this.searchError ?? this.t.translate('downloads.resolve.error')
+        });
+      }
+    });
+  }
+
   resolveCanonical(): void {
     const request = this.buildSearchRequest();
     if (!request.query && !request.title && !request.isbn && !request.seriesName) {
@@ -281,11 +322,13 @@ export class DownloadsComponent implements OnInit, OnDestroy {
       this.contentKind = candidate.contentKind;
     }
     this.canonicalCandidates = [];
+    this.canonicalSearchSignature = this.requestSignature(this.buildSearchRequest());
     this.messageService.add({
       severity: 'success',
       summary: this.t.translate('downloads.resolve.appliedSummary'),
       detail: this.t.translate('downloads.resolve.appliedDetail', {title: this.canonicalCandidateTitle(candidate)})
     });
+    this.search();
   }
 
   retryJob(job: DownloadJob): void {
@@ -366,6 +409,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     this.maxResults = 25;
     this.results = [];
     this.canonicalCandidates = [];
+    this.canonicalSearchSignature = null;
     this.searchId = null;
     this.searchError = null;
   }
@@ -579,6 +623,29 @@ export class DownloadsComponent implements OnInit, OnDestroy {
   private clean(value: string): string | null {
     const trimmed = value?.trim();
     return trimmed ? trimmed : null;
+  }
+
+  private shouldResolveBeforeSearch(request: DownloadSearchRequest): boolean {
+    if (request.directUrl) {
+      return false;
+    }
+    if (!request.query && !request.title && !request.isbn && !request.seriesName) {
+      return false;
+    }
+    return this.canonicalSearchSignature !== this.requestSignature(request);
+  }
+
+  private requestSignature(request: DownloadSearchRequest): string {
+    return JSON.stringify({
+      query: request.query ?? null,
+      title: request.title ?? null,
+      author: request.author ?? null,
+      isbn: request.isbn ?? null,
+      seriesName: request.seriesName ?? null,
+      seriesNumber: request.seriesNumber ?? null,
+      sequenceNumberType: request.sequenceNumberType ?? 'AUTO',
+      contentKind: request.contentKind ?? 'AUTO'
+    });
   }
 
   private startSearchProgress(): void {
