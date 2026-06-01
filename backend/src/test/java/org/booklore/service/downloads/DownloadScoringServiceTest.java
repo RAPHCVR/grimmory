@@ -171,6 +171,33 @@ class DownloadScoringServiceTest {
     }
 
     @Test
+    void score_explicitChapterRequestWithoutChapterNumberScoresZero() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("One Piece chapter 100")
+                .title("One Piece")
+                .seriesName("One Piece")
+                .seriesNumber(100f)
+                .sequenceNumberType(DownloadSequenceNumberType.CHAPTER)
+                .contentKind(DownloadContentKind.MANGA)
+                .preferredFormats(List.of(DownloadFormat.CBZ))
+                .build();
+
+        NormalizedDownloadResult result = NormalizedDownloadResult.builder()
+                .title("One Piece - Ace's Story - The Manga (2024) (Digital) (1r0n)")
+                .format(DownloadFormat.UNKNOWN)
+                .contentKind(DownloadContentKind.MANGA)
+                .acquisitionType(DownloadAcquisitionType.TORRENT)
+                .downloadUrl("magnet:?xt=urn:btih:abcdef")
+                .sizeBytes(280_000_000L)
+                .build();
+
+        var score = service.score(criteria, result);
+
+        assertEquals(0, score.getScore());
+        assertTrue(score.getReasons().contains("-65 missing requested chapter number"));
+    }
+
+    @Test
     void score_numberedRelease_ranksExactVolumeAboveBundleRange() {
         DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
                 .query("One Piece 100")
@@ -477,6 +504,34 @@ class DownloadScoringServiceTest {
 
         assertEquals(0, score.getScore());
         assertTrue(score.getReasons().contains("-90 unsupported media payload"));
+    }
+
+    @Test
+    void score_adultVideoNoiseTorrentForMangaQueryScoresZero() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("One Piece chapter 100")
+                .title("One Piece")
+                .seriesName("One Piece")
+                .seriesNumber(100f)
+                .sequenceNumberType(DownloadSequenceNumberType.CHAPTER)
+                .contentKind(DownloadContentKind.MANGA)
+                .preferredFormats(List.of(DownloadFormat.CBZ))
+                .build();
+
+        NormalizedDownloadResult result = NormalizedDownloadResult.builder()
+                .title("HD GS 323 cleaning staff began my time one piece pants girl into the adult toys in Masturbation")
+                .format(DownloadFormat.UNKNOWN)
+                .contentKind(DownloadContentKind.MANGA)
+                .acquisitionType(DownloadAcquisitionType.TORRENT)
+                .downloadUrl("magnet:?xt=urn:btih:abcdef")
+                .sizeBytes(570_000_000L)
+                .build();
+
+        var score = service.score(criteria, result);
+
+        assertEquals(0, score.getScore());
+        assertTrue(score.getReasons().contains("-90 unsupported media payload"));
+        assertTrue(score.getReasons().contains("-65 missing requested chapter number"));
     }
 
     @Test

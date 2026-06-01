@@ -94,6 +94,7 @@ public class DownloadController {
         DownloadSearchEntity search = pipelineManager.search(toCriteria(request));
         List<DownloadResultResponse> results = resultRepository.findAllBySearchIdOrderByScoreDescIdAsc(search.getId())
                 .stream()
+                .filter(result -> result.getScore() != null && result.getScore() > 0)
                 .map(this::toResultResponse)
                 .toList();
         return new DownloadSearchResponse(

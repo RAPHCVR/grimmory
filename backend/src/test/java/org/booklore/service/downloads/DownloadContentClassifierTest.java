@@ -98,6 +98,23 @@ class DownloadContentClassifierTest {
     }
 
     @Test
+    void infer_prowlarrAdultVideoNoiseDoesNotBecomeManga() {
+        DownloadContentKind kind = classifier.infer(
+                DownloadSourceType.PROWLARR_TORZNAB,
+                "Prowlarr",
+                "HD GS 323 cleaning staff began my time one piece pants girl into the adult toys in Masturbation",
+                null,
+                null,
+                "magnet:?xt=urn:btih:abcdef",
+                DownloadFormat.UNKNOWN,
+                DownloadAcquisitionType.TORRENT,
+                "{\"indexer\":\"1337x\",\"category\":\"XXX\"}"
+        );
+
+        assertEquals(DownloadContentKind.BOOK, kind);
+    }
+
+    @Test
     void infer_annaArchiveMangaMarkerBeatsGenericComicsPath_returnsManga() {
         DownloadContentKind kind = classifier.infer(
                 DownloadSourceType.ANNAS_ARCHIVE_API,
