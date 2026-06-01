@@ -132,6 +132,45 @@ class DownloadScoringServiceTest {
     }
 
     @Test
+    void score_explicitChapterRequestPenalizesBundleRange() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("One Piece chapter 100")
+                .title("One Piece")
+                .seriesName("One Piece")
+                .seriesNumber(100f)
+                .sequenceNumberType(DownloadSequenceNumberType.CHAPTER)
+                .contentKind(DownloadContentKind.MANGA)
+                .preferredFormats(List.of(DownloadFormat.CBZ))
+                .build();
+
+        NormalizedDownloadResult bundleRange = NormalizedDownloadResult.builder()
+                .title("One Piece v001-111 + 1134-1176 (2003-2026) (Digital) (1r0n)")
+                .format(DownloadFormat.UNKNOWN)
+                .contentKind(DownloadContentKind.MANGA)
+                .acquisitionType(DownloadAcquisitionType.TORRENT)
+                .downloadUrl("magnet:?xt=urn:btih:abcdef")
+                .sizeBytes(31_245_887_488L)
+                .build();
+
+        NormalizedDownloadResult exactChapter = NormalizedDownloadResult.builder()
+                .title("One Piece - Chapter 100")
+                .format(DownloadFormat.UNKNOWN)
+                .contentKind(DownloadContentKind.MANGA)
+                .acquisitionType(DownloadAcquisitionType.TORRENT)
+                .downloadUrl("magnet:?xt=urn:btih:123456")
+                .sizeBytes(80_000_000L)
+                .build();
+
+        var bundleScore = service.score(criteria, bundleRange);
+        var chapterScore = service.score(criteria, exactChapter);
+
+        assertTrue(bundleScore.getScore() < 30);
+        assertTrue(chapterScore.getScore() > bundleScore.getScore());
+        assertTrue(bundleScore.getReasons().contains("-45 bundled range cannot satisfy requested chapter exactly"));
+        assertTrue(chapterScore.getReasons().contains("+20 requested chapter number match"));
+    }
+
+    @Test
     void score_numberedRelease_ranksExactVolumeAboveBundleRange() {
         DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
                 .query("One Piece 100")
