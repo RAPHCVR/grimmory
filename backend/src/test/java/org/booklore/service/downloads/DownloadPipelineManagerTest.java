@@ -31,6 +31,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
@@ -165,6 +166,58 @@ class DownloadPipelineManagerTest {
         assertEquals(90, processed.getConfidenceScore());
         verify(failingExecutor).download(any(), any());
         verify(fallbackExecutor).download(any(), any());
+    }
+
+    @Test
+    void retryJob_enablesFallbackForLegacyJobs() {
+        DownloadJobRepository jobRepository = mock(DownloadJobRepository.class);
+        DownloadTargetResolver targetResolver = mock(DownloadTargetResolver.class);
+
+        DownloadPipelineManager manager = new DownloadPipelineManager(
+                new AppProperties(),
+                mock(DownloadSourceRepository.class),
+                mock(DownloadSearchRepository.class),
+                mock(DownloadResultRepository.class),
+                jobRepository,
+                mock(DownloadAdapterRegistry.class),
+                mock(DownloadExecutorRegistry.class),
+                mock(DownloadScoringService.class),
+                mock(DownloadNamingService.class),
+                targetResolver,
+                mock(DownloadedCbxMetadataService.class),
+                mock(BookdropDeliveryService.class),
+                mock(DownloadQueryIntentParser.class),
+                mock(DownloadCanonicalResolver.class),
+                new ObjectMapper()
+        );
+
+        DownloadSourceEntity source = source(1L, "Stacks", DownloadSourceType.ANNAS_ARCHIVE_API);
+        DownloadSearchEntity search = DownloadSearchEntity.builder()
+                .id(10L)
+                .query("legacy failed mirror")
+                .contentKind(DownloadContentKind.BOOK)
+                .build();
+        DownloadResultEntity result = result(100L, search, source, "Legacy candidate", 85, DownloadAcquisitionType.EXTERNAL_STACKS);
+        DownloadJobEntity previous = DownloadJobEntity.builder()
+                .id(55L)
+                .search(search)
+                .result(result)
+                .source(source)
+                .status(DownloadJobStatus.FAILED)
+                .confidenceScore(85)
+                .autoFinalize(false)
+                .confidenceThreshold(90)
+                .fallbackEnabled(false)
+                .build();
+
+        when(jobRepository.findWithSearchAndResultAndSourceById(55L)).thenReturn(Optional.of(previous));
+        when(targetResolver.resolve(null, null, false, DownloadFormat.EPUB)).thenReturn(DownloadTargetResolver.ResolvedTarget.empty());
+        when(jobRepository.save(any(DownloadJobEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        DownloadJobEntity retry = manager.retryJob(55L);
+
+        assertEquals(DownloadJobStatus.QUEUED, retry.getStatus());
+        assertTrue(retry.getFallbackEnabled(), "Retries must recover legacy failed jobs with fallback enabled");
     }
 
     private DownloadSourceEntity source(Long id, String name, DownloadSourceType type) {

@@ -246,7 +246,7 @@ public class DownloadPipelineManager {
                 .confidenceScore(previous.getConfidenceScore())
                 .autoFinalize(Boolean.TRUE.equals(previous.getAutoFinalize()))
                 .confidenceThreshold(previous.getConfidenceThreshold() == null ? 90 : previous.getConfidenceThreshold())
-                .fallbackEnabled(Boolean.TRUE.equals(previous.getFallbackEnabled()))
+                .fallbackEnabled(Boolean.TRUE)
                 .targetLibraryId(target.libraryId())
                 .targetLibraryPathId(target.libraryPathId())
                 .externalTaskId(previous.getExternalTaskId())
