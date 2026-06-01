@@ -1449,7 +1449,7 @@ spec:
                   {
                       "name": "Kagane (FlareSolverr)",
                       "type": "DIRECT_URL",
-                      "enabled": {{ ternary "True" "False" .Values.bootstrapSources.kagane.enabled }},
+                      "enabled": {{ ternary "True" "False" (default false (get (default (dict) (get (default (dict) .Values.bootstrapSources) "kagane")) "enabled")) }},
                       "priority": 45,
                       "configJson": json.dumps({
                           "acquisitionType": "KAGANE_CHAPTER",
