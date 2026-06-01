@@ -5,7 +5,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.grimmory.pdfium4j.PdfDocument;
 import org.grimmory.pdfium4j.XmpMetadataWriter;
 import org.grimmory.pdfium4j.model.MetadataTag;
-import org.grimmory.pdfium4j.model.SaveOptions;
 import org.grimmory.pdfium4j.model.XmpMetadata;
 import org.booklore.model.MetadataClearFlags;
 import org.booklore.model.dto.settings.MetadataPersistenceSettings;
@@ -65,7 +64,7 @@ public class PdfMetadataWriter implements MetadataWriter {
             try (PdfDocument doc = PdfDocument.open(filePath)) {
                 applyMetadataToDocument(doc, metadataEntity, clear);
                 tempPath = Files.createTempFile(parentDir, ".pdfmeta-", ".pdf");
-                doc.save(tempPath, SaveOptions.SKIP_VALIDATION);
+                doc.save(tempPath);
             }
             Files.move(tempPath, filePath, StandardCopyOption.REPLACE_EXISTING);
             tempPath = null;
@@ -232,7 +231,9 @@ public class PdfMetadataWriter implements MetadataWriter {
                 List.of(),
                 Optional.empty(),
                 Map.of(),
-                customFields
+                customFields,
+                Map.of(),
+                List.of()
         );
 
         XmpMetadataWriter xmpWriter = new XmpMetadataWriter()

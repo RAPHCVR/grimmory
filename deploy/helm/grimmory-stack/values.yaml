@@ -54,7 +54,7 @@ images:
     pullPolicy: IfNotPresent
   busybox:
     repository: busybox
-    tag: 1.36
+    tag: 1.37
     pullPolicy: IfNotPresent
 
 secrets:
