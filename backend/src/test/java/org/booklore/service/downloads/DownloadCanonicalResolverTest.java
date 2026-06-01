@@ -57,6 +57,42 @@ class DownloadCanonicalResolverTest {
     }
 
     @Test
+    void resolvesBookIsbnAgainstOpenLibraryAndSearchesByCanonicalTitle() throws Exception {
+        HttpServer server = jsonServer("/search.json", """
+                {
+                  "docs": [
+                    {
+                      "title": "Pride and Prejudice",
+                      "author_name": ["Jane Austen"],
+                      "isbn": ["9780141439518", "0141439513"]
+                    }
+                  ]
+                }
+                """);
+        server.start();
+        try {
+            DownloadCanonicalResolver resolver = resolver();
+            resolver.openLibraryBaseUrl = baseUrl(server);
+            resolver.googleBooksEnabled = false;
+            resolver.mangaDexEnabled = false;
+            resolver.webtoonsEnabled = false;
+
+            DownloadSearchCriteria resolved = resolver.resolve(DownloadSearchCriteria.builder()
+                    .query("978-0-14-143951-8")
+                    .contentKind(DownloadContentKind.BOOK)
+                    .build());
+
+            assertThat(resolved.getTitle()).isEqualTo("Pride and Prejudice");
+            assertThat(resolved.getAuthor()).isEqualTo("Jane Austen");
+            assertThat(resolved.getIsbn()).isEqualTo("9780141439518");
+            assertThat(resolved.getQuery()).isEqualTo("Pride and Prejudice Jane Austen");
+            assertThat(resolved.getContentKind()).isEqualTo(DownloadContentKind.BOOK);
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     void resolvesMangaAgainstMangaDexWithoutDroppingRequestedChapter() throws Exception {
         HttpServer server = jsonServer("/manga", """
                 {

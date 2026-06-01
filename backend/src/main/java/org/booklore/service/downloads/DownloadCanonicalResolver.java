@@ -220,7 +220,7 @@ public class DownloadCanonicalResolver {
                     author,
                     isbn,
                     null,
-                    score(term, title, author)
+                    bookScore(term, title, author, isbn)
             ));
         }
         return candidates;
@@ -255,7 +255,7 @@ public class DownloadCanonicalResolver {
                     author,
                     isbn,
                     null,
-                    score(term, title, author)
+                    bookScore(term, title, author, isbn)
             ));
         }
         return candidates;
@@ -495,11 +495,12 @@ public class DownloadCanonicalResolver {
 
     private String canonicalOutputQuery(DownloadSearchCriteria criteria, Candidate candidate, boolean sequential) {
         String original = criteria.getQuery();
+        if (candidate.contentKind() == DownloadContentKind.BOOK) {
+            String bookQuery = compactJoin(candidate.title(), candidate.author());
+            return isBlank(bookQuery) ? original : bookQuery;
+        }
         if (!isBlank(original) && (sequential || looksLikeIsbn(original))) {
             return original;
-        }
-        if (candidate.contentKind() == DownloadContentKind.BOOK) {
-            return compactJoin(candidate.title(), candidate.author());
         }
         return isBlank(original) ? candidate.displayTitle() : original;
     }
@@ -551,6 +552,19 @@ public class DownloadCanonicalResolver {
             score += 0.10D;
         }
         return Math.min(0.99D, score);
+    }
+
+    private double bookScore(String query, String title, String author, String isbn) {
+        if (isbnMatches(query, isbn)) {
+            return 0.99D;
+        }
+        return score(query, title, author);
+    }
+
+    private boolean isbnMatches(String left, String right) {
+        String cleanLeft = cleanIsbn(left);
+        String cleanRight = cleanIsbn(right);
+        return !isBlank(cleanLeft) && !isBlank(cleanRight) && cleanLeft.equals(cleanRight);
     }
 
     private double tokenScore(String left, String right) {
