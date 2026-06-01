@@ -64,7 +64,7 @@ class DownloadCanonicalResolverTest {
                     {
                       "title": "Pride and Prejudice",
                       "author_name": ["Jane Austen"],
-                      "isbn": ["9780141439518", "0141439513"]
+                      "isbn": ["0141439513", "9798360092476", "9780141439518"]
                     }
                   ]
                 }

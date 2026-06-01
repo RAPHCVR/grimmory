@@ -212,7 +212,7 @@ public class DownloadCanonicalResolver {
                 continue;
             }
             String author = firstArrayText(doc.path("author_name"));
-            String isbn = firstIsbn(doc.path("isbn"));
+            String isbn = firstIsbn(doc.path("isbn"), term);
             candidates.add(new Candidate(
                     "openlibrary",
                     DownloadContentKind.BOOK,
@@ -247,7 +247,7 @@ public class DownloadCanonicalResolver {
                 continue;
             }
             String author = firstArrayText(info.path("authors"));
-            String isbn = googleBooksIsbn(info.path("industryIdentifiers"));
+            String isbn = googleBooksIsbn(info.path("industryIdentifiers"), term);
             candidates.add(new Candidate(
                     "google-books",
                     DownloadContentKind.BOOK,
@@ -653,38 +653,48 @@ public class DownloadCanonicalResolver {
         return String.join(", ", names);
     }
 
-    private String googleBooksIsbn(JsonNode identifiers) {
+    private String googleBooksIsbn(JsonNode identifiers, String preferredIsbn) {
         String first = null;
+        String firstIsbn13 = null;
+        String preferred = cleanIsbn(preferredIsbn);
         for (JsonNode identifier : array(identifiers)) {
             String value = cleanIsbn(text(identifier.path("identifier")));
             if (isBlank(value)) {
                 continue;
             }
+            if (!isBlank(preferred) && preferred.equals(value)) {
+                return value;
+            }
             if (first == null) {
                 first = value;
             }
-            if (value.length() == 13) {
-                return value;
+            if (firstIsbn13 == null && value.length() == 13) {
+                firstIsbn13 = value;
             }
         }
-        return first;
+        return firstIsbn13 == null ? first : firstIsbn13;
     }
 
-    private String firstIsbn(JsonNode values) {
+    private String firstIsbn(JsonNode values, String preferredIsbn) {
         String first = null;
+        String firstIsbn13 = null;
+        String preferred = cleanIsbn(preferredIsbn);
         for (JsonNode value : array(values)) {
             String isbn = cleanIsbn(text(value));
             if (isBlank(isbn)) {
                 continue;
             }
+            if (!isBlank(preferred) && preferred.equals(isbn)) {
+                return isbn;
+            }
             if (first == null) {
                 first = isbn;
             }
-            if (isbn.length() == 13) {
-                return isbn;
+            if (firstIsbn13 == null && isbn.length() == 13) {
+                firstIsbn13 = isbn;
             }
         }
-        return first;
+        return firstIsbn13 == null ? first : firstIsbn13;
     }
 
     private String cleanIsbn(String value) {
