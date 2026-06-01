@@ -28,6 +28,7 @@ class DownloadQueryIntentParserTest {
         assertEquals("Dragon Ball Super", enriched.getSeriesName());
         assertEquals(24f, enriched.getSeriesNumber());
         assertEquals(DownloadSequenceNumberType.VOLUME, enriched.getSequenceNumberType());
+        assertEquals("Dragon Ball Super 24", enriched.getOriginalQuery());
     }
 
     @Test

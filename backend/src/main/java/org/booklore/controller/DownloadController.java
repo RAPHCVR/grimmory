@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.booklore.model.dto.request.downloads.DownloadAcquireRequest;
+import org.booklore.model.dto.request.downloads.DownloadCanonicalSelectionRequest;
 import org.booklore.model.dto.request.downloads.DownloadResultAcquireRequest;
 import org.booklore.model.dto.request.downloads.DownloadSearchRequest;
 import org.booklore.model.dto.request.downloads.DownloadSourceRequest;
@@ -100,6 +101,7 @@ public class DownloadController {
                 search.getStatus(),
                 search.getQuery(),
                 search.getErrorMessage(),
+                toCanonicalSelectionResponse(search),
                 results
         );
     }
@@ -218,6 +220,7 @@ public class DownloadController {
 
     private DownloadSearchCriteria toCriteria(DownloadSearchRequest request) {
         return DownloadSearchCriteria.builder()
+                .originalQuery(request.getQuery())
                 .query(request.getQuery())
                 .title(request.getTitle())
                 .author(request.getAuthor())
@@ -228,8 +231,63 @@ public class DownloadController {
                 .contentKind(request.getContentKind() == null ? DownloadContentKind.AUTO : request.getContentKind())
                 .preferredFormats(request.getPreferredFormats() == null ? List.of() : request.getPreferredFormats())
                 .directUrl(request.getDirectUrl())
+                .canonicalSelection(toCanonicalSelection(request.getCanonicalSelection()))
                 .maxResults(request.getMaxResults() == null ? 25 : Math.max(1, request.getMaxResults()))
                 .build();
+    }
+
+    private DownloadSearchCriteria.CanonicalSelection toCanonicalSelection(DownloadCanonicalSelectionRequest selection) {
+        if (selection == null) {
+            return null;
+        }
+        return new DownloadSearchCriteria.CanonicalSelection(
+                trimToNull(selection.getProvider()),
+                selection.getContentKind() == null ? DownloadContentKind.AUTO : selection.getContentKind(),
+                trimToNull(selection.getTitle()),
+                trimToNull(selection.getAuthor()),
+                trimToNull(selection.getIsbn()),
+                trimToNull(selection.getSeriesName()),
+                selection.getConfidence(),
+                trimToNull(selection.getQuery()),
+                trimToNull(selection.getResolvedTitle()),
+                trimToNull(selection.getResolvedAuthor()),
+                trimToNull(selection.getResolvedIsbn()),
+                trimToNull(selection.getResolvedSeriesName()),
+                selection.getSeriesNumber(),
+                selection.getSequenceNumberType() == null ? DownloadSequenceNumberType.AUTO : selection.getSequenceNumberType()
+        );
+    }
+
+    private DownloadCanonicalSelectionResponse toCanonicalSelectionResponse(DownloadSearchEntity search) {
+        if (search.getCanonicalProvider() == null
+                && search.getCanonicalTitle() == null
+                && search.getCanonicalSeriesName() == null
+                && search.getCanonicalIsbn() == null) {
+            return null;
+        }
+        return new DownloadCanonicalSelectionResponse(
+                search.getCanonicalProvider(),
+                search.getCanonicalContentKind(),
+                search.getCanonicalTitle(),
+                search.getCanonicalAuthor(),
+                search.getCanonicalIsbn(),
+                search.getCanonicalSeriesName(),
+                search.getCanonicalConfidence(),
+                search.getQuery(),
+                search.getCanonicalTitle(),
+                search.getCanonicalAuthor(),
+                search.getCanonicalIsbn(),
+                search.getCanonicalSeriesName(),
+                search.getCanonicalSeriesNumber(),
+                search.getCanonicalSequenceNumberType()
+        );
+    }
+
+    private String trimToNull(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
     }
 
     private DownloadSourceResponse toSourceResponse(DownloadSourceEntity source) {
@@ -301,7 +359,24 @@ public class DownloadController {
                                          DownloadSearchStatus status,
                                          String query,
                                          String errorMessage,
+                                         DownloadCanonicalSelectionResponse canonicalSelection,
                                          List<DownloadResultResponse> results) {
+    }
+
+    public record DownloadCanonicalSelectionResponse(String provider,
+                                                     DownloadContentKind contentKind,
+                                                     String title,
+                                                     String author,
+                                                     String isbn,
+                                                     String seriesName,
+                                                     Double confidence,
+                                                     String query,
+                                                     String resolvedTitle,
+                                                     String resolvedAuthor,
+                                                     String resolvedIsbn,
+                                                     String resolvedSeriesName,
+                                                     Float seriesNumber,
+                                                     DownloadSequenceNumberType sequenceNumberType) {
     }
 
     public record DownloadResultResponse(Long id,

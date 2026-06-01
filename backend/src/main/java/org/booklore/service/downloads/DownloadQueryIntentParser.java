@@ -39,6 +39,7 @@ public class DownloadQueryIntentParser {
 
         ParsedNumberIntent parsed = intent.get();
         DownloadSearchCriteria.DownloadSearchCriteriaBuilder builder = criteria.toBuilder();
+        builder.originalQuery(firstNonBlank(criteria.getOriginalQuery(), criteria.getQuery(), criteria.getTitle(), criteria.getSeriesName()));
         if (criteria.getSeriesNumber() == null) {
             builder.seriesNumber(parsed.number());
         }

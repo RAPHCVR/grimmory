@@ -36,6 +36,10 @@ import java.util.regex.Pattern;
 public class DownloadCanonicalResolver {
 
     private static final Pattern ISBN_LIKE = Pattern.compile("(?<!\\d)(?:97[89][\\s-]?)?\\d[\\d\\s-]{8,16}[\\dXx](?!\\d)");
+    private static final Pattern EXPLICIT_SEQUENCE_MARKER = Pattern.compile(
+            "(?iu)(?:\\b(?:vol(?:ume)?|v|t(?:ome|omo)?|issue|iss|ch(?:apter)?|chap(?:itre)?|chapter|episode|ep)\\.?\\s*0*\\d{1,5}(?:\\.\\d+)?\\b|#\\s*0*\\d{1,5}(?:\\.\\d+)?\\b)"
+    );
+    private static final Pattern BARE_TRAILING_NUMBER = Pattern.compile("(?iu)^.+?\\s+0*\\d{1,5}(?:\\.\\d+)?$");
     private static final Pattern TOKEN_SPLIT = Pattern.compile("[^\\p{L}\\p{N}]+");
     private static final Set<String> TOKEN_STOP_WORDS = Set.of(
             "the", "a", "an", "and", "of", "for", "to", "in", "on",
@@ -98,7 +102,13 @@ public class DownloadCanonicalResolver {
     String comicVineApiKey = "";
 
     public DownloadSearchCriteria resolve(DownloadSearchCriteria criteria) {
-        if (!enabled || criteria == null || !isBlank(criteria.getDirectUrl())) {
+        if (criteria == null || !isBlank(criteria.getDirectUrl())) {
+            return criteria;
+        }
+        if (criteria.getCanonicalSelection() != null) {
+            return applySelection(criteria, criteria.getCanonicalSelection());
+        }
+        if (!enabled) {
             return criteria;
         }
 
@@ -130,7 +140,7 @@ public class DownloadCanonicalResolver {
     }
 
     public List<CanonicalCandidate> resolveCandidates(DownloadSearchCriteria criteria) {
-        if (!enabled || criteria == null || !isBlank(criteria.getDirectUrl())) {
+        if (!enabled || criteria == null || criteria.getCanonicalSelection() != null || !isBlank(criteria.getDirectUrl())) {
             return List.of();
         }
 
@@ -140,12 +150,21 @@ public class DownloadCanonicalResolver {
         }
 
         try {
-            return collectCandidates(criteria, term).stream()
+            List<Candidate> candidates = collectCandidates(criteria, term).stream()
                     .filter(candidate -> candidate.confidence() >= minimumConfidence)
                     .sorted((left, right) -> Double.compare(right.confidence(), left.confidence()))
-                    .limit(candidateLimit(criteria))
-                    .map(candidate -> toCanonicalCandidate(criteria, candidate))
                     .toList();
+            int limit = candidateLimit(criteria);
+            List<CanonicalCandidate> resolvedCandidates = new ArrayList<>();
+            for (Candidate candidate : candidates) {
+                for (CanonicalCandidate canonicalCandidate : candidateVariants(criteria, candidate)) {
+                    resolvedCandidates.add(canonicalCandidate);
+                    if (resolvedCandidates.size() >= limit) {
+                        return resolvedCandidates;
+                    }
+                }
+            }
+            return resolvedCandidates;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.debug("Canonical resolver candidate lookup interrupted for '{}'", criteria.effectiveQuery(), e);
@@ -447,7 +466,60 @@ public class DownloadCanonicalResolver {
         return httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
     }
 
+    private DownloadSearchCriteria applySelection(DownloadSearchCriteria criteria, DownloadSearchCriteria.CanonicalSelection selection) {
+        DownloadSearchCriteria.DownloadSearchCriteriaBuilder builder = criteria.toBuilder();
+        DownloadContentKind selectedKind = selection.contentKind() == null ? DownloadContentKind.AUTO : selection.contentKind();
+        DownloadSequenceNumberType selectedSequenceType = selection.sequenceNumberType() == null
+                ? DownloadSequenceNumberType.AUTO
+                : selection.sequenceNumberType();
+        boolean sequential = selectedKind.isSequentialArt() || likelySequentialArt(criteria);
+        String selectedTitle = firstNonBlank(selection.resolvedTitle(), selection.title());
+        String selectedAuthor = firstNonBlank(selection.resolvedAuthor(), selection.author());
+        String selectedIsbn = firstNonBlank(selection.resolvedIsbn(), selection.isbn());
+        String selectedSeriesName = firstNonBlank(selection.resolvedSeriesName(), selection.seriesName(), sequential ? selectedTitle : null);
+
+        if (!isBlank(selectedTitle)) {
+            builder.title(selectedTitle);
+        }
+        if (sequential && !isBlank(selectedSeriesName)) {
+            builder.seriesName(selectedSeriesName);
+        }
+        if (!isBlank(selectedAuthor)) {
+            builder.author(selectedAuthor);
+        }
+        if (!isBlank(selectedIsbn)) {
+            builder.isbn(selectedIsbn);
+        }
+        if (!selectedKind.isAuto()) {
+            builder.contentKind(selectedKind);
+        }
+        if (selection.seriesNumber() != null) {
+            builder.seriesNumber(selection.seriesNumber());
+        }
+        if (!selectedSequenceType.isAuto()) {
+            builder.sequenceNumberType(selectedSequenceType);
+        }
+
+        String selectedQuery = firstNonBlank(
+                selection.query(),
+                sequential ? selectedSeriesName : compactJoin(selectedTitle, selectedAuthor),
+                criteria.getQuery()
+        );
+        if (!isBlank(selectedQuery)) {
+            builder.query(selectedQuery);
+        }
+
+        DownloadSearchCriteria resolved = builder.build();
+        return resolved.toBuilder()
+                .canonicalSelection(normalizeSelection(selection, resolved))
+                .build();
+    }
+
     private DownloadSearchCriteria applyCandidate(DownloadSearchCriteria criteria, Candidate candidate) {
+        return applyCandidate(criteria, candidate, null);
+    }
+
+    private DownloadSearchCriteria applyCandidate(DownloadSearchCriteria criteria, Candidate candidate, DownloadSequenceNumberType sequenceOverride) {
         DownloadSearchCriteria.DownloadSearchCriteriaBuilder builder = criteria.toBuilder();
         boolean sequential = candidate.contentKind() != null && candidate.contentKind().isSequentialArt() || likelySequentialArt(criteria);
 
@@ -466,15 +538,25 @@ public class DownloadCanonicalResolver {
         if (criteria.getContentKind() == null || criteria.getContentKind().isAuto()) {
             builder.contentKind(candidate.contentKind());
         }
+        if (sequenceOverride != null && !sequenceOverride.isAuto()) {
+            builder.sequenceNumberType(sequenceOverride);
+        }
         String canonicalQuery = canonicalOutputQuery(criteria, candidate, sequential);
         if (!isBlank(canonicalQuery)) {
             builder.query(canonicalQuery);
         }
-        return builder.build();
+        DownloadSearchCriteria resolved = builder.build();
+        return resolved.toBuilder()
+                .canonicalSelection(toSelection(candidate, resolved))
+                .build();
     }
 
     private CanonicalCandidate toCanonicalCandidate(DownloadSearchCriteria criteria, Candidate candidate) {
-        DownloadSearchCriteria resolved = applyCandidate(criteria, candidate);
+        return toCanonicalCandidate(criteria, candidate, null);
+    }
+
+    private CanonicalCandidate toCanonicalCandidate(DownloadSearchCriteria criteria, Candidate candidate, DownloadSequenceNumberType sequenceOverride) {
+        DownloadSearchCriteria resolved = applyCandidate(criteria, candidate, sequenceOverride);
         return new CanonicalCandidate(
                 candidate.provider(),
                 candidate.contentKind(),
@@ -483,6 +565,68 @@ public class DownloadCanonicalResolver {
                 candidate.isbn(),
                 candidate.seriesName(),
                 Math.round(candidate.confidence() * 1000D) / 1000D,
+                resolved.getQuery(),
+                resolved.getTitle(),
+                resolved.getAuthor(),
+                resolved.getIsbn(),
+                resolved.getSeriesName(),
+                resolved.getSeriesNumber(),
+                resolved.getSequenceNumberType()
+        );
+    }
+
+    private List<CanonicalCandidate> candidateVariants(DownloadSearchCriteria criteria, Candidate candidate) {
+        if (!shouldOfferMangaNumberAmbiguity(criteria, candidate)) {
+            return List.of(toCanonicalCandidate(criteria, candidate));
+        }
+        return List.of(
+                toCanonicalCandidate(criteria, candidate, DownloadSequenceNumberType.VOLUME),
+                toCanonicalCandidate(criteria, candidate, DownloadSequenceNumberType.CHAPTER)
+        );
+    }
+
+    private boolean shouldOfferMangaNumberAmbiguity(DownloadSearchCriteria criteria, Candidate candidate) {
+        if (candidate.contentKind() != DownloadContentKind.MANGA || criteria.getSeriesNumber() == null) {
+            return false;
+        }
+        DownloadContentKind requested = requestedKind(criteria);
+        if (requested != DownloadContentKind.AUTO && requested != DownloadContentKind.MANGA) {
+            return false;
+        }
+        String original = firstNonBlank(criteria.getOriginalQuery(), criteria.getQuery(), criteria.effectiveQuery());
+        return !isBlank(original)
+                && BARE_TRAILING_NUMBER.matcher(original.trim()).matches()
+                && !EXPLICIT_SEQUENCE_MARKER.matcher(original).find();
+    }
+
+    private DownloadSearchCriteria.CanonicalSelection toSelection(Candidate candidate, DownloadSearchCriteria resolved) {
+        return new DownloadSearchCriteria.CanonicalSelection(
+                candidate.provider(),
+                resolved.getContentKind(),
+                candidate.title(),
+                candidate.author(),
+                candidate.isbn(),
+                candidate.seriesName(),
+                Math.round(candidate.confidence() * 1000D) / 1000D,
+                resolved.getQuery(),
+                resolved.getTitle(),
+                resolved.getAuthor(),
+                resolved.getIsbn(),
+                resolved.getSeriesName(),
+                resolved.getSeriesNumber(),
+                resolved.getSequenceNumberType()
+        );
+    }
+
+    private DownloadSearchCriteria.CanonicalSelection normalizeSelection(DownloadSearchCriteria.CanonicalSelection selection, DownloadSearchCriteria resolved) {
+        return new DownloadSearchCriteria.CanonicalSelection(
+                firstNonBlank(selection.provider(), "manual"),
+                resolved.getContentKind(),
+                firstNonBlank(selection.title(), resolved.getTitle()),
+                firstNonBlank(selection.author(), resolved.getAuthor()),
+                firstNonBlank(selection.isbn(), resolved.getIsbn()),
+                firstNonBlank(selection.seriesName(), resolved.getSeriesName()),
+                selection.confidence() == null ? null : Math.round(selection.confidence() * 1000D) / 1000D,
                 resolved.getQuery(),
                 resolved.getTitle(),
                 resolved.getAuthor(),

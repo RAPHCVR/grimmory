@@ -78,7 +78,7 @@
             </div>
           </div>
           <div class="canonical-list">
-            @for (candidate of canonicalCandidates; track candidate.provider + ':' + canonicalCandidateTitle(candidate)) {
+            @for (candidate of canonicalCandidates; track candidate.provider + ':' + canonicalCandidateTitle(candidate) + ':' + (candidate.sequenceNumberType || 'AUTO')) {
               <div class="canonical-card">
                 <div class="canonical-main">
                   <div class="canonical-title-row">
@@ -98,6 +98,23 @@
               </div>
             }
           </div>
+        </div>
+      }
+
+      @if (isCanonicalLocked() && selectedCanonicalCandidate) {
+        <div class="canonical-lock" role="status" aria-live="polite">
+          <div>
+            <strong>{{ t('resolve.lockedTitle') }}</strong>
+            <span>{{ t('resolve.lockedDetail', {title: canonicalCandidateTitle(selectedCanonicalCandidate)}) }}</span>
+          </div>
+          <p-button
+            icon="pi pi-unlock"
+            [label]="t('actions.clearCanonical')"
+            size="small"
+            severity="secondary"
+            [outlined]="true"
+            (onClick)="clearCanonicalLock()">
+          </p-button>
         </div>
       }
 

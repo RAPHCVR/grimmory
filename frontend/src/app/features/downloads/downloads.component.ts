@@ -23,6 +23,7 @@ import {
   DOWNLOAD_CONTENT_KINDS,
   DOWNLOAD_FORMATS,
   DownloadCanonicalCandidate,
+  DownloadCanonicalSelection,
   DownloadContentKind,
   DownloadFormat,
   DownloadJob,
@@ -82,6 +83,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
 
   results: DownloadResult[] = [];
   canonicalCandidates: DownloadCanonicalCandidate[] = [];
+  selectedCanonicalCandidate: DownloadCanonicalCandidate | null = null;
   jobs: DownloadJob[] = [];
   libraries: Library[] = [];
   searchId: number | null = null;
@@ -268,7 +270,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
   }
 
   resolveCanonical(): void {
-    const request = this.buildSearchRequest();
+    const request = this.buildSearchRequest(false);
     if (!request.query && !request.title && !request.isbn && !request.seriesName) {
       this.messageService.add({
         severity: 'warn',
@@ -286,6 +288,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
       return;
     }
 
+    this.clearCanonicalLock();
     this.resolvingCanonical = true;
     this.downloadsService.resolve(request).pipe(
       finalize(() => this.resolvingCanonical = false)
@@ -321,8 +324,9 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     if (candidate.contentKind && candidate.contentKind !== 'AUTO') {
       this.contentKind = candidate.contentKind;
     }
+    this.selectedCanonicalCandidate = candidate;
     this.canonicalCandidates = [];
-    this.canonicalSearchSignature = this.requestSignature(this.buildSearchRequest());
+    this.canonicalSearchSignature = this.requestSignature(this.buildSearchRequest(false));
     this.messageService.add({
       severity: 'success',
       summary: this.t.translate('downloads.resolve.appliedSummary'),
@@ -409,6 +413,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     this.maxResults = 25;
     this.results = [];
     this.canonicalCandidates = [];
+    this.selectedCanonicalCandidate = null;
     this.canonicalSearchSignature = null;
     this.searchId = null;
     this.searchError = null;
@@ -502,6 +507,15 @@ export class DownloadsComponent implements OnInit, OnDestroy {
 
   canonicalConfidence(candidate: DownloadCanonicalCandidate): string {
     return `${Math.round((candidate.confidence ?? 0) * 100)}%`;
+  }
+
+  isCanonicalLocked(): boolean {
+    return this.isCanonicalSelectionCurrent(this.buildSearchRequest(false));
+  }
+
+  clearCanonicalLock(): void {
+    this.selectedCanonicalCandidate = null;
+    this.canonicalSearchSignature = null;
   }
 
   acquisitionLabel(acquisitionType: string): string {
@@ -604,8 +618,8 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     return item.id;
   }
 
-  private buildSearchRequest(): DownloadSearchRequest {
-    return {
+  private buildSearchRequest(includeCanonicalSelection = true): DownloadSearchRequest {
+    const request: DownloadSearchRequest = {
       query: this.clean(this.query),
       title: this.clean(this.title),
       author: this.clean(this.author),
@@ -618,6 +632,10 @@ export class DownloadsComponent implements OnInit, OnDestroy {
       preferredFormats: this.preferredFormats,
       maxResults: Math.max(1, Math.min(100, this.maxResults || 25))
     };
+    if (includeCanonicalSelection && !request.directUrl && this.selectedCanonicalCandidate && this.isCanonicalSelectionCurrent(request)) {
+      request.canonicalSelection = this.toCanonicalSelection(this.selectedCanonicalCandidate);
+    }
+    return request;
   }
 
   private clean(value: string): string | null {
@@ -627,12 +645,45 @@ export class DownloadsComponent implements OnInit, OnDestroy {
 
   private shouldResolveBeforeSearch(request: DownloadSearchRequest): boolean {
     if (request.directUrl) {
+      if (this.selectedCanonicalCandidate) {
+        this.clearCanonicalLock();
+      }
       return false;
     }
     if (!request.query && !request.title && !request.isbn && !request.seriesName) {
       return false;
     }
+    if (this.isCanonicalSelectionCurrent(request)) {
+      return false;
+    }
+    if (this.selectedCanonicalCandidate) {
+      this.clearCanonicalLock();
+    }
     return this.canonicalSearchSignature !== this.requestSignature(request);
+  }
+
+  private isCanonicalSelectionCurrent(request: DownloadSearchRequest): boolean {
+    return this.selectedCanonicalCandidate !== null
+      && this.canonicalSearchSignature === this.requestSignature(request);
+  }
+
+  private toCanonicalSelection(candidate: DownloadCanonicalCandidate): DownloadCanonicalSelection {
+    return {
+      provider: candidate.provider,
+      contentKind: candidate.contentKind,
+      title: candidate.title ?? null,
+      author: candidate.author ?? null,
+      isbn: candidate.isbn ?? null,
+      seriesName: candidate.seriesName ?? null,
+      confidence: candidate.confidence,
+      query: candidate.query ?? null,
+      resolvedTitle: candidate.resolvedTitle ?? null,
+      resolvedAuthor: candidate.resolvedAuthor ?? null,
+      resolvedIsbn: candidate.resolvedIsbn ?? null,
+      resolvedSeriesName: candidate.resolvedSeriesName ?? null,
+      seriesNumber: candidate.seriesNumber ?? null,
+      sequenceNumberType: candidate.sequenceNumberType ?? 'AUTO'
+    };
   }
 
   private requestSignature(request: DownloadSearchRequest): string {
@@ -644,6 +695,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
       seriesName: request.seriesName ?? null,
       seriesNumber: request.seriesNumber ?? null,
       sequenceNumberType: request.sequenceNumberType ?? 'AUTO',
+      directUrl: request.directUrl ?? null,
       contentKind: request.contentKind ?? 'AUTO'
     });
   }

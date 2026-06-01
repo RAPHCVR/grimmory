@@ -90,6 +90,7 @@ public class DownloadPipelineManager {
     public DownloadSearchEntity search(DownloadSearchCriteria criteria) {
         criteria = queryIntentParser.enrich(criteria);
         criteria = canonicalResolver.resolve(criteria);
+        DownloadSearchCriteria.CanonicalSelection canonicalSelection = criteria.getCanonicalSelection();
         DownloadSearchEntity search = searchRepository.save(DownloadSearchEntity.builder()
                 .query(criteria.effectiveQuery())
                 .title(criteria.getTitle())
@@ -99,6 +100,15 @@ public class DownloadPipelineManager {
                 .seriesNumber(criteria.getSeriesNumber())
                 .contentKind(criteria.getContentKind())
                 .preferredFormatsJson(writeJson(criteria.getPreferredFormats()))
+                .canonicalProvider(canonicalProvider(canonicalSelection))
+                .canonicalContentKind(canonicalSelection == null ? null : canonicalSelection.contentKind())
+                .canonicalTitle(canonicalSelection == null ? null : canonicalSelection.resolvedTitle())
+                .canonicalAuthor(canonicalSelection == null ? null : canonicalSelection.resolvedAuthor())
+                .canonicalIsbn(canonicalSelection == null ? null : canonicalSelection.resolvedIsbn())
+                .canonicalSeriesName(canonicalSelection == null ? null : canonicalSelection.resolvedSeriesName())
+                .canonicalSeriesNumber(canonicalSelection == null ? null : canonicalSelection.seriesNumber())
+                .canonicalSequenceNumberType(canonicalSelection == null ? null : canonicalSelection.sequenceNumberType())
+                .canonicalConfidence(canonicalSelection == null ? null : canonicalSelection.confidence())
                 .status(DownloadSearchStatus.RUNNING)
                 .build());
 
@@ -497,6 +507,13 @@ public class DownloadPipelineManager {
         } catch (Exception e) {
             throw new DownloadException("Failed to serialize download JSON", e);
         }
+    }
+
+    private String canonicalProvider(DownloadSearchCriteria.CanonicalSelection selection) {
+        if (selection == null || selection.provider() == null || selection.provider().isBlank()) {
+            return null;
+        }
+        return selection.provider();
     }
 
     private List<String> readStringList(String json) {

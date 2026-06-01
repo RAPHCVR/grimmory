@@ -3,6 +3,7 @@ package org.booklore.service.downloads;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.booklore.model.enums.DownloadContentKind;
+import org.booklore.model.enums.DownloadSequenceNumberType;
 import org.booklore.service.downloads.dto.DownloadSearchCriteria;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
@@ -167,16 +168,54 @@ class DownloadCanonicalResolverTest {
 
             List<DownloadCanonicalResolver.CanonicalCandidate> candidates = resolver.resolveCandidates(parsed);
 
-            assertThat(candidates).hasSize(1);
-            DownloadCanonicalResolver.CanonicalCandidate candidate = candidates.getFirst();
-            assertThat(candidate.provider()).isEqualTo("mangadex");
-            assertThat(candidate.resolvedSeriesName()).isEqualTo("Dragon Ball Super");
-            assertThat(candidate.seriesNumber()).isEqualTo(24F);
-            assertThat(candidate.sequenceNumberType().name()).isEqualTo("VOLUME");
-            assertThat(candidate.resolvedAuthor()).isEqualTo("Akira Toriyama");
+            assertThat(candidates).hasSize(2);
+            assertThat(candidates)
+                    .extracting(DownloadCanonicalResolver.CanonicalCandidate::sequenceNumberType)
+                    .containsExactly(DownloadSequenceNumberType.VOLUME, DownloadSequenceNumberType.CHAPTER);
+            for (DownloadCanonicalResolver.CanonicalCandidate candidate : candidates) {
+                assertThat(candidate.provider()).isEqualTo("mangadex");
+                assertThat(candidate.resolvedSeriesName()).isEqualTo("Dragon Ball Super");
+                assertThat(candidate.seriesNumber()).isEqualTo(24F);
+                assertThat(candidate.resolvedAuthor()).isEqualTo("Akira Toriyama");
+            }
         } finally {
             server.stop(0);
         }
+    }
+
+    @Test
+    void appliesLockedCanonicalSelectionWithoutProviderLookup() {
+        DownloadCanonicalResolver resolver = resolver();
+        resolver.enabled = false;
+
+        DownloadSearchCriteria resolved = resolver.resolve(DownloadSearchCriteria.builder()
+                .query("Dragon Ball Super")
+                .contentKind(DownloadContentKind.MANGA)
+                .canonicalSelection(new DownloadSearchCriteria.CanonicalSelection(
+                        "mangadex",
+                        DownloadContentKind.MANGA,
+                        "Dragon Ball Super",
+                        "Akira Toriyama",
+                        null,
+                        "Dragon Ball Super",
+                        0.99D,
+                        "Dragon Ball Super",
+                        "Dragon Ball Super",
+                        "Akira Toriyama",
+                        null,
+                        "Dragon Ball Super",
+                        24F,
+                        DownloadSequenceNumberType.CHAPTER
+                ))
+                .build());
+
+        assertThat(resolved.getTitle()).isEqualTo("Dragon Ball Super");
+        assertThat(resolved.getSeriesName()).isEqualTo("Dragon Ball Super");
+        assertThat(resolved.getSeriesNumber()).isEqualTo(24F);
+        assertThat(resolved.getAuthor()).isEqualTo("Akira Toriyama");
+        assertThat(resolved.getSequenceNumberType()).isEqualTo(DownloadSequenceNumberType.CHAPTER);
+        assertThat(resolved.getCanonicalSelection()).isNotNull();
+        assertThat(resolved.getCanonicalSelection().provider()).isEqualTo("mangadex");
     }
 
     @Test

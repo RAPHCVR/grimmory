@@ -11,6 +11,7 @@ import java.util.List;
 @Value
 @Builder(toBuilder = true)
 public class DownloadSearchCriteria {
+    String originalQuery;
     String query;
     String title;
     String author;
@@ -24,6 +25,7 @@ public class DownloadSearchCriteria {
     @Builder.Default
     List<DownloadFormat> preferredFormats = List.of();
     String directUrl;
+    CanonicalSelection canonicalSelection;
     @Builder.Default
     int maxResults = 25;
 
@@ -38,5 +40,21 @@ public class DownloadSearchCriteria {
         }
         if (seriesName != null && !seriesName.isBlank() && sb.isEmpty()) sb.append(seriesName);
         return sb.toString().trim();
+    }
+
+    public record CanonicalSelection(String provider,
+                                     DownloadContentKind contentKind,
+                                     String title,
+                                     String author,
+                                     String isbn,
+                                     String seriesName,
+                                     Double confidence,
+                                     String query,
+                                     String resolvedTitle,
+                                     String resolvedAuthor,
+                                     String resolvedIsbn,
+                                     String resolvedSeriesName,
+                                     Float seriesNumber,
+                                     DownloadSequenceNumberType sequenceNumberType) {
     }
 }

@@ -10,7 +10,8 @@
         "process": "Traiter le job",
         "retry": "Réessayer",
         "resolve": "Résoudre l’œuvre",
-        "useCanonical": "Utiliser cette œuvre"
+        "useCanonical": "Utiliser cette œuvre",
+        "clearCanonical": "Déverrouiller"
     },
     "search": {
         "placeholder": "Rechercher par titre, auteur, ISBN, série, ou coller une URL directe ci-dessous",
@@ -126,6 +127,8 @@
         "error": "La résolution canonique a échoué.",
         "appliedSummary": "Œuvre canonique sélectionnée",
         "appliedDetail": "{{title}} est maintenant verrouillée dans les champs de recherche.",
+        "lockedTitle": "Œuvre canonique verrouillée",
+        "lockedDetail": "{{title}} sera envoyé aux sources d’acquisition comme identité catalogue sélectionnée.",
         "skippedDirectUrlSummary": "Resolver ignoré",
         "skippedDirectUrlDetail": "Une URL directe identifie déjà une cible d’acquisition concrète."
     }

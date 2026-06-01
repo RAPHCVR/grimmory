@@ -59,6 +59,7 @@ export interface DownloadSearchRequest {
   contentKind?: DownloadContentKind;
   preferredFormats?: DownloadFormat[];
   directUrl?: string | null;
+  canonicalSelection?: DownloadCanonicalSelection | null;
   maxResults?: number;
 }
 
@@ -81,10 +82,11 @@ export interface DownloadSearchResponse {
   status: DownloadSearchStatus;
   query: string;
   errorMessage?: string | null;
+  canonicalSelection?: DownloadCanonicalSelection | null;
   results: DownloadResult[];
 }
 
-export interface DownloadCanonicalCandidate {
+export interface DownloadCanonicalSelection {
   provider: string;
   contentKind: DownloadContentKind;
   title?: string | null;
@@ -100,6 +102,8 @@ export interface DownloadCanonicalCandidate {
   seriesNumber?: number | null;
   sequenceNumberType?: DownloadSequenceNumberType | null;
 }
+
+export type DownloadCanonicalCandidate = DownloadCanonicalSelection;
 
 export interface DownloadResult {
   id: number;

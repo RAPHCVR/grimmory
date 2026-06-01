@@ -10,7 +10,8 @@
     "process": "Process job",
     "retry": "Retry",
     "resolve": "Resolve work",
-    "useCanonical": "Use this work"
+    "useCanonical": "Use this work",
+    "clearCanonical": "Unlock"
   },
   "search": {
     "placeholder": "Search by title, author, ISBN, series, or paste a direct URL below",
@@ -106,6 +107,8 @@
     "error": "Canonical resolution failed.",
     "appliedSummary": "Canonical work selected",
     "appliedDetail": "{{title}} is now locked into the search fields.",
+    "lockedTitle": "Canonical work locked",
+    "lockedDetail": "{{title}} will be sent to acquisition sources as the selected catalogue identity.",
     "skippedDirectUrlSummary": "Resolver skipped",
     "skippedDirectUrlDetail": "Direct URLs already identify a concrete acquisition target."
   },
