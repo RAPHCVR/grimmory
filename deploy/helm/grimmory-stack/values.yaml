@@ -267,6 +267,8 @@ bootstrapSources:
     translatedLanguages:
       - en
       - fr
+  kagane:
+    enabled: false
   prowlarr:
     indexerIds: ""
     flareSolverrProxy:
