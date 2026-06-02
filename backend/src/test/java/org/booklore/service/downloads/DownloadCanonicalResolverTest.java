@@ -3,6 +3,7 @@ package org.booklore.service.downloads;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.booklore.model.enums.DownloadContentKind;
+import org.booklore.model.enums.DownloadFormat;
 import org.booklore.model.enums.DownloadSequenceNumberType;
 import org.booklore.service.downloads.dto.DownloadSearchCriteria;
 import org.junit.jupiter.api.Test;
@@ -88,6 +89,46 @@ class DownloadCanonicalResolverTest {
             assertThat(resolved.getIsbn()).isEqualTo("9780141439518");
             assertThat(resolved.getQuery()).isEqualTo("Pride and Prejudice Jane Austen");
             assertThat(resolved.getContentKind()).isEqualTo(DownloadContentKind.BOOK);
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void resolve_openLibraryBookCandidateDoesNotForceBookKindForSequentialAutoSearch() throws Exception {
+        HttpServer server = jsonServer("/search.json", """
+                {
+                  "docs": [
+                    {
+                      "title": "Bonne Nuit Punpun",
+                      "author_name": ["Inio Asano"],
+                      "isbn": ["9782505017363"]
+                    }
+                  ]
+                }
+                """);
+        server.start();
+        try {
+            DownloadCanonicalResolver resolver = resolver();
+            resolver.openLibraryBaseUrl = baseUrl(server);
+            resolver.googleBooksEnabled = false;
+            resolver.mangaDexEnabled = false;
+            resolver.webtoonsEnabled = false;
+
+            DownloadSearchCriteria parsed = parser.enrich(DownloadSearchCriteria.builder()
+                    .query("Bonne Nuit Punpun tome 1")
+                    .contentKind(DownloadContentKind.AUTO)
+                    .preferredFormats(List.of(DownloadFormat.CBZ))
+                    .build());
+
+            DownloadSearchCriteria resolved = resolver.resolve(parsed);
+
+            assertThat(resolved.getTitle()).isEqualTo("Bonne Nuit Punpun");
+            assertThat(resolved.getAuthor()).isEqualTo("Inio Asano");
+            assertThat(resolved.getIsbn()).isEqualTo("9782505017363");
+            assertThat(resolved.getSeriesNumber()).isEqualTo(1F);
+            assertThat(resolved.getSequenceNumberType()).isEqualTo(DownloadSequenceNumberType.VOLUME);
+            assertThat(resolved.getContentKind()).isEqualTo(DownloadContentKind.AUTO);
         } finally {
             server.stop(0);
         }

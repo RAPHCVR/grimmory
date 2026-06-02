@@ -519,7 +519,7 @@ public class DownloadCanonicalResolver {
 
     private DownloadSearchCriteria applySelection(DownloadSearchCriteria criteria, DownloadSearchCriteria.CanonicalSelection selection) {
         DownloadSearchCriteria.DownloadSearchCriteriaBuilder builder = criteria.toBuilder();
-        DownloadContentKind selectedKind = selection.contentKind() == null ? DownloadContentKind.AUTO : selection.contentKind();
+        DownloadContentKind selectedKind = effectiveCanonicalKind(criteria, selection.contentKind());
         DownloadSequenceNumberType selectedSequenceType = selection.sequenceNumberType() == null
                 ? DownloadSequenceNumberType.AUTO
                 : selection.sequenceNumberType();
@@ -587,7 +587,7 @@ public class DownloadCanonicalResolver {
             builder.isbn(candidate.isbn());
         }
         if (criteria.getContentKind() == null || criteria.getContentKind().isAuto()) {
-            builder.contentKind(candidate.contentKind());
+            builder.contentKind(effectiveCanonicalKind(criteria, candidate.contentKind()));
         }
         if (sequenceOverride != null && !sequenceOverride.isAuto()) {
             builder.sequenceNumberType(sequenceOverride);
@@ -610,7 +610,7 @@ public class DownloadCanonicalResolver {
         DownloadSearchCriteria resolved = applyCandidate(criteria, candidate, sequenceOverride);
         return new CanonicalCandidate(
                 candidate.provider(),
-                candidate.contentKind(),
+                resolved.getContentKind() == null ? DownloadContentKind.AUTO : resolved.getContentKind(),
                 candidate.title(),
                 candidate.author(),
                 candidate.isbn(),
@@ -733,6 +733,14 @@ public class DownloadCanonicalResolver {
 
     private DownloadContentKind requestedKind(DownloadSearchCriteria criteria) {
         return criteria.getContentKind() == null ? DownloadContentKind.AUTO : criteria.getContentKind();
+    }
+
+    private DownloadContentKind effectiveCanonicalKind(DownloadSearchCriteria criteria, DownloadContentKind candidateKind) {
+        DownloadContentKind kind = candidateKind == null ? DownloadContentKind.AUTO : candidateKind;
+        if (kind == DownloadContentKind.BOOK && likelySequentialArt(criteria)) {
+            return DownloadContentKind.AUTO;
+        }
+        return kind;
     }
 
     private boolean likelySequentialArt(DownloadSearchCriteria criteria) {
