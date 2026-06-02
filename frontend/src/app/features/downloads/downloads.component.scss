@@ -115,13 +115,13 @@
 
 .canonical-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
   gap: 0.75rem;
 }
 
 .canonical-card {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 0.75rem;
   min-width: 0;
@@ -157,8 +157,8 @@
 }
 
 .canonical-cover {
-  width: 3.25rem;
-  height: 4.5rem;
+  width: 4.25rem;
+  height: 6rem;
 }
 
 .canonical-main {
@@ -170,10 +170,28 @@
   span {
     color: var(--p-text-muted-color);
     font-size: 0.82rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
+}
+
+.canonical-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+
+  span {
+    padding: 0.12rem 0.4rem;
+    border-radius: 999px;
+    color: var(--p-text-color);
+    background: color-mix(in srgb, var(--p-primary-color) 16%, transparent);
+    font-size: 0.7rem;
+    font-weight: 700;
+  }
+}
+
+.canonical-secondary {
+  color: var(--p-text-muted-color);
+  font-size: 0.82rem;
+  line-height: 1.35;
 }
 
 .canonical-description {
@@ -194,6 +212,11 @@
   align-items: center;
   flex-wrap: wrap;
   justify-content: flex-end;
+
+  @media (width <= 900px) {
+    width: 100%;
+    justify-content: flex-start;
+  }
 }
 
 .canonical-title-row {
@@ -204,9 +227,8 @@
 
   strong {
     color: var(--p-text-color);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
+    line-height: 1.25;
   }
 }
 

@@ -138,7 +138,7 @@ public class DownloadController {
                 Boolean.TRUE.equals(request.getAutoFinalize()),
                 request.getConfidenceThreshold() == null ? 90 : request.getConfidenceThreshold()
         );
-        return toJobResponse(jobRunner.start(job.getId()));
+        return toJobResponse(startIfQueued(job));
     }
 
     @Operation(summary = "Queue a selected download result")
@@ -167,7 +167,7 @@ public class DownloadController {
                 Boolean.TRUE.equals(request.getAutoFinalize()),
                 request.getConfidenceThreshold() == null ? 90 : request.getConfidenceThreshold()
         );
-        return toJobResponse(jobRunner.start(job.getId()));
+        return toJobResponse(startIfQueued(job));
     }
 
     @Operation(summary = "Start processing a queued download job")
@@ -235,6 +235,10 @@ public class DownloadController {
                 .canonicalSelection(toCanonicalSelection(request.getCanonicalSelection()))
                 .maxResults(request.getMaxResults() == null ? 25 : Math.max(1, request.getMaxResults()))
                 .build();
+    }
+
+    private DownloadJobEntity startIfQueued(DownloadJobEntity job) {
+        return job.getStatus() == DownloadJobStatus.QUEUED ? jobRunner.start(job.getId()) : job;
     }
 
     private DownloadSearchCriteria.CanonicalSelection toCanonicalSelection(DownloadCanonicalSelectionRequest selection) {

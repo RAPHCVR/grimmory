@@ -66,6 +66,18 @@ public class DownloadPipelineManager {
             DownloadJobStatus.DELIVERING,
             DownloadJobStatus.AUTO_FINALIZING
     );
+    private static final List<DownloadJobStatus> REUSABLE_JOB_STATUSES = List.of(
+            DownloadJobStatus.QUEUED,
+            DownloadJobStatus.SEARCHING,
+            DownloadJobStatus.SCORING,
+            DownloadJobStatus.DOWNLOADING,
+            DownloadJobStatus.VALIDATING,
+            DownloadJobStatus.STAGED,
+            DownloadJobStatus.DELIVERING,
+            DownloadJobStatus.AUTO_FINALIZING,
+            DownloadJobStatus.PENDING_REVIEW,
+            DownloadJobStatus.COMPLETED
+    );
 
     private final AppProperties appProperties;
     private final DownloadSourceRepository sourceRepository;
@@ -156,6 +168,11 @@ public class DownloadPipelineManager {
         if (best.getScore() == null || best.getScore() < MIN_DOWNLOADABLE_SCORE) {
             throw new DownloadException("No confident downloadable result found for query: " + criteria.effectiveQuery());
         }
+        Optional<DownloadJobEntity> reusableJob = reusableJobFor(best);
+        if (reusableJob.isPresent()) {
+            log.info("Reusing existing download job {} for result fingerprint {}", reusableJob.get().getId(), resultFingerprint(best));
+            return reusableJob.get();
+        }
         DownloadTargetResolver.ResolvedTarget target = targetResolver.resolve(targetLibraryId, targetLibraryPathId, autoFinalize, best.getFormat());
 
         DownloadJobEntity job = DownloadJobEntity.builder()
@@ -190,6 +207,11 @@ public class DownloadPipelineManager {
                                          int confidenceThreshold) {
         DownloadResultEntity result = resultRepository.findWithSearchAndSourceById(resultId)
                 .orElseThrow(() -> new DownloadException("Download result not found: " + resultId));
+        Optional<DownloadJobEntity> reusableJob = reusableJobFor(result);
+        if (reusableJob.isPresent()) {
+            log.info("Reusing existing download job {} for selected result fingerprint {}", reusableJob.get().getId(), resultFingerprint(result));
+            return reusableJob.get();
+        }
         DownloadTargetResolver.ResolvedTarget target = targetResolver.resolve(targetLibraryId, targetLibraryPathId, autoFinalize, result.getFormat());
 
         DownloadJobEntity job = DownloadJobEntity.builder()
@@ -334,6 +356,48 @@ public class DownloadPipelineManager {
         updateJob(job, deliveryResult.autoFinalized() ? DownloadJobStatus.COMPLETED : DownloadJobStatus.PENDING_REVIEW, 100, null);
         cleanupEmptyStagingDirectories(stagingDir);
         return jobRepository.save(job);
+    }
+
+    private Optional<DownloadJobEntity> reusableJobFor(DownloadResultEntity result) {
+        if (result == null || result.getSource() == null || result.getSource().getId() == null) {
+            return Optional.empty();
+        }
+        String externalId = trimToNull(result.getExternalId());
+        String detailsUrl = trimToNull(result.getDetailsUrl());
+        String downloadUrl = trimToNull(result.getDownloadUrl());
+        if (externalId == null && detailsUrl == null && downloadUrl == null) {
+            return Optional.empty();
+        }
+        return jobRepository.findReusableByResultFingerprint(
+                        result.getSource().getId(),
+                        externalId,
+                        detailsUrl,
+                        downloadUrl,
+                        REUSABLE_JOB_STATUSES
+                )
+                .stream()
+                .findFirst();
+    }
+
+    private String resultFingerprint(DownloadResultEntity result) {
+        return firstNonBlank(result.getExternalId(), result.getDetailsUrl(), result.getDownloadUrl(), String.valueOf(result.getId()));
+    }
+
+    private String trimToNull(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            String normalized = trimToNull(value);
+            if (normalized != null) {
+                return normalized;
+            }
+        }
+        return null;
     }
 
     private Optional<DownloadResultEntity> fallbackResult(DownloadJobEntity job, List<Long> attemptedResultIds) {

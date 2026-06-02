@@ -31,6 +31,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -218,6 +219,58 @@ class DownloadPipelineManagerTest {
 
         assertEquals(DownloadJobStatus.QUEUED, retry.getStatus());
         assertTrue(retry.getFallbackEnabled(), "Retries must recover legacy failed jobs with fallback enabled");
+    }
+
+    @Test
+    void queueResult_reusesEquivalentActiveJobInsteadOfSubmittingDuplicate() {
+        DownloadResultRepository resultRepository = mock(DownloadResultRepository.class);
+        DownloadJobRepository jobRepository = mock(DownloadJobRepository.class);
+        DownloadTargetResolver targetResolver = mock(DownloadTargetResolver.class);
+
+        DownloadPipelineManager manager = new DownloadPipelineManager(
+                new AppProperties(),
+                mock(DownloadSourceRepository.class),
+                mock(DownloadSearchRepository.class),
+                resultRepository,
+                jobRepository,
+                mock(DownloadAdapterRegistry.class),
+                mock(DownloadExecutorRegistry.class),
+                mock(DownloadScoringService.class),
+                mock(DownloadNamingService.class),
+                targetResolver,
+                mock(DownloadedCbxMetadataService.class),
+                mock(BookdropDeliveryService.class),
+                mock(DownloadQueryIntentParser.class),
+                mock(DownloadCanonicalResolver.class),
+                new ObjectMapper()
+        );
+
+        DownloadSourceEntity source = source(1L, "Stacks", DownloadSourceType.ANNAS_ARCHIVE_API);
+        DownloadSearchEntity search = DownloadSearchEntity.builder()
+                .id(10L)
+                .query("bonne nuit punpun tome 1")
+                .contentKind(DownloadContentKind.MANGA)
+                .build();
+        DownloadResultEntity selectedResult = result(100L, search, source, "Bonne Nuit Punpun Volume 1", 100, DownloadAcquisitionType.EXTERNAL_STACKS);
+        selectedResult.setExternalId("bcdd1d9448f4939baa1e7f75fa7b8be5");
+        selectedResult.setDetailsUrl("https://annas-archive.test/md5/bcdd1d9448f4939baa1e7f75fa7b8be5");
+        DownloadJobEntity existingJob = DownloadJobEntity.builder()
+                .id(55L)
+                .search(search)
+                .result(selectedResult)
+                .source(source)
+                .status(DownloadJobStatus.DOWNLOADING)
+                .confidenceScore(100)
+                .build();
+
+        when(resultRepository.findWithSearchAndSourceById(100L)).thenReturn(Optional.of(selectedResult));
+        when(jobRepository.findReusableByResultFingerprint(eq(1L), eq("bcdd1d9448f4939baa1e7f75fa7b8be5"), eq("https://annas-archive.test/md5/bcdd1d9448f4939baa1e7f75fa7b8be5"), eq(null), any()))
+                .thenReturn(List.of(existingJob));
+
+        DownloadJobEntity queued = manager.queueResult(100L, null, null, false, 90);
+
+        assertSame(existingJob, queued);
+        verify(targetResolver, org.mockito.Mockito.never()).resolve(any(), any(), org.mockito.ArgumentMatchers.anyBoolean(), any());
     }
 
     private DownloadSourceEntity source(Long id, String name, DownloadSourceType type) {

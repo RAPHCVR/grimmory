@@ -76,7 +76,7 @@ public class DownloadQueryIntentParser {
             if (number == null || looksLikeYear(number)) {
                 continue;
             }
-            String cleanTitle = cleanTitle(explicit.replaceFirst(" "));
+            String cleanTitle = cleanExplicitTitle(value, explicit);
             if (!cleanTitle.isBlank()) {
                 best = new ParsedNumberIntent(cleanTitle, number, sequenceTypeForExplicitMarker(marker, contentKind));
             }
@@ -132,6 +132,17 @@ public class DownloadQueryIntentParser {
                 .trim();
         cleaned = DANGLING_SEPARATORS.matcher(cleaned).replaceAll("");
         return MULTISPACE.matcher(cleaned).replaceAll(" ").trim();
+    }
+
+    private String cleanExplicitTitle(String value, Matcher markerMatch) {
+        String beforeMarker = value.substring(0, markerMatch.start());
+        String afterMarker = value.substring(markerMatch.end());
+        String preferred = !beforeMarker.isBlank() ? beforeMarker : afterMarker;
+        String cleaned = cleanTitle(preferred);
+        if (!cleaned.isBlank()) {
+            return cleaned;
+        }
+        return cleanTitle(markerMatch.replaceFirst(" "));
     }
 
     private String firstNonBlank(String... values) {

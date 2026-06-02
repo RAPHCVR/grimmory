@@ -15,7 +15,7 @@ import {Dialog} from 'primeng/dialog';
 import {MessageService} from 'primeng/api';
 import {TranslocoDirective, TranslocoService} from '@jsverse/transloco';
 import {finalize, switchMap} from 'rxjs/operators';
-import {interval, Subscription} from 'rxjs';
+import {interval, of, Subscription} from 'rxjs';
 import {PageTitleService} from '../../shared/service/page-title.service';
 import {LibraryService} from '../book/service/library.service';
 import {Library} from '../book/model/library.model';
@@ -37,6 +37,17 @@ import {
 interface SelectOption<T> {
   label: string;
   value: T;
+}
+
+interface CanonicalAppliedState {
+  query: string | null;
+  title: string;
+  author: string;
+  isbn: string;
+  seriesName: string;
+  seriesNumber: number | null;
+  sequenceNumberType: DownloadSequenceNumberType;
+  contentKind: DownloadContentKind;
 }
 
 @Component({
@@ -110,6 +121,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
   private searchProgressTimer?: ReturnType<typeof setInterval>;
   private searchStartedAt = 0;
   private canonicalSearchSignature: string | null = null;
+  private canonicalAppliedState: CanonicalAppliedState | null = null;
 
   constructor() {
     effect(() => {
@@ -133,6 +145,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
   }
 
   search(): void {
+    this.invalidateCanonicalLockIfQueryChanged();
     const request = this.buildSearchRequest();
     if (!request.query && !request.title && !request.isbn && !request.directUrl) {
       this.messageService.add({
@@ -195,6 +208,12 @@ export class DownloadsComponent implements OnInit, OnDestroy {
       targetLibraryPathId: this.targetLibraryPathId
     }).pipe(
       switchMap(job => {
+        if (job.status !== 'QUEUED') {
+          this.loadJobs(false);
+          this.showJobToast(job);
+          this.markViewDirty();
+          return of(job);
+        }
         this.processingJobIds.add(job.id);
         this.loadJobs(false);
         this.markViewDirty();
@@ -358,6 +377,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     this.selectedCanonicalCandidate = candidate;
     this.canonicalCandidates = [];
     this.canonicalSearchSignature = this.requestSignature(this.buildSearchRequest(false));
+    this.canonicalAppliedState = this.captureCanonicalAppliedState();
     this.messageService.add({
       severity: 'success',
       summary: this.t.translate('downloads.resolve.appliedSummary'),
@@ -469,6 +489,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     this.canonicalCandidates = [];
     this.selectedCanonicalCandidate = null;
     this.canonicalSearchSignature = null;
+    this.canonicalAppliedState = null;
     this.searchId = null;
     this.searchError = null;
     this.markViewDirty();
@@ -547,6 +568,16 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     return candidate.resolvedSeriesName || candidate.seriesName || candidate.resolvedTitle || candidate.title || candidate.query || '-';
   }
 
+  canonicalCandidatePrimary(candidate: DownloadCanonicalCandidate): string {
+    return candidate.resolvedTitle || candidate.title || candidate.resolvedSeriesName || candidate.seriesName || candidate.query || '-';
+  }
+
+  canonicalCandidateSecondary(candidate: DownloadCanonicalCandidate): string {
+    const series = candidate.resolvedSeriesName || candidate.seriesName;
+    const author = candidate.resolvedAuthor || candidate.author;
+    return [series && series !== this.canonicalCandidatePrimary(candidate) ? series : null, author].filter(Boolean).join(' · ');
+  }
+
   canonicalCandidateMeta(candidate: DownloadCanonicalCandidate): string {
     const number = candidate.seriesNumber == null
       ? null
@@ -584,6 +615,28 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     return `${type} ${candidate.seriesNumber}`;
   }
 
+  resultSequenceLabel(result: DownloadResult): string {
+    if (result.seriesNumber == null) {
+      return '';
+    }
+    const formattedNumber = this.formatSeriesNumber(result.seriesNumber);
+    if (result.acquisitionType === 'MANGADEX_CHAPTER') {
+      return `ch. ${formattedNumber}`;
+    }
+    if (result.contentKind === 'WEBTOON') {
+      return `ep. ${formattedNumber}`;
+    }
+    return `vol. ${formattedNumber}`;
+  }
+
+  resultHeading(result: DownloadResult): string {
+    if (!this.isVisualResult(result) || !result.seriesName) {
+      return result.title;
+    }
+    const sequence = this.resultSequenceLabel(result);
+    return sequence ? `${result.seriesName} — ${sequence}` : result.seriesName;
+  }
+
   canonicalExtraEntries(candidate: DownloadCanonicalCandidate): {key: string; value: string}[] {
     return Object.entries(candidate.extraMetadata ?? {})
       .filter((entry): entry is [string, string] => typeof entry[1] === 'string' && !!entry[1].trim())
@@ -601,6 +654,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
   clearCanonicalLock(): void {
     this.selectedCanonicalCandidate = null;
     this.canonicalSearchSignature = null;
+    this.canonicalAppliedState = null;
     this.markViewDirty();
   }
 
@@ -704,6 +758,11 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     return item.id;
   }
 
+  onQueryChange(value: string): void {
+    this.query = value;
+    this.invalidateCanonicalLockIfQueryChanged();
+  }
+
   private buildSearchRequest(includeCanonicalSelection = true): DownloadSearchRequest {
     const request: DownloadSearchRequest = {
       query: this.clean(this.query),
@@ -784,6 +843,47 @@ export class DownloadsComponent implements OnInit, OnDestroy {
       directUrl: request.directUrl ?? null,
       contentKind: request.contentKind ?? 'AUTO'
     });
+  }
+
+  private captureCanonicalAppliedState(): CanonicalAppliedState {
+    return {
+      query: this.clean(this.query),
+      title: this.title,
+      author: this.author,
+      isbn: this.isbn,
+      seriesName: this.seriesName,
+      seriesNumber: this.seriesNumber,
+      sequenceNumberType: this.sequenceNumberType,
+      contentKind: this.contentKind
+    };
+  }
+
+  private invalidateCanonicalLockIfQueryChanged(): void {
+    if (!this.selectedCanonicalCandidate || !this.canonicalAppliedState) {
+      return;
+    }
+    if (this.clean(this.query) === this.canonicalAppliedState.query) {
+      return;
+    }
+    const applied = this.canonicalAppliedState;
+    if (this.title === applied.title) this.title = '';
+    if (this.author === applied.author) this.author = '';
+    if (this.isbn === applied.isbn) this.isbn = '';
+    if (this.seriesName === applied.seriesName) this.seriesName = '';
+    if (this.seriesNumber === applied.seriesNumber) this.seriesNumber = null;
+    if (this.sequenceNumberType === applied.sequenceNumberType) this.sequenceNumberType = 'AUTO';
+    if (this.contentKind === applied.contentKind) this.contentKind = 'AUTO';
+    this.selectedCanonicalCandidate = null;
+    this.canonicalSearchSignature = null;
+    this.canonicalAppliedState = null;
+    this.results = [];
+    this.searchId = null;
+    this.searchError = null;
+    this.markViewDirty();
+  }
+
+  private formatSeriesNumber(value: number): string {
+    return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
   }
 
   private startSearchProgress(): void {

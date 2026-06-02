@@ -45,6 +45,22 @@ class DownloadQueryIntentParserTest {
     }
 
     @Test
+    void enrich_mangaQueryWithVolumeMarkerAndTrailingAuthor_keepsSeriesTitleAndVolume() {
+        DownloadSearchCriteria enriched = parser.enrich(DownloadSearchCriteria.builder()
+                .query("Bonne Nuit Punpun - Tome 3 Inio Asano")
+                .contentKind(DownloadContentKind.MANGA)
+                .preferredFormats(List.of(DownloadFormat.CBZ))
+                .build());
+
+        assertEquals("Bonne Nuit Punpun", enriched.getQuery());
+        assertEquals("Bonne Nuit Punpun", enriched.getTitle());
+        assertEquals("Bonne Nuit Punpun", enriched.getSeriesName());
+        assertEquals(3f, enriched.getSeriesNumber());
+        assertEquals(DownloadSequenceNumberType.VOLUME, enriched.getSequenceNumberType());
+        assertEquals("Bonne Nuit Punpun - Tome 3 Inio Asano", enriched.getOriginalQuery());
+    }
+
+    @Test
     void enrich_webtoonEpisodeMarker_setsSeriesNumber() {
         DownloadSearchCriteria enriched = parser.enrich(DownloadSearchCriteria.builder()
                 .query("Lore Olympus ep 1")

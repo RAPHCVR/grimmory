@@ -37,6 +37,7 @@
             pInputText
             [(ngModel)]="query"
             [placeholder]="t('search.placeholder')"
+            (ngModelChange)="onQueryChange($event)"
             (keydown.enter)="search()"/>
         </div>
         <p-button
@@ -88,11 +89,23 @@
                   }
                 </div>
                 <div class="canonical-main">
+                  <div class="canonical-badges">
+                    <span>{{ candidate.provider }}</span>
+                    <span>{{ contentKindLabel(candidate.contentKind) }}</span>
+                    @if (canonicalSequenceLabel(candidate)) {
+                      <span>{{ canonicalSequenceLabel(candidate) }}</span>
+                    }
+                    @if (candidate.resolvedIsbn || candidate.isbn) {
+                      <span>ISBN {{ candidate.resolvedIsbn || candidate.isbn }}</span>
+                    }
+                  </div>
                   <div class="canonical-title-row">
-                    <strong>{{ canonicalCandidateTitle(candidate) }}</strong>
+                    <strong [pTooltip]="canonicalCandidatePrimary(candidate)" tooltipPosition="top">{{ canonicalCandidatePrimary(candidate) }}</strong>
                     <p-tag [value]="canonicalConfidence(candidate)" [severity]="scoreSeverity(candidate.confidence * 100)"></p-tag>
                   </div>
-                  <span>{{ canonicalCandidateMeta(candidate) }}</span>
+                  @if (canonicalCandidateSecondary(candidate)) {
+                    <span class="canonical-secondary">{{ canonicalCandidateSecondary(candidate) }}</span>
+                  }
                   @if (candidate.description) {
                     <small class="canonical-description">{{ candidate.description }}</small>
                   }
@@ -344,7 +357,7 @@
             </td>
             <td>
               <div class="result-title">
-                <strong>{{ displayTitle(result) }}</strong>
+                <strong>{{ resultHeading(result) }}</strong>
                 @if (resultMeta(result)) {
                   <span>{{ resultMeta(result) }}</span>
                 }
