@@ -391,6 +391,18 @@ public class DownloadScoringService {
                 ? DownloadSequenceNumberType.AUTO
                 : criteria.getSequenceNumberType();
 
+        if (hasRangeContaining(evidence, number)) {
+            if (requestedSequenceType.isChapterLike()) {
+                reasons.add("-65 bundled range cannot satisfy requested " + sequenceNumberLabel(requestedSequenceType) + " exactly");
+                return -65;
+            }
+            if (requestedSequenceType.isVolumeLike()) {
+                reasons.add("-45 bundled range cannot satisfy requested " + sequenceNumberLabel(requestedSequenceType) + " exactly");
+                return -45;
+            }
+            reasons.add("-5 bundled range contains requested number");
+            return -5;
+        }
         if (hasExactNumberMarker(evidence, number, requestedSequenceType)) {
             reasons.add("+20 requested " + sequenceNumberLabel(requestedSequenceType) + " number match");
             return 20;
@@ -399,18 +411,10 @@ public class DownloadScoringService {
             reasons.add("-60 conflicting " + conflictingSequenceNumberLabel(requestedSequenceType) + " marker for requested " + sequenceNumberLabel(requestedSequenceType));
             return -60;
         }
-        if (hasRangeContaining(evidence, number)) {
-            if (requestedSequenceType.isChapterLike()) {
-                reasons.add("-65 bundled range cannot satisfy requested " + sequenceNumberLabel(requestedSequenceType) + " exactly");
-                return -65;
-            }
-            reasons.add("-5 bundled range contains requested number");
-            return -5;
-        }
         if (result.getSeriesNumber() != null && result.getContentKind() != null && result.getContentKind().isSequentialArt()) {
             if (requestedSequenceType.isVolumeLike() && isChapterEpisodeSource(result)) {
-                reasons.add("-60 chapter/episode result for volume/issue request");
-                return -60;
+                reasons.add("-85 chapter/episode result for volume/issue request");
+                return -85;
             }
             if (matchesSeriesNumber(result.getSeriesNumber(), number)) {
                 reasons.add("+10 requested " + sequenceNumberLabel(requestedSequenceType) + " number match");

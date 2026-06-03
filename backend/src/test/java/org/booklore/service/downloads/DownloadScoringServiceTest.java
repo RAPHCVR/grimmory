@@ -229,6 +229,75 @@ class DownloadScoringServiceTest {
     }
 
     @Test
+    void score_explicitVolumeRequestPenalizesBundleRangeBeforeExactMarker() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("one piece tome 1")
+                .title("One Piece")
+                .seriesName("One Piece")
+                .seriesNumber(1f)
+                .sequenceNumberType(DownloadSequenceNumberType.VOLUME)
+                .contentKind(DownloadContentKind.MANGA)
+                .preferredFormats(List.of(DownloadFormat.CBZ))
+                .build();
+
+        NormalizedDownloadResult bundleRange = NormalizedDownloadResult.builder()
+                .title("One Piece v001-111 + 1134-1176 (2003-2026) (Digital) (1r0n)")
+                .format(DownloadFormat.UNKNOWN)
+                .contentKind(DownloadContentKind.MANGA)
+                .acquisitionType(DownloadAcquisitionType.TORRENT)
+                .downloadUrl("magnet:?xt=urn:btih:abcdef")
+                .sizeBytes(31_245_887_488L)
+                .build();
+
+        NormalizedDownloadResult exactVolume = NormalizedDownloadResult.builder()
+                .title("One Piece Vol. 1")
+                .seriesName("One Piece")
+                .seriesNumber(1f)
+                .format(DownloadFormat.CBZ)
+                .contentKind(DownloadContentKind.MANGA)
+                .acquisitionType(DownloadAcquisitionType.TORRENT)
+                .downloadUrl("magnet:?xt=urn:btih:123456")
+                .sizeBytes(150_000_000L)
+                .build();
+
+        var bundleScore = service.score(criteria, bundleRange);
+        var exactScore = service.score(criteria, exactVolume);
+
+        assertTrue(bundleScore.getScore() < exactScore.getScore());
+        assertTrue(bundleScore.getScore() < 50);
+        assertTrue(bundleScore.getReasons().contains("-45 bundled range cannot satisfy requested volume exactly"));
+        assertTrue(bundleScore.getReasons().stream().noneMatch("+20 requested volume number match"::equals));
+    }
+
+    @Test
+    void score_explicitVolumeRequestStronglyPenalizesChapterSource() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("one piece tome 1")
+                .title("One Piece")
+                .seriesName("One Piece")
+                .seriesNumber(1f)
+                .sequenceNumberType(DownloadSequenceNumberType.VOLUME)
+                .contentKind(DownloadContentKind.MANGA)
+                .preferredFormats(List.of(DownloadFormat.CBZ))
+                .build();
+
+        NormalizedDownloadResult chapterResult = NormalizedDownloadResult.builder()
+                .title("Romance Dawn - À l'aube d'une grande aventure")
+                .seriesName("One Piece")
+                .seriesNumber(1f)
+                .format(DownloadFormat.CBZ)
+                .contentKind(DownloadContentKind.MANGA)
+                .acquisitionType(DownloadAcquisitionType.MANGADEX_CHAPTER)
+                .downloadUrl("chapter-1")
+                .build();
+
+        var score = service.score(criteria, chapterResult);
+
+        assertTrue(score.getScore() < 50);
+        assertTrue(score.getReasons().contains("-85 chapter/episode result for volume/issue request"));
+    }
+
+    @Test
     void score_compactVolumeMarkerMatchesRequestedNumber() {
         DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
                 .query("Dragon Ball Super 24")
@@ -383,7 +452,7 @@ class DownloadScoringServiceTest {
         var volumeScore = service.score(criteria, volume);
 
         assertTrue(volumeScore.getScore() > chapterScore.getScore());
-        assertTrue(chapterScore.getReasons().contains("-60 chapter/episode result for volume/issue request"));
+        assertTrue(chapterScore.getReasons().contains("-85 chapter/episode result for volume/issue request"));
         assertTrue(volumeScore.getReasons().contains("+20 requested volume number match"));
     }
 
