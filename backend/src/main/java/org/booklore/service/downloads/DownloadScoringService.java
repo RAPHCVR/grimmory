@@ -18,6 +18,7 @@ public class DownloadScoringService {
 
     private static final Pattern NON_ALNUM = Pattern.compile("[^a-z0-9]+");
     private static final Pattern NUMBER_RANGE = Pattern.compile("(?<!\\d)0*(\\d{1,5})\\s*[-–]\\s*0*(\\d{1,5})(?!\\d)");
+    private static final Pattern SEQUENTIAL_MARKED_RANGE = Pattern.compile("(?iu)\\b(?:vol(?:ume)?|v|t(?:ome|omo)?|ch(?:apter)?|chapitre)\\.?\\s*0*(\\d{1,5})\\s*[-–]\\s*(?:vol(?:ume)?|v|t(?:ome|omo)?|ch(?:apter)?|chapitre)?\\.?\\s*0*(\\d{1,5})(?!\\d)");
     private static final Pattern COMPACT_NUMBER_MARKER = Pattern.compile("(?iu)\\b(vol(?:ume)?|v|t(?:ome|omo)?|ch(?:apter)?|chapitre)\\.?\\s*0*(\\d{1,5})\\b");
     private static final Pattern ANY_NUMBER_MARKER = Pattern.compile("(?iu)(?:\\b(?:vol(?:ume)?|v|t(?:ome|omo)?|ch(?:apter)?|chapitre)\\.?\\s*0*\\d{1,5}\\b|#\\s*0*\\d{1,5}\\b)");
     private static final Pattern EXPLICIT_WEBTOON_EPISODE_MARKER = Pattern.compile("(?iu)\\b(?:ep(?:isode)?|ch(?:apter)?|chapitre)\\.?\\s*0*(\\d{1,5})\\b|#\\s*0*(\\d{1,5})\\b");
@@ -469,11 +470,12 @@ public class DownloadScoringService {
     }
 
     private boolean hasExactNumberMarker(String title, int number, DownloadSequenceNumberType requestedSequenceType) {
+        String numberPattern = "0*" + number + "\\b(?!\\s*[.]\\s*\\d)";
         String markerPattern = switch (requestedSequenceType) {
-            case VOLUME -> "(?iu)\\b(?:vol(?:ume)?|v|t(?:ome|omo)?)\\.?\\s*0*" + number + "\\b";
-            case ISSUE -> "(?iu)(?:\\b(?:issue|iss)\\.?\\s*0*" + number + "\\b|#\\s*0*" + number + "\\b)";
-            case CHAPTER, EPISODE -> "(?iu)(?:\\b(?:ch(?:apter)?|chapitre|episode|ep)\\.?\\s*0*" + number + "\\b|#\\s*0*" + number + "\\b)";
-            case AUTO -> "(?iu)(?:\\b(?:vol(?:ume)?|v|t(?:ome|omo)?|ch(?:apter)?|chapitre|episode|ep|issue|iss)\\.?\\s*0*" + number + "\\b|#\\s*0*" + number + "\\b)";
+            case VOLUME -> "(?iu)\\b(?:vol(?:ume)?|v|t(?:ome|omo)?)\\.?\\s*" + numberPattern;
+            case ISSUE -> "(?iu)(?:\\b(?:issue|iss)\\.?\\s*" + numberPattern + "|#\\s*" + numberPattern + ")";
+            case CHAPTER, EPISODE -> "(?iu)(?:\\b(?:ch(?:apter)?|chapitre|episode|ep)\\.?\\s*" + numberPattern + "|#\\s*" + numberPattern + ")";
+            case AUTO -> "(?iu)(?:\\b(?:vol(?:ume)?|v|t(?:ome|omo)?|ch(?:apter)?|chapitre|episode|ep|issue|iss)\\.?\\s*" + numberPattern + "|#\\s*" + numberPattern + ")";
         };
         return Pattern.compile(markerPattern).matcher(title).find();
     }
@@ -488,7 +490,14 @@ public class DownloadScoringService {
     }
 
     private boolean hasRangeContaining(String title, int number) {
+        if (markedRangeContains(SEQUENTIAL_MARKED_RANGE.matcher(title), number)) {
+            return true;
+        }
         var matcher = NUMBER_RANGE.matcher(title);
+        return markedRangeContains(matcher, number);
+    }
+
+    private boolean markedRangeContains(java.util.regex.Matcher matcher, int number) {
         while (matcher.find()) {
             int start = Integer.parseInt(matcher.group(1));
             int end = Integer.parseInt(matcher.group(2));

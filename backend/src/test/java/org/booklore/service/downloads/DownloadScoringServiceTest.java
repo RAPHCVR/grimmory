@@ -270,6 +270,61 @@ class DownloadScoringServiceTest {
     }
 
     @Test
+    void score_explicitVolumeRequestPenalizesPrefixedBundleRange() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("one piece tome 1")
+                .title("One Piece")
+                .seriesName("One Piece")
+                .seriesNumber(1f)
+                .sequenceNumberType(DownloadSequenceNumberType.VOLUME)
+                .contentKind(DownloadContentKind.MANGA)
+                .preferredFormats(List.of(DownloadFormat.CBZ))
+                .build();
+
+        NormalizedDownloadResult result = NormalizedDownloadResult.builder()
+                .title("One Piece - Digital Colored Comics+Cover Stories V1 Batch (v000-v105 & ch0035-1078)")
+                .format(DownloadFormat.UNKNOWN)
+                .contentKind(DownloadContentKind.MANGA)
+                .acquisitionType(DownloadAcquisitionType.TORRENT)
+                .downloadUrl("magnet:?xt=urn:btih:abcdef")
+                .sizeBytes(31_245_887_488L)
+                .build();
+
+        var score = service.score(criteria, result);
+
+        assertTrue(score.getScore() < 50);
+        assertTrue(score.getReasons().contains("-45 bundled range cannot satisfy requested volume exactly"));
+        assertTrue(score.getReasons().stream().noneMatch("+20 requested volume number match"::equals));
+    }
+
+    @Test
+    void score_explicitVolumeRequestDoesNotTreatReleaseVersionAsVolume() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("one piece tome 1")
+                .title("One Piece")
+                .seriesName("One Piece")
+                .seriesNumber(1f)
+                .sequenceNumberType(DownloadSequenceNumberType.VOLUME)
+                .contentKind(DownloadContentKind.MANGA)
+                .preferredFormats(List.of(DownloadFormat.CBZ))
+                .build();
+
+        NormalizedDownloadResult result = NormalizedDownloadResult.builder()
+                .title("One Piece Definitive Edition Re-Translation v012-023 (Colored) (Digital) (VLT) {Alabasta} {v1.0}")
+                .format(DownloadFormat.UNKNOWN)
+                .contentKind(DownloadContentKind.MANGA)
+                .acquisitionType(DownloadAcquisitionType.TORRENT)
+                .downloadUrl("magnet:?xt=urn:btih:abcdef")
+                .sizeBytes(5_000_000_000L)
+                .build();
+
+        var score = service.score(criteria, result);
+
+        assertTrue(score.getScore() < 50);
+        assertTrue(score.getReasons().stream().noneMatch("+20 requested volume number match"::equals));
+    }
+
+    @Test
     void score_explicitVolumeRequestStronglyPenalizesChapterSource() {
         DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
                 .query("one piece tome 1")
