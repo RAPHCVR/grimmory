@@ -593,7 +593,19 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     if (reasons.includes('chapter/episode result for volume/issue request') || reasons.includes('chapter result for volume') || reasons.includes('episode result for volume')) {
       add('downloads.quality.chapterIncompatible', 'downloads.qualityTooltips.chapterIncompatible', 'danger');
     }
-    if (reasons.includes('conflicting requested') || reasons.includes('mismatch') || reasons.includes('missing requested') || reasons.includes('wrong number')) {
+    if (reasons.includes('requested volume number mismatch')
+      || reasons.includes('requested issue number mismatch')
+      || reasons.includes('requested chapter number mismatch')
+      || reasons.includes('requested episode number mismatch')
+      || reasons.includes('missing requested volume number')
+      || reasons.includes('missing requested issue number')
+      || reasons.includes('missing requested chapter number')
+      || reasons.includes('missing requested episode number')
+      || reasons.includes('conflicting requested volume')
+      || reasons.includes('conflicting requested issue')
+      || reasons.includes('conflicting requested chapter')
+      || reasons.includes('conflicting requested episode')
+      || reasons.includes('wrong number')) {
       add('downloads.quality.wrongNumber', 'downloads.qualityTooltips.wrongNumber', 'warn');
     }
     if (reasons.includes('unsupported media payload') || reasons.includes('.mkv') || reasons.includes('.mp4') || reasons.includes('1080p') || reasons.includes('bdrip') || reasons.includes('hevc') || reasons.includes('x264')) {
