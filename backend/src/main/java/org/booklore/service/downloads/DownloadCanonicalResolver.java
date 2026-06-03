@@ -29,6 +29,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Slf4j
@@ -39,6 +40,18 @@ public class DownloadCanonicalResolver {
     private static final Pattern ISBN_LIKE = Pattern.compile("(?<!\\d)(?:97[89][\\s-]?)?\\d[\\d\\s-]{8,16}[\\dXx](?!\\d)");
     private static final Pattern EXPLICIT_SEQUENCE_MARKER = Pattern.compile(
             "(?iu)(?:\\b(?:vol(?:ume)?|v|t(?:ome|omo)?|issue|iss|ch(?:apter)?|chap(?:itre)?|chapter|episode|ep)\\.?\\s*0*\\d{1,5}(?:\\.\\d+)?\\b|#\\s*0*\\d{1,5}(?:\\.\\d+)?\\b)"
+    );
+    private static final Pattern EXPLICIT_VOLUME_NUMBER = Pattern.compile(
+            "(?iu)\\b(?:vol(?:ume)?|v|t(?:ome|omo)?|livre|book)\\.?\\s*0*(\\d{1,5}(?:\\.\\d+)?)\\b"
+    );
+    private static final Pattern EXPLICIT_ISSUE_NUMBER = Pattern.compile(
+            "(?iu)(?:\\b(?:issue|iss)\\.?\\s*0*(\\d{1,5}(?:\\.\\d+)?)\\b|#\\s*0*(\\d{1,5}(?:\\.\\d+)?)\\b)"
+    );
+    private static final Pattern EXPLICIT_CHAPTER_NUMBER = Pattern.compile(
+            "(?iu)\\b(?:ch(?:apter)?|chap(?:itre)?|chapter)\\.?\\s*0*(\\d{1,5}(?:\\.\\d+)?)\\b"
+    );
+    private static final Pattern EXPLICIT_EPISODE_NUMBER = Pattern.compile(
+            "(?iu)\\b(?:episode|ep)\\.?\\s*0*(\\d{1,5}(?:\\.\\d+)?)\\b"
     );
     private static final Pattern BARE_TRAILING_NUMBER = Pattern.compile("(?iu)^.+?\\s+0*\\d{1,5}(?:\\.\\d+)?$");
     private static final Pattern TOKEN_SPLIT = Pattern.compile("[^\\p{L}\\p{N}]+");
@@ -122,7 +135,17 @@ public class DownloadCanonicalResolver {
             List<Candidate> candidates = collectCandidates(criteria, term);
             Optional<Candidate> best = candidates.stream()
                     .filter(candidate -> candidate.confidence() >= minimumConfidence)
-                    .max((left, right) -> Double.compare(left.confidence(), right.confidence()));
+                    .filter(candidate -> isSequenceCompatible(criteria, candidate, null))
+                    .max((left, right) -> {
+                        int sequencePriority = Integer.compare(
+                                sequenceCandidatePriority(criteria, left),
+                                sequenceCandidatePriority(criteria, right)
+                        );
+                        if (sequencePriority != 0) {
+                            return sequencePriority;
+                        }
+                        return Double.compare(left.confidence(), right.confidence());
+                    });
             if (best.isEmpty()) {
                 return criteria;
             }
@@ -153,7 +176,17 @@ public class DownloadCanonicalResolver {
         try {
             List<Candidate> candidates = collectCandidates(criteria, term).stream()
                     .filter(candidate -> candidate.confidence() >= minimumConfidence)
-                    .sorted((left, right) -> Double.compare(right.confidence(), left.confidence()))
+                    .filter(candidate -> isSequenceCompatible(criteria, candidate, null))
+                    .sorted((left, right) -> {
+                        int sequencePriority = Integer.compare(
+                                sequenceCandidatePriority(criteria, right),
+                                sequenceCandidatePriority(criteria, left)
+                        );
+                        if (sequencePriority != 0) {
+                            return sequencePriority;
+                        }
+                        return Double.compare(right.confidence(), left.confidence());
+                    })
                     .toList();
             int limit = candidateLimit(criteria);
             List<CanonicalCandidate> resolvedCandidates = new ArrayList<>();
@@ -633,12 +666,104 @@ public class DownloadCanonicalResolver {
 
     private List<CanonicalCandidate> candidateVariants(DownloadSearchCriteria criteria, Candidate candidate) {
         if (!shouldOfferMangaNumberAmbiguity(criteria, candidate)) {
-            return List.of(toCanonicalCandidate(criteria, candidate));
+            return isSequenceCompatible(criteria, candidate, null)
+                    ? List.of(toCanonicalCandidate(criteria, candidate))
+                    : List.of();
         }
-        return List.of(
-                toCanonicalCandidate(criteria, candidate, DownloadSequenceNumberType.VOLUME),
-                toCanonicalCandidate(criteria, candidate, DownloadSequenceNumberType.CHAPTER)
-        );
+        List<CanonicalCandidate> variants = new ArrayList<>();
+        if (isSequenceCompatible(criteria, candidate, DownloadSequenceNumberType.VOLUME)) {
+            variants.add(toCanonicalCandidate(criteria, candidate, DownloadSequenceNumberType.VOLUME));
+        }
+        if (isSequenceCompatible(criteria, candidate, DownloadSequenceNumberType.CHAPTER)) {
+            variants.add(toCanonicalCandidate(criteria, candidate, DownloadSequenceNumberType.CHAPTER));
+        }
+        return variants;
+    }
+
+    private boolean isSequenceCompatible(DownloadSearchCriteria criteria,
+                                         Candidate candidate,
+                                         DownloadSequenceNumberType sequenceOverride) {
+        if (criteria == null || criteria.getSeriesNumber() == null) {
+            return true;
+        }
+        List<ExplicitSequenceNumber> explicitNumbers = explicitSequenceNumbers(candidate);
+        if (explicitNumbers.isEmpty()) {
+            return true;
+        }
+
+        DownloadSequenceNumberType requestedType = sequenceOverride != null
+                ? sequenceOverride
+                : criteria.getSequenceNumberType();
+        if (requestedType == null) {
+            requestedType = DownloadSequenceNumberType.AUTO;
+        }
+        DownloadSequenceNumberType effectiveRequestedType = requestedType;
+
+        if (!effectiveRequestedType.isAuto()) {
+            boolean hasRequestedTypeMarker = explicitNumbers.stream()
+                    .anyMatch(number -> number.type() == effectiveRequestedType);
+            return hasRequestedTypeMarker
+                    && explicitNumbers.stream()
+                    .filter(number -> number.type() == effectiveRequestedType)
+                    .anyMatch(number -> sameSeriesNumber(criteria.getSeriesNumber(), number.value()));
+        }
+
+        return explicitNumbers.stream()
+                .anyMatch(number -> sameSeriesNumber(criteria.getSeriesNumber(), number.value()));
+    }
+
+    private int sequenceCandidatePriority(DownloadSearchCriteria criteria, Candidate candidate) {
+        if (criteria == null || criteria.getSeriesNumber() == null) {
+            return 0;
+        }
+        List<ExplicitSequenceNumber> explicitNumbers = explicitSequenceNumbers(candidate);
+        if (explicitNumbers.isEmpty()) {
+            return 1;
+        }
+        return explicitNumbers.stream().anyMatch(number -> sameSeriesNumber(criteria.getSeriesNumber(), number.value()))
+                ? 2
+                : 0;
+    }
+
+    private List<ExplicitSequenceNumber> explicitSequenceNumbers(Candidate candidate) {
+        if (candidate == null) {
+            return List.of();
+        }
+        String text = compactJoin(candidate.title(), candidate.seriesName());
+        if (isBlank(text)) {
+            return List.of();
+        }
+        List<ExplicitSequenceNumber> numbers = new ArrayList<>();
+        addExplicitSequenceNumbers(numbers, text, EXPLICIT_VOLUME_NUMBER, DownloadSequenceNumberType.VOLUME);
+        addExplicitSequenceNumbers(numbers, text, EXPLICIT_ISSUE_NUMBER, DownloadSequenceNumberType.ISSUE);
+        addExplicitSequenceNumbers(numbers, text, EXPLICIT_CHAPTER_NUMBER, DownloadSequenceNumberType.CHAPTER);
+        addExplicitSequenceNumbers(numbers, text, EXPLICIT_EPISODE_NUMBER, DownloadSequenceNumberType.EPISODE);
+        return numbers;
+    }
+
+    private void addExplicitSequenceNumbers(List<ExplicitSequenceNumber> numbers,
+                                            String text,
+                                            Pattern pattern,
+                                            DownloadSequenceNumberType type) {
+        Matcher matcher = pattern.matcher(text);
+        while (matcher.find()) {
+            for (int group = 1; group <= matcher.groupCount(); group++) {
+                String rawNumber = matcher.group(group);
+                if (rawNumber == null || rawNumber.isBlank()) {
+                    continue;
+                }
+                try {
+                    numbers.add(new ExplicitSequenceNumber(type, Float.parseFloat(rawNumber)));
+                } catch (NumberFormatException ignored) {
+                    // Ignore malformed marker captures instead of rejecting an otherwise usable candidate.
+                }
+                break;
+            }
+        }
+    }
+
+    private boolean sameSeriesNumber(Float requested, Float explicit) {
+        return requested != null && explicit != null && Math.abs(requested - explicit) < 0.001F;
     }
 
     private boolean shouldOfferMangaNumberAmbiguity(DownloadSearchCriteria criteria, Candidate candidate) {
@@ -695,7 +820,7 @@ public class DownloadCanonicalResolver {
 
     private String canonicalOutputQuery(DownloadSearchCriteria criteria, Candidate candidate, boolean sequential) {
         String original = criteria.getQuery();
-        if (candidate.contentKind() == DownloadContentKind.BOOK) {
+        if (effectiveCanonicalKind(criteria, candidate.contentKind()) == DownloadContentKind.BOOK) {
             String bookQuery = compactJoin(candidate.title(), candidate.author());
             return isBlank(bookQuery) ? original : bookQuery;
         }
@@ -1176,6 +1301,9 @@ public class DownloadCanonicalResolver {
 
     private int boundedProviderLimit() {
         return Math.max(1, Math.min(providerLimit, 10));
+    }
+
+    private record ExplicitSequenceNumber(DownloadSequenceNumberType type, Float value) {
     }
 
     private record Candidate(String provider,

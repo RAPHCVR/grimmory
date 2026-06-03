@@ -135,6 +135,96 @@ class DownloadCanonicalResolverTest {
     }
 
     @Test
+    void resolveCandidates_filtersOpenLibraryVolumesWithConflictingExplicitVolumeNumbers() throws Exception {
+        HttpServer server = jsonServer("/search.json", """
+                {
+                  "docs": [
+                    {
+                      "title": "Bonne Nuit Punpun - Tome 8",
+                      "author_name": ["Inio Asano"],
+                      "isbn": ["9782505017363"]
+                    },
+                    {
+                      "title": "Bonne Nuit Punpun - Tome 5",
+                      "author_name": ["Inio Asano"],
+                      "isbn": ["9782505015666"]
+                    },
+                    {
+                      "title": "Bonne Nuit Punpun - Tome 3",
+                      "author_name": ["Inio Asano"],
+                      "isbn": ["9782505014539"]
+                    }
+                  ]
+                }
+                """);
+        server.start();
+        try {
+            DownloadCanonicalResolver resolver = resolver();
+            resolver.openLibraryBaseUrl = baseUrl(server);
+            resolver.googleBooksEnabled = false;
+            resolver.mangaDexEnabled = false;
+            resolver.webtoonsEnabled = false;
+
+            DownloadSearchCriteria parsed = parser.enrich(DownloadSearchCriteria.builder()
+                    .query("Bonne Nuit Punpun - Tome 3 Inio Asano")
+                    .contentKind(DownloadContentKind.AUTO)
+                    .preferredFormats(List.of(DownloadFormat.CBZ))
+                    .build());
+
+            List<DownloadCanonicalResolver.CanonicalCandidate> candidates = resolver.resolveCandidates(parsed);
+
+            assertThat(candidates).hasSize(1);
+            DownloadCanonicalResolver.CanonicalCandidate candidate = candidates.getFirst();
+            assertThat(candidate.title()).isEqualTo("Bonne Nuit Punpun - Tome 3");
+            assertThat(candidate.query()).isEqualTo("Bonne Nuit Punpun");
+            assertThat(candidate.seriesNumber()).isEqualTo(3F);
+            assertThat(candidate.sequenceNumberType()).isEqualTo(DownloadSequenceNumberType.VOLUME);
+            assertThat(candidate.resolvedIsbn()).isEqualTo("9782505014539");
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void resolve_ignoresOpenLibraryVolumeWithConflictingExplicitVolumeNumber() throws Exception {
+        HttpServer server = jsonServer("/search.json", """
+                {
+                  "docs": [
+                    {
+                      "title": "Bonne Nuit Punpun - Tome 8",
+                      "author_name": ["Inio Asano"],
+                      "isbn": ["9782505017363"]
+                    }
+                  ]
+                }
+                """);
+        server.start();
+        try {
+            DownloadCanonicalResolver resolver = resolver();
+            resolver.openLibraryBaseUrl = baseUrl(server);
+            resolver.googleBooksEnabled = false;
+            resolver.mangaDexEnabled = false;
+            resolver.webtoonsEnabled = false;
+
+            DownloadSearchCriteria parsed = parser.enrich(DownloadSearchCriteria.builder()
+                    .query("Bonne Nuit Punpun tome 1")
+                    .contentKind(DownloadContentKind.AUTO)
+                    .preferredFormats(List.of(DownloadFormat.CBZ))
+                    .build());
+
+            DownloadSearchCriteria resolved = resolver.resolve(parsed);
+
+            assertThat(resolved.getTitle()).isEqualTo("Bonne Nuit Punpun");
+            assertThat(resolved.getSeriesNumber()).isEqualTo(1F);
+            assertThat(resolved.getSequenceNumberType()).isEqualTo(DownloadSequenceNumberType.VOLUME);
+            assertThat(resolved.getIsbn()).isNull();
+            assertThat(resolved.getCanonicalSelection()).isNull();
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     void resolvesMangaAgainstMangaDexWithoutDroppingRequestedChapter() throws Exception {
         HttpServer server = jsonServer("/manga", """
                 {
