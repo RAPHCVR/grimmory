@@ -621,7 +621,7 @@ public class DownloadCanonicalResolver {
         if (!isBlank(selectedAuthor)) {
             builder.author(selectedAuthor);
         }
-        if (!isBlank(selectedIsbn)) {
+        if (!isBlank(selectedIsbn) && (!sequential || selectedKind == DownloadContentKind.BOOK)) {
             builder.isbn(selectedIsbn);
         }
         if (!selectedKind.isAuto()) {
@@ -655,7 +655,8 @@ public class DownloadCanonicalResolver {
 
     private DownloadSearchCriteria applyCandidate(DownloadSearchCriteria criteria, Candidate candidate, DownloadSequenceNumberType sequenceOverride) {
         DownloadSearchCriteria.DownloadSearchCriteriaBuilder builder = criteria.toBuilder();
-        boolean sequential = candidate.contentKind() != null && candidate.contentKind().isSequentialArt() || likelySequentialArt(criteria);
+        DownloadContentKind candidateKind = effectiveCanonicalKind(criteria, candidate.contentKind());
+        boolean sequential = candidateKind.isSequentialArt() || likelySequentialArt(criteria);
 
         if (isBlank(criteria.getTitle()) && !isBlank(candidate.title())) {
             builder.title(candidate.title());
@@ -666,11 +667,11 @@ public class DownloadCanonicalResolver {
         if (isBlank(criteria.getAuthor()) && !isBlank(candidate.author())) {
             builder.author(candidate.author());
         }
-        if (isBlank(criteria.getIsbn()) && !isBlank(candidate.isbn())) {
+        if (isBlank(criteria.getIsbn()) && !isBlank(candidate.isbn()) && (!sequential || candidateKind == DownloadContentKind.BOOK)) {
             builder.isbn(candidate.isbn());
         }
         if (criteria.getContentKind() == null || criteria.getContentKind().isAuto()) {
-            builder.contentKind(effectiveCanonicalKind(criteria, candidate.contentKind()));
+            builder.contentKind(candidateKind);
         }
         if (sequenceOverride != null && !sequenceOverride.isAuto()) {
             builder.sequenceNumberType(sequenceOverride);

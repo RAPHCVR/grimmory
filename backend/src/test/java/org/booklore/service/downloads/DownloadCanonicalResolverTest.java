@@ -125,7 +125,7 @@ class DownloadCanonicalResolverTest {
 
             assertThat(resolved.getTitle()).isEqualTo("Bonne Nuit Punpun");
             assertThat(resolved.getAuthor()).isEqualTo("Inio Asano");
-            assertThat(resolved.getIsbn()).isEqualTo("9782505017363");
+            assertThat(resolved.getIsbn()).isNull();
             assertThat(resolved.getSeriesNumber()).isEqualTo(1F);
             assertThat(resolved.getSequenceNumberType()).isEqualTo(DownloadSequenceNumberType.VOLUME);
             assertThat(resolved.getContentKind()).isEqualTo(DownloadContentKind.AUTO);
@@ -179,7 +179,8 @@ class DownloadCanonicalResolverTest {
             assertThat(candidate.query()).isEqualTo("Bonne Nuit Punpun");
             assertThat(candidate.seriesNumber()).isEqualTo(3F);
             assertThat(candidate.sequenceNumberType()).isEqualTo(DownloadSequenceNumberType.VOLUME);
-            assertThat(candidate.resolvedIsbn()).isEqualTo("9782505014539");
+            assertThat(candidate.isbn()).isEqualTo("9782505014539");
+            assertThat(candidate.resolvedIsbn()).isNull();
         } finally {
             server.stop(0);
         }
@@ -395,6 +396,46 @@ class DownloadCanonicalResolverTest {
         assertThat(resolved.getSequenceNumberType()).isEqualTo(DownloadSequenceNumberType.CHAPTER);
         assertThat(resolved.getCanonicalSelection()).isNotNull();
         assertThat(resolved.getCanonicalSelection().provider()).isEqualTo("mangadex");
+    }
+
+    @Test
+    void appliesLockedSequentialOpenLibrarySelectionWithoutUsingBookIsbnAsSearchCriterion() {
+        DownloadCanonicalResolver resolver = resolver();
+        resolver.enabled = false;
+
+        DownloadSearchCriteria parsed = parser.enrich(DownloadSearchCriteria.builder()
+                .query("Bonne Nuit Punpun - Tome 3 Inio Asano")
+                .contentKind(DownloadContentKind.AUTO)
+                .preferredFormats(List.of(DownloadFormat.CBZ))
+                .canonicalSelection(new DownloadSearchCriteria.CanonicalSelection(
+                        "openlibrary",
+                        DownloadContentKind.AUTO,
+                        "Bonne Nuit Punpun - Tome 3",
+                        "Inio Asano",
+                        "9782505014539",
+                        null,
+                        0.99D,
+                        "Bonne Nuit Punpun",
+                        "Bonne Nuit Punpun",
+                        "Inio Asano",
+                        null,
+                        "Bonne Nuit Punpun",
+                        3F,
+                        DownloadSequenceNumberType.VOLUME
+                ))
+                .build());
+
+        DownloadSearchCriteria resolved = resolver.resolve(parsed);
+
+        assertThat(resolved.getTitle()).isEqualTo("Bonne Nuit Punpun");
+        assertThat(resolved.getSeriesName()).isEqualTo("Bonne Nuit Punpun");
+        assertThat(resolved.getAuthor()).isEqualTo("Inio Asano");
+        assertThat(resolved.getSeriesNumber()).isEqualTo(3F);
+        assertThat(resolved.getSequenceNumberType()).isEqualTo(DownloadSequenceNumberType.VOLUME);
+        assertThat(resolved.getIsbn()).isNull();
+        assertThat(resolved.getCanonicalSelection()).isNotNull();
+        assertThat(resolved.getCanonicalSelection().isbn()).isEqualTo("9782505014539");
+        assertThat(resolved.getCanonicalSelection().resolvedIsbn()).isNull();
     }
 
     @Test
