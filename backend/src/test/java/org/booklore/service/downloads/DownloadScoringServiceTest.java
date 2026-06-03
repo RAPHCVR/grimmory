@@ -325,6 +325,34 @@ class DownloadScoringServiceTest {
     }
 
     @Test
+    void score_explicitVolumeRequestDoesNotTreatUploaderAliasDigitAsNumber() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("one piece tome 1")
+                .title("One Piece")
+                .seriesName("One Piece")
+                .seriesNumber(1f)
+                .sequenceNumberType(DownloadSequenceNumberType.VOLUME)
+                .contentKind(DownloadContentKind.MANGA)
+                .preferredFormats(List.of(DownloadFormat.CBZ))
+                .build();
+
+        NormalizedDownloadResult result = NormalizedDownloadResult.builder()
+                .title("One Piece - Ace's Story - The Manga (2024) (Digital) (1r0n)")
+                .format(DownloadFormat.UNKNOWN)
+                .contentKind(DownloadContentKind.MANGA)
+                .acquisitionType(DownloadAcquisitionType.TORRENT)
+                .downloadUrl("magnet:?xt=urn:btih:abcdef")
+                .sizeBytes(280_000_000L)
+                .build();
+
+        var score = service.score(criteria, result);
+
+        assertTrue(score.getScore() < 50);
+        assertTrue(score.getReasons().contains("-20 missing requested volume number"));
+        assertTrue(score.getReasons().stream().noneMatch("+5 requested number token present"::equals));
+    }
+
+    @Test
     void score_explicitVolumeRequestStronglyPenalizesChapterSource() {
         DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
                 .query("one piece tome 1")

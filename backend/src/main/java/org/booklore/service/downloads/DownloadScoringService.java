@@ -509,7 +509,7 @@ public class DownloadScoringService {
     }
 
     private boolean hasLooseNumberToken(String title, int number) {
-        String pattern = "(?<![\\d./\\\\])0*" + number + "(?![\\d./\\\\])";
+        String pattern = "(?<![a-zA-Z0-9./\\\\])0*" + number + "(?![a-zA-Z0-9./\\\\])";
         return Pattern.compile(pattern).matcher(title).find();
     }
 
