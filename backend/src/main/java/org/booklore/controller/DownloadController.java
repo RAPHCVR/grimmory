@@ -23,7 +23,12 @@ import org.booklore.service.downloads.DownloadCanonicalResolver;
 import org.booklore.service.downloads.DownloadJobCleanupService;
 import org.booklore.service.downloads.DownloadJobRunner;
 import org.booklore.service.downloads.DownloadPipelineManager;
+import org.booklore.service.downloads.adapter.DownloadAdapterRegistry;
+import org.booklore.service.downloads.adapter.DownloadSourceAdapter;
+import org.booklore.service.downloads.client.QbittorrentClient;
 import org.booklore.service.downloads.dto.DownloadSearchCriteria;
+import org.booklore.service.downloads.dto.NormalizedDownloadResult;
+import org.booklore.service.downloads.exception.DownloadSourceException;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -31,6 +36,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 @Tag(name = "Downloads", description = "Internal acquisition pipeline endpoints")
 @RestController
@@ -45,6 +51,8 @@ public class DownloadController {
     private final DownloadPipelineManager pipelineManager;
     private final DownloadJobRunner jobRunner;
     private final DownloadJobCleanupService cleanupService;
+    private final DownloadAdapterRegistry adapterRegistry;
+    private final QbittorrentClient qbittorrentClient;
 
     @Operation(summary = "List download sources")
     @ApiResponse(responseCode = "200", description = "Download sources returned successfully")
@@ -69,6 +77,31 @@ public class DownloadController {
                 .priority(request.getPriority() == null ? 100 : request.getPriority())
                 .build();
         return toSourceResponse(sourceRepository.save(source));
+    }
+
+    @Operation(summary = "Test an unsaved download source configuration")
+    @ApiResponse(responseCode = "200", description = "Download source test completed")
+    @PostMapping("/sources/test")
+    public DownloadSourceTestResponse testSource(@Parameter(description = "Download source test request") @RequestBody DownloadSourceTestRequest request) {
+        DownloadSourceEntity source = DownloadSourceEntity.builder()
+                .name(trimToNull(request.name()) == null ? "Test source" : request.name().trim())
+                .type(Optional.ofNullable(request.type()).orElseThrow(() -> new IllegalArgumentException("Download source type is required")))
+                .credentialsJson(request.credentialsJson())
+                .configJson(request.configJson())
+                .enabled(Boolean.TRUE.equals(request.enabled()))
+                .priority(request.priority() == null ? 100 : request.priority())
+                .build();
+        return testSourceEntity(source, request);
+    }
+
+    @Operation(summary = "Test a saved download source")
+    @ApiResponse(responseCode = "200", description = "Download source test completed")
+    @PostMapping("/sources/{sourceId}/test")
+    public DownloadSourceTestResponse testExistingSource(@PathVariable Long sourceId,
+                                                         @Parameter(description = "Optional download source test request") @RequestBody(required = false) DownloadSourceTestRequest request) {
+        DownloadSourceEntity source = sourceRepository.findById(sourceId)
+                .orElseThrow(() -> new IllegalArgumentException("Download source not found: " + sourceId));
+        return testSourceEntity(source, request == null ? DownloadSourceTestRequest.defaults() : request);
     }
 
     @Operation(summary = "Update a download source")
@@ -237,6 +270,77 @@ public class DownloadController {
                 .build();
     }
 
+    private DownloadSourceTestResponse testSourceEntity(DownloadSourceEntity source, DownloadSourceTestRequest request) {
+        SourceProbe sourceProbe = probeSource(source, request);
+        DownloaderProbe downloaderProbe = probeDownloader(source, request);
+        return new DownloadSourceTestResponse(
+                sourceProbe.ok(),
+                sourceProbe.message(),
+                sourceProbe.resultCount(),
+                sourceProbe.sampleTitles(),
+                downloaderProbe.ok(),
+                downloaderProbe.message(),
+                downloaderProbe.qbittorrentVersion()
+        );
+    }
+
+    private SourceProbe probeSource(DownloadSourceEntity source, DownloadSourceTestRequest request) {
+        try {
+            DownloadSourceAdapter adapter = adapterRegistry.adapterFor(source);
+            List<NormalizedDownloadResult> results = adapter.search(source, testCriteria(request));
+            List<String> sampleTitles = results.stream()
+                    .map(NormalizedDownloadResult::getTitle)
+                    .filter(title -> title != null && !title.isBlank())
+                    .limit(5)
+                    .toList();
+            return new SourceProbe(
+                    true,
+                    results.isEmpty() ? "Source reachable; search completed with 0 results." : "Source reachable; search completed.",
+                    results.size(),
+                    sampleTitles
+            );
+        } catch (Exception e) {
+            return new SourceProbe(false, rootMessage(e), 0, List.of());
+        }
+    }
+
+    private DownloaderProbe probeDownloader(DownloadSourceEntity source, DownloadSourceTestRequest request) {
+        if (!Boolean.TRUE.equals(request.includeDownloader())) {
+            return new DownloaderProbe(null, null, null);
+        }
+        try {
+            QbittorrentClient.QbittorrentHealth health = qbittorrentClient.check(qbittorrentClient.readConfig(source));
+            String version = trimToNull(health.version());
+            return new DownloaderProbe(true, "qBittorrent reachable" + (version == null ? "." : " (" + version + ")."), version);
+        } catch (Exception e) {
+            return new DownloaderProbe(false, rootMessage(e), null);
+        }
+    }
+
+    private DownloadSearchCriteria testCriteria(DownloadSourceTestRequest request) {
+        String query = trimToNull(request.query());
+        if (query == null) {
+            query = "one piece";
+        }
+        int maxResults = request.maxResults() == null ? 5 : Math.max(1, Math.min(10, request.maxResults()));
+        return DownloadSearchCriteria.builder()
+                .originalQuery(query)
+                .query(query)
+                .contentKind(request.contentKind() == null ? DownloadContentKind.AUTO : request.contentKind())
+                .preferredFormats(request.preferredFormats() == null ? List.of(DownloadFormat.CBZ, DownloadFormat.EPUB, DownloadFormat.PDF) : request.preferredFormats())
+                .maxResults(maxResults)
+                .build();
+    }
+
+    private String rootMessage(Exception e) {
+        Throwable current = e;
+        while (current.getCause() != null && current instanceof DownloadSourceException) {
+            current = current.getCause();
+        }
+        String message = current.getMessage();
+        return message == null || message.isBlank() ? current.getClass().getSimpleName() : message;
+    }
+
     private DownloadJobEntity startIfQueued(DownloadJobEntity job) {
         return job.getStatus() == DownloadJobStatus.QUEUED ? jobRunner.start(job.getId()) : job;
     }
@@ -358,6 +462,37 @@ public class DownloadController {
                                          String configJson,
                                          Boolean enabled,
                                          Integer priority) {
+    }
+
+    public record DownloadSourceTestRequest(String name,
+                                            DownloadSourceType type,
+                                            String credentialsJson,
+                                            String configJson,
+                                            Boolean enabled,
+                                            Integer priority,
+                                            String query,
+                                            DownloadContentKind contentKind,
+                                            List<DownloadFormat> preferredFormats,
+                                            Integer maxResults,
+                                            Boolean includeDownloader) {
+        public static DownloadSourceTestRequest defaults() {
+            return new DownloadSourceTestRequest(null, null, null, null, null, null, null, DownloadContentKind.AUTO, List.of(DownloadFormat.CBZ, DownloadFormat.EPUB, DownloadFormat.PDF), 5, true);
+        }
+    }
+
+    public record DownloadSourceTestResponse(Boolean sourceOk,
+                                             String sourceMessage,
+                                             int resultCount,
+                                             List<String> sampleTitles,
+                                             Boolean downloaderOk,
+                                             String downloaderMessage,
+                                             String qbittorrentVersion) {
+    }
+
+    private record SourceProbe(boolean ok, String message, int resultCount, List<String> sampleTitles) {
+    }
+
+    private record DownloaderProbe(Boolean ok, String message, String qbittorrentVersion) {
     }
 
     public record DownloadSearchResponse(Long id,

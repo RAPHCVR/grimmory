@@ -332,6 +332,18 @@
         @if (searchError) {
           <span class="error-text">{{ searchError }}</span>
         }
+        @if (!loadingResults && hiddenWeakResultCount) {
+          <div class="weak-results-control">
+            <span>{{ t('results.hiddenWeak', {count: hiddenWeakResultCount, threshold: weakResultThreshold}) }}</span>
+            <p-button
+              [label]="showWeakResults ? t('results.hideWeak') : t('results.showWeak')"
+              size="small"
+              severity="secondary"
+              [outlined]="true"
+              (onClick)="toggleWeakResults()">
+            </p-button>
+          </div>
+        }
       </div>
 
       <p-table
@@ -364,6 +376,18 @@
                 @if (result.isbn) {
                   <small>ISBN {{ result.isbn }}</small>
                 }
+                @if (resultQualityBadges(result).length) {
+                  <div class="result-quality-badges">
+                    @for (badge of resultQualityBadges(result); track badge.labelKey) {
+                      <p-tag
+                        [value]="t(badge.labelKey.replace('downloads.', ''))"
+                        [severity]="badge.severity"
+                        [pTooltip]="t(badge.tooltipKey.replace('downloads.', ''))"
+                        tooltipPosition="top">
+                      </p-tag>
+                    }
+                  </div>
+                }
               </div>
             </td>
             <td>
@@ -394,7 +418,9 @@
                 size="small"
                 severity="success"
                 [loading]="acquiringResultIds.has(result.id)"
-                [disabled]="acquiringResultIds.has(result.id)"
+                [disabled]="!canAcquireResult(result)"
+                [pTooltip]="acquireDisabledReason(result)"
+                tooltipPosition="top"
                 (onClick)="acquire(result)">
               </p-button>
             </td>

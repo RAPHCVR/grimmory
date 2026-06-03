@@ -48,6 +48,24 @@ export interface DownloadSourceRequest {
   priority: number;
 }
 
+export interface DownloadSourceTestRequest extends Partial<DownloadSourceRequest> {
+  query?: string | null;
+  contentKind?: DownloadContentKind;
+  preferredFormats?: DownloadFormat[];
+  maxResults?: number;
+  includeDownloader?: boolean;
+}
+
+export interface DownloadSourceTestResponse {
+  sourceOk: boolean;
+  sourceMessage?: string | null;
+  resultCount: number;
+  sampleTitles: string[];
+  downloaderOk?: boolean | null;
+  downloaderMessage?: string | null;
+  qbittorrentVersion?: string | null;
+}
+
 export interface DownloadSearchRequest {
   query?: string | null;
   title?: string | null;

@@ -11,7 +11,9 @@ import {
   DownloadSearchRequest,
   DownloadSearchResponse,
   DownloadSource,
-  DownloadSourceRequest
+  DownloadSourceRequest,
+  DownloadSourceTestRequest,
+  DownloadSourceTestResponse
 } from './downloads.model';
 
 @Injectable({
@@ -35,6 +37,14 @@ export class DownloadsService {
 
   deleteSource(sourceId: number): Observable<void> {
     return this.http.delete<void>(`${this.baseUrl}/sources/${sourceId}`);
+  }
+
+  testSource(request: DownloadSourceTestRequest): Observable<DownloadSourceTestResponse> {
+    return this.http.post<DownloadSourceTestResponse>(`${this.baseUrl}/sources/test`, request);
+  }
+
+  testExistingSource(sourceId: number, request: DownloadSourceTestRequest): Observable<DownloadSourceTestResponse> {
+    return this.http.post<DownloadSourceTestResponse>(`${this.baseUrl}/sources/${sourceId}/test`, request);
   }
 
   search(request: DownloadSearchRequest): Observable<DownloadSearchResponse> {

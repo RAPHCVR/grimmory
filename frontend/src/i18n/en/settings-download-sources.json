@@ -10,7 +10,8 @@
     "edit": "Edit",
     "delete": "Delete",
     "formatJson": "Format JSON",
-    "syncJson": "Sync JSON"
+    "syncJson": "Sync JSON",
+    "test": "Test"
   },
   "table": {
     "name": "Name",
@@ -64,7 +65,10 @@
     "deleteError": "Unable to delete download source.",
     "invalidJsonSummary": "Invalid JSON",
     "invalidJsonDetail": "{{label}} must contain valid JSON.",
-    "configObjectRequired": "Config JSON must be a JSON object."
+    "configObjectRequired": "Config JSON must be a JSON object.",
+    "testSuccess": "Source test succeeded",
+    "testWarning": "Source test incomplete",
+    "testError": "Source test failed."
   },
   "empty": "No download source configured yet.",
   "accessRestricted": "Admin access required",
@@ -89,5 +93,16 @@
     "qbitPollSeconds": "Poll seconds",
     "deleteTorrent": "Delete torrent",
     "deleteFiles": "Delete files"
+  },
+  "test": {
+    "query": "Test query",
+    "source": "Source",
+    "downloader": "Downloader",
+    "ok": "OK",
+    "failed": "Failed",
+    "notRun": "Not tested",
+    "samples": "{{count}} result(s) returned",
+    "noSamples": "No title returned for this query.",
+    "resultCount": "{{count}} result(s)"
   }
 }

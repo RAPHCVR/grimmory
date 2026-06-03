@@ -10,7 +10,8 @@
     "edit": "Modifier",
     "delete": "Supprimer",
     "formatJson": "Formater le JSON",
-    "syncJson": "Synchroniser JSON"
+    "syncJson": "Synchroniser JSON",
+    "test": "Tester"
   },
   "table": {
     "name": "Nom",
@@ -64,7 +65,10 @@
     "deleteError": "Impossible de supprimer la source de téléchargement.",
     "invalidJsonSummary": "JSON invalide",
     "invalidJsonDetail": "{{label}} doit contenir un JSON valide.",
-    "configObjectRequired": "Config JSON doit être un objet JSON."
+    "configObjectRequired": "Config JSON doit être un objet JSON.",
+    "testSuccess": "Test source réussi",
+    "testWarning": "Test source incomplet",
+    "testError": "Le test de la source a échoué."
   },
   "empty": "Aucune source de téléchargement configurée.",
   "accessRestricted": "Accès administrateur requis",
@@ -89,5 +93,16 @@
     "qbitPollSeconds": "Poll secondes",
     "deleteTorrent": "Supprimer torrent",
     "deleteFiles": "Supprimer fichiers"
+  },
+  "test": {
+    "query": "Requête de test",
+    "source": "Source",
+    "downloader": "Downloader",
+    "ok": "OK",
+    "failed": "Échec",
+    "notRun": "Non testé",
+    "samples": "{{count}} résultat(s) retourné(s)",
+    "noSamples": "Aucun titre retourné sur cette requête.",
+    "resultCount": "{{count}} résultat(s)"
   }
 }

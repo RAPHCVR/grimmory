@@ -13,7 +13,8 @@
     "useCanonical": "Utiliser cette œuvre",
     "clearCanonical": "Déverrouiller",
     "details": "Détails",
-    "close": "Fermer"
+    "close": "Fermer",
+    "acquireDisabledLowScore": "Score inférieur à {{threshold}}/100 : candidat masqué/faible, acquisition bloquée."
   },
   "search": {
     "placeholder": "Rechercher par titre, auteur, ISBN, série, ou coller une URL directe ci-dessous",
@@ -68,7 +69,10 @@
     "reasons": "Raisons du score",
     "actions": "Actions",
     "empty": "Lance une recherche pour afficher les candidats classés.",
-    "completedIn": "Terminé en {{seconds}} s"
+    "completedIn": "Terminé en {{seconds}} s",
+    "hiddenWeak": "{{count}} résultat(s) faible(s) masqué(s) (< {{threshold}}/100).",
+    "showWeak": "Afficher faibles",
+    "hideWeak": "Masquer faibles"
   },
   "jobs": {
     "title": "Jobs",
@@ -119,7 +123,8 @@
     "jobFinishedSummary": "Job terminé",
     "jobFinishedDetail": "Le job #{{id}} s'est terminé avec le statut {{status}}.",
     "jobFailedSummary": "Job en échec",
-    "resolveRequiredDetail": "Renseigne une requête, un titre, un ISBN ou une série avant de résoudre l'œuvre canonique."
+    "resolveRequiredDetail": "Renseigne une requête, un titre, un ISBN ou une série avant de résoudre l'œuvre canonique.",
+    "onlyWeakResultsDetail": "{{count}} candidat(s) retourné(s), mais tous sous {{threshold}}/100. Ils sont masqués pour éviter une mauvaise acquisition."
   },
   "resolve": {
     "title": "Œuvres canoniques candidates",
@@ -144,5 +149,21 @@
     "sequenceLabel": "Numéro",
     "confidence": "Confiance",
     "openProvider": "Ouvrir la page provider"
+  },
+  "quality": {
+    "weakScore": "Faible",
+    "packDetected": "Pack détecté",
+    "chapterIncompatible": "Chapitre incompatible",
+    "wrongNumber": "Mauvais numéro",
+    "unsupportedMedia": "Média rejeté",
+    "deferredFormat": "Format à valider"
+  },
+  "qualityTooltips": {
+    "weakScore": "Score sous le seuil affiché par défaut : à vérifier avant toute acquisition.",
+    "packDetected": "Le résultat ressemble à un pack/range multi-volumes ou multi-chapitres, pas à l’item demandé précisément.",
+    "chapterIncompatible": "La demande cible un volume/issue, mais ce résultat est typé chapitre/épisode.",
+    "wrongNumber": "Le numéro demandé ne correspond pas clairement au résultat retourné.",
+    "unsupportedMedia": "Le candidat contient des marqueurs vidéo ou média non livre/comic attendus.",
+    "deferredFormat": "Torrent/NZB : le format exact sera confirmé après téléchargement des métadonnées/fichiers."
   }
 }

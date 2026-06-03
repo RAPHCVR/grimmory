@@ -12,9 +12,10 @@ import {Tooltip} from 'primeng/tooltip';
 import {ConfirmDialog} from 'primeng/confirmdialog';
 import {ConfirmationService, MessageService} from 'primeng/api';
 import {TranslocoDirective, TranslocoPipe, TranslocoService} from '@jsverse/transloco';
+import {finalize} from 'rxjs/operators';
 import {UserService} from '../user-management/user.service';
 import {DownloadsService} from '../../downloads/downloads.service';
-import {DOWNLOAD_SOURCE_TYPES, DownloadSource, DownloadSourceRequest, DownloadSourceType} from '../../downloads/downloads.model';
+import {DOWNLOAD_SOURCE_TYPES, DownloadContentKind, DownloadFormat, DownloadSource, DownloadSourceRequest, DownloadSourceTestResponse, DownloadSourceType} from '../../downloads/downloads.model';
 
 interface SourceTypeOption {
   value: DownloadSourceType;
@@ -81,6 +82,10 @@ export class DownloadSourcesComponent implements OnInit {
   qbitPollIntervalSeconds = 10;
   qbitDeleteTorrentOnComplete = true;
   qbitDeleteFilesOnComplete = true;
+  testQuery = 'one piece';
+  testingDialogSource = false;
+  testingSourceIds = new Set<number>();
+  lastTestResult: DownloadSourceTestResponse | null = null;
 
   sourceTypeOptions: SourceTypeOption[] = DOWNLOAD_SOURCE_TYPES.map(type => ({
     value: type,
@@ -133,6 +138,7 @@ export class DownloadSourcesComponent implements OnInit {
       configJson: ''
     });
     this.applyTypeDefaults('PROWLARR_TORZNAB', true);
+    this.lastTestResult = null;
     this.sourceDialogVisible = true;
   }
 
@@ -148,6 +154,7 @@ export class DownloadSourcesComponent implements OnInit {
     });
     this.extractFlareSolverrSettings(source.configJson, source.credentialsJson);
     this.extractTorznabQbitSettings(source.configJson, source.credentialsJson);
+    this.lastTestResult = null;
     this.sourceDialogVisible = true;
   }
 
@@ -170,27 +177,8 @@ export class DownloadSourcesComponent implements OnInit {
   }
 
   saveSource(): void {
-    if (this.sourceForm.invalid) {
-      this.sourceForm.markAllAsTouched();
-      return;
-    }
-
-    if (this.sourceForm.controls.type.value === 'PROWLARR_TORZNAB') {
-      this.syncTorznabQbitJson();
-    }
-    const credentialsJson = this.normalizeJson(this.sourceForm.controls.credentialsJson.value, 'credentials');
-    if (credentialsJson === undefined) return;
-    const configJson = this.normalizeConfigJson(this.sourceForm.controls.configJson.value);
-    if (configJson === undefined) return;
-
-    const request: DownloadSourceRequest = {
-      name: this.sourceForm.controls.name.value!.trim(),
-      type: this.sourceForm.controls.type.value!,
-      enabled: !!this.sourceForm.controls.enabled.value,
-      priority: this.sourceForm.controls.priority.value ?? 100,
-      credentialsJson,
-      configJson
-    };
+    const request = this.buildSourceRequestFromForm();
+    if (!request) return;
 
     this.saving = true;
     const operation = this.editingSource
@@ -214,6 +202,59 @@ export class DownloadSourcesComponent implements OnInit {
           severity: 'error',
           summary: this.t.translate('common.error'),
           detail: err?.error?.message || this.t.translate('settingsDownloadSources.toast.saveError')
+        });
+      }
+    });
+  }
+
+  testDialogSource(): void {
+    const request = this.buildSourceRequestFromForm();
+    if (!request) return;
+
+    this.testingDialogSource = true;
+    this.lastTestResult = null;
+    this.downloadsService.testSource({
+      ...request,
+      query: this.clean(this.testQuery) || this.defaultTestQuery(request.type),
+      contentKind: 'AUTO' as DownloadContentKind,
+      preferredFormats: ['CBZ', 'EPUB', 'PDF'] as DownloadFormat[],
+      maxResults: 5,
+      includeDownloader: request.type === 'PROWLARR_TORZNAB'
+    }).pipe(
+      finalize(() => this.testingDialogSource = false)
+    ).subscribe({
+      next: result => {
+        this.lastTestResult = result;
+        this.showTestToast(result);
+      },
+      error: err => {
+        this.messageService.add({
+          severity: 'error',
+          summary: this.t.translate('common.error'),
+          detail: err?.error?.message || err?.message || this.t.translate('settingsDownloadSources.toast.testError')
+        });
+      }
+    });
+  }
+
+  testSavedSource(source: DownloadSource): void {
+    if (this.testingSourceIds.has(source.id)) return;
+    this.testingSourceIds.add(source.id);
+    this.downloadsService.testExistingSource(source.id, {
+      query: this.defaultTestQuery(source.type),
+      contentKind: 'AUTO' as DownloadContentKind,
+      preferredFormats: ['CBZ', 'EPUB', 'PDF'] as DownloadFormat[],
+      maxResults: 5,
+      includeDownloader: source.type === 'PROWLARR_TORZNAB'
+    }).pipe(
+      finalize(() => this.testingSourceIds.delete(source.id))
+    ).subscribe({
+      next: result => this.showTestToast(result),
+      error: err => {
+        this.messageService.add({
+          severity: 'error',
+          summary: this.t.translate('common.error'),
+          detail: err?.error?.message || err?.message || this.t.translate('settingsDownloadSources.toast.testError')
         });
       }
     });
@@ -261,6 +302,16 @@ export class DownloadSourcesComponent implements OnInit {
     return this.t.translate(`settingsDownloadSources.types.${type}`);
   }
 
+  testSeverity(ok?: boolean | null): 'success' | 'danger' | 'secondary' {
+    if (ok == null) return 'secondary';
+    return ok ? 'success' : 'danger';
+  }
+
+  testLabel(ok?: boolean | null): string {
+    if (ok == null) return this.t.translate('settingsDownloadSources.test.notRun');
+    return ok ? this.t.translate('settingsDownloadSources.test.ok') : this.t.translate('settingsDownloadSources.test.failed');
+  }
+
   syncTorznabQbitJson(): void {
     if (this.sourceForm.controls.type.value !== 'PROWLARR_TORZNAB') {
       return;
@@ -292,6 +343,60 @@ export class DownloadSourcesComponent implements OnInit {
       }
     }));
     this.extractFlareSolverrSettings(this.sourceForm.controls.configJson.value, this.sourceForm.controls.credentialsJson.value);
+  }
+
+  private buildSourceRequestFromForm(): DownloadSourceRequest | null {
+    if (this.sourceForm.invalid) {
+      this.sourceForm.markAllAsTouched();
+      return null;
+    }
+    if (this.sourceForm.controls.type.value === 'PROWLARR_TORZNAB') {
+      this.syncTorznabQbitJson();
+    }
+    const credentialsJson = this.normalizeJson(this.sourceForm.controls.credentialsJson.value, 'credentials');
+    if (credentialsJson === undefined) return null;
+    const configJson = this.normalizeConfigJson(this.sourceForm.controls.configJson.value);
+    if (configJson === undefined) return null;
+
+    return {
+      name: this.sourceForm.controls.name.value!.trim(),
+      type: this.sourceForm.controls.type.value!,
+      enabled: !!this.sourceForm.controls.enabled.value,
+      priority: this.sourceForm.controls.priority.value ?? 100,
+      credentialsJson,
+      configJson
+    };
+  }
+
+  private showTestToast(result: DownloadSourceTestResponse): void {
+    const downloaderFailed = result.downloaderOk === false;
+    this.messageService.add({
+      severity: result.sourceOk && !downloaderFailed ? 'success' : 'warn',
+      summary: this.t.translate(result.sourceOk && !downloaderFailed ? 'settingsDownloadSources.toast.testSuccess' : 'settingsDownloadSources.toast.testWarning'),
+      detail: [
+        result.sourceMessage,
+        result.downloaderMessage,
+        this.t.translate('settingsDownloadSources.test.resultCount', {count: result.resultCount})
+      ].filter(Boolean).join(' · ')
+    });
+  }
+
+  private defaultTestQuery(type: DownloadSourceType): string {
+    switch (type) {
+      case 'MANGADEX':
+      case 'PROWLARR_TORZNAB':
+        return 'one piece';
+      case 'ANNAS_ARCHIVE_API':
+      case 'OPDS':
+        return 'pride and prejudice';
+      default:
+        return 'solo leveling';
+    }
+  }
+
+  private clean(value: string): string | null {
+    const trimmed = value?.trim();
+    return trimmed ? trimmed : null;
   }
 
   private applyTypeDefaults(type: DownloadSourceType, force: boolean): void {

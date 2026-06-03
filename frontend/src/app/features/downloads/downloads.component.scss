@@ -455,6 +455,21 @@
   }
 }
 
+.weak-results-control {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-left: auto;
+  text-align: right;
+
+  span {
+    color: var(--p-orange-300);
+    font-size: 0.8rem;
+  }
+}
+
 .score-col {
   width: 6.5rem;
 }
@@ -492,6 +507,13 @@
     color: var(--p-text-muted-color);
     font-size: 0.75rem;
   }
+}
+
+.result-quality-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.2rem;
 }
 
 .source-label {

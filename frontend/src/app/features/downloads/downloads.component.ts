@@ -50,6 +50,12 @@ interface CanonicalAppliedState {
   contentKind: DownloadContentKind;
 }
 
+interface ResultQualityBadge {
+  labelKey: string;
+  tooltipKey: string;
+  severity: 'success' | 'info' | 'warn' | 'danger' | 'secondary';
+}
+
 @Component({
   selector: 'app-downloads',
   imports: [
@@ -96,6 +102,10 @@ export class DownloadsComponent implements OnInit, OnDestroy {
   targetLibraryPathId: number | null = null;
 
   results: DownloadResult[] = [];
+  allResults: DownloadResult[] = [];
+  hiddenWeakResultCount = 0;
+  readonly weakResultThreshold = 50;
+  showWeakResults = false;
   canonicalCandidates: DownloadCanonicalCandidate[] = [];
   selectedCanonicalCandidate: DownloadCanonicalCandidate | null = null;
   canonicalDetailsCandidate: DownloadCanonicalCandidate | null = null;
@@ -173,14 +183,16 @@ export class DownloadsComponent implements OnInit, OnDestroy {
       next: response => {
         this.searchId = response.id;
         this.searchError = response.errorMessage ?? null;
-        this.results = [...(response.results ?? [])]
-          .filter(result => (result.score ?? 0) >= 50)
+        this.allResults = [...(response.results ?? [])]
           .sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+        this.applyResultVisibility();
         if (!this.results.length) {
           this.messageService.add({
             severity: this.searchError ? 'warn' : 'info',
             summary: this.t.translate('downloads.toast.noResultsSummary'),
-            detail: this.searchError || this.t.translate('downloads.toast.noResultsDetail')
+            detail: this.searchError || (this.hiddenWeakResultCount
+              ? this.t.translate('downloads.toast.onlyWeakResultsDetail', {count: this.hiddenWeakResultCount, threshold: this.weakResultThreshold})
+              : this.t.translate('downloads.toast.noResultsDetail'))
           });
         }
         this.markViewDirty();
@@ -290,6 +302,8 @@ export class DownloadsComponent implements OnInit, OnDestroy {
         this.canonicalCandidates = candidates ?? [];
         if (this.canonicalCandidates.length) {
           this.results = [];
+          this.allResults = [];
+          this.hiddenWeakResultCount = 0;
           this.searchId = null;
           this.messageService.add({
             severity: 'info',
@@ -486,6 +500,9 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     this.preferredFormats = [...DOWNLOAD_FORMATS];
     this.maxResults = 25;
     this.results = [];
+    this.allResults = [];
+    this.hiddenWeakResultCount = 0;
+    this.showWeakResults = false;
     this.canonicalCandidates = [];
     this.selectedCanonicalCandidate = null;
     this.canonicalSearchSignature = null;
@@ -550,6 +567,57 @@ export class DownloadsComponent implements OnInit, OnDestroy {
       default:
         return 'secondary';
     }
+  }
+
+  toggleWeakResults(): void {
+    this.showWeakResults = !this.showWeakResults;
+    this.applyResultVisibility();
+    this.markViewDirty();
+  }
+
+  resultQualityBadges(result: DownloadResult): ResultQualityBadge[] {
+    const reasons = (result.scoreReasons || '').toLowerCase();
+    const badges: ResultQualityBadge[] = [];
+    const add = (labelKey: string, tooltipKey: string, severity: ResultQualityBadge['severity']) => {
+      if (!badges.some(badge => badge.labelKey === labelKey)) {
+        badges.push({labelKey, tooltipKey, severity});
+      }
+    };
+
+    if ((result.score ?? 0) < this.weakResultThreshold) {
+      add('downloads.quality.weakScore', 'downloads.qualityTooltips.weakScore', 'danger');
+    }
+    if (reasons.includes('bundled range') || reasons.includes('pack')) {
+      add('downloads.quality.packDetected', 'downloads.qualityTooltips.packDetected', 'warn');
+    }
+    if (reasons.includes('chapter/episode result for volume/issue request') || reasons.includes('chapter result for volume') || reasons.includes('episode result for volume')) {
+      add('downloads.quality.chapterIncompatible', 'downloads.qualityTooltips.chapterIncompatible', 'danger');
+    }
+    if (reasons.includes('conflicting requested') || reasons.includes('mismatch') || reasons.includes('missing requested') || reasons.includes('wrong number')) {
+      add('downloads.quality.wrongNumber', 'downloads.qualityTooltips.wrongNumber', 'warn');
+    }
+    if (reasons.includes('unsupported media payload') || reasons.includes('.mkv') || reasons.includes('.mp4') || reasons.includes('1080p') || reasons.includes('bdrip') || reasons.includes('hevc') || reasons.includes('x264')) {
+      add('downloads.quality.unsupportedMedia', 'downloads.qualityTooltips.unsupportedMedia', 'danger');
+    }
+    if ((result.acquisitionType === 'TORRENT' || result.acquisitionType === 'NZB') && result.format === 'UNKNOWN') {
+      add('downloads.quality.deferredFormat', 'downloads.qualityTooltips.deferredFormat', 'info');
+    }
+
+    return badges;
+  }
+
+  canAcquireResult(result: DownloadResult): boolean {
+    return !this.acquiringResultIds.has(result.id) && (result.score ?? 0) >= this.weakResultThreshold;
+  }
+
+  acquireDisabledReason(result: DownloadResult): string {
+    if (this.acquiringResultIds.has(result.id)) {
+      return '';
+    }
+    if ((result.score ?? 0) < this.weakResultThreshold) {
+      return this.t.translate('downloads.actions.acquireDisabledLowScore', {threshold: this.weakResultThreshold});
+    }
+    return '';
   }
 
   jobSeverityFor(job: DownloadJob): 'success' | 'info' | 'warn' | 'danger' | 'secondary' {
@@ -707,6 +775,13 @@ export class DownloadsComponent implements OnInit, OnDestroy {
 
   scoreLabel(score?: number | null): string {
     return score == null ? '-' : `${score}/100`;
+  }
+
+  private applyResultVisibility(): void {
+    this.hiddenWeakResultCount = this.allResults.filter(result => (result.score ?? 0) < this.weakResultThreshold).length;
+    this.results = this.showWeakResults
+      ? [...this.allResults]
+      : this.allResults.filter(result => (result.score ?? 0) >= this.weakResultThreshold);
   }
 
   searchProgressMessage(): string {
@@ -877,6 +952,9 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     this.canonicalSearchSignature = null;
     this.canonicalAppliedState = null;
     this.results = [];
+    this.allResults = [];
+    this.hiddenWeakResultCount = 0;
+    this.showWeakResults = false;
     this.searchId = null;
     this.searchError = null;
     this.markViewDirty();

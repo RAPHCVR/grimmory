@@ -66,6 +66,17 @@
                 </td>
                 <td class="actions-cell">
                   <p-button
+                    icon="pi pi-bolt"
+                    severity="secondary"
+                    size="small"
+                    [rounded]="true"
+                    [outlined]="true"
+                    [loading]="testingSourceIds.has(source.id)"
+                    [disabled]="testingSourceIds.has(source.id)"
+                    (onClick)="testSavedSource(source)"
+                    [pTooltip]="t('actions.test')">
+                  </p-button>
+                  <p-button
                     icon="pi pi-pencil"
                     severity="info"
                     size="small"
@@ -153,17 +164,33 @@
                   <strong>{{ t('guided.title') }}</strong>
                   <span>{{ t('guided.description') }}</span>
                 </div>
-                <p-button
-                  icon="pi pi-sync"
-                  size="small"
-                  [label]="t('actions.syncJson')"
-                  severity="secondary"
-                  [outlined]="true"
-                  (onClick)="syncTorznabQbitJson()">
-                </p-button>
+                <div class="guided-actions">
+                  <p-button
+                    icon="pi pi-bolt"
+                    size="small"
+                    [label]="t('actions.test')"
+                    severity="info"
+                    [outlined]="true"
+                    [loading]="testingDialogSource"
+                    [disabled]="testingDialogSource"
+                    (onClick)="testDialogSource()">
+                  </p-button>
+                  <p-button
+                    icon="pi pi-sync"
+                    size="small"
+                    [label]="t('actions.syncJson')"
+                    severity="secondary"
+                    [outlined]="true"
+                    (onClick)="syncTorznabQbitJson()">
+                  </p-button>
+                </div>
               </div>
 
               <div class="guided-grid">
+                <div class="form-field">
+                  <label for="download-source-test-query">{{ t('test.query') }}</label>
+                  <input id="download-source-test-query" pInputText [(ngModel)]="testQuery" [ngModelOptions]="{standalone: true}" autocomplete="off"/>
+                </div>
                 <div class="form-field">
                   <label for="download-source-preset">{{ t('guided.profile') }}</label>
                   <p-select
@@ -242,6 +269,37 @@
                   <p-toggleswitch inputId="download-source-qbit-delete-files" [(ngModel)]="qbitDeleteFilesOnComplete" [ngModelOptions]="{standalone: true}"></p-toggleswitch>
                 </div>
               </div>
+
+              @if (lastTestResult) {
+                <div class="test-result-card">
+                  <div class="test-result-row">
+                    <span class="status-pill" [class.enabled]="lastTestResult.sourceOk">{{ testLabel(lastTestResult.sourceOk) }}</span>
+                    <div>
+                      <strong>{{ t('test.source') }}</strong>
+                      <span>{{ lastTestResult.sourceMessage || '-' }}</span>
+                    </div>
+                  </div>
+                  @if (lastTestResult.downloaderOk !== null && lastTestResult.downloaderOk !== undefined) {
+                    <div class="test-result-row">
+                      <span class="status-pill" [class.enabled]="lastTestResult.downloaderOk">{{ testLabel(lastTestResult.downloaderOk) }}</span>
+                      <div>
+                        <strong>{{ t('test.downloader') }}</strong>
+                        <span>{{ lastTestResult.downloaderMessage || '-' }}</span>
+                      </div>
+                    </div>
+                  }
+                  <div class="test-samples">
+                    <strong>{{ t('test.samples', {count: lastTestResult.resultCount}) }}</strong>
+                    @if (lastTestResult.sampleTitles.length) {
+                      @for (sample of lastTestResult.sampleTitles; track sample) {
+                        <span>{{ sample }}</span>
+                      }
+                    } @else {
+                      <span>{{ t('test.noSamples') }}</span>
+                    }
+                  </div>
+                </div>
+              }
             </div>
           }
 
@@ -303,6 +361,28 @@
                 autocomplete="off"/>
             </div>
           </div>
+
+          @if (lastTestResult && sourceForm.controls.type.value !== 'PROWLARR_TORZNAB') {
+            <div class="test-result-card">
+              <div class="test-result-row">
+                <span class="status-pill" [class.enabled]="lastTestResult.sourceOk">{{ testLabel(lastTestResult.sourceOk) }}</span>
+                <div>
+                  <strong>{{ t('test.source') }}</strong>
+                  <span>{{ lastTestResult.sourceMessage || '-' }}</span>
+                </div>
+              </div>
+              <div class="test-samples">
+                <strong>{{ t('test.samples', {count: lastTestResult.resultCount}) }}</strong>
+                @if (lastTestResult.sampleTitles.length) {
+                  @for (sample of lastTestResult.sampleTitles; track sample) {
+                    <span>{{ sample }}</span>
+                  }
+                } @else {
+                  <span>{{ t('test.noSamples') }}</span>
+                }
+              </div>
+            </div>
+          }
         </form>
 
         <ng-template pTemplate="footer">
@@ -312,6 +392,15 @@
               severity="secondary"
               [outlined]="true"
               (onClick)="sourceDialogVisible = false">
+            </p-button>
+            <p-button
+              [label]="t('actions.test')"
+              icon="pi pi-bolt"
+              severity="info"
+              [outlined]="true"
+              [loading]="testingDialogSource"
+              [disabled]="sourceForm.invalid || testingDialogSource"
+              (onClick)="testDialogSource()">
             </p-button>
             <p-button
               [label]="'common.save' | transloco"

@@ -151,6 +151,32 @@ public class QbittorrentClient {
         }
     }
 
+    public QbittorrentHealth check(QbittorrentConfig config) {
+        String cookie = login(config);
+        try {
+            HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(config.baseUrl() + "/api/v2/app/version"))
+                    .timeout(Duration.ofSeconds(20))
+                    .header("Accept", "text/plain")
+                    .header("Referer", config.baseUrl())
+                    .GET();
+            if (cookie != null && !cookie.isBlank()) {
+                builder.header("Cookie", cookie);
+            }
+            HttpResponse<String> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() < 200 || response.statusCode() > 299) {
+                throw new DownloadSourceException("qBittorrent health check failed with HTTP status " + response.statusCode());
+            }
+            return new QbittorrentHealth(config.baseUrl(), response.body() == null ? "" : response.body().trim());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new DownloadSourceException("qBittorrent health check interrupted", e);
+        } catch (DownloadSourceException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new DownloadSourceException("qBittorrent health check failed: " + e.getMessage(), e);
+        }
+    }
+
     public void deleteTorrent(QbittorrentConfig config, String hash, boolean deleteFiles) {
         if (hash == null || hash.isBlank()) {
             return;
@@ -272,6 +298,9 @@ public class QbittorrentClient {
         public boolean complete() {
             return progress >= 0.999D;
         }
+    }
+
+    public record QbittorrentHealth(String baseUrl, String version) {
     }
 
     public record QbittorrentConfig(String baseUrl,
