@@ -225,6 +225,54 @@ class DownloadCanonicalResolverTest {
     }
 
     @Test
+    void resolveCandidates_fallsBackToQueryIntentWhenProvidersOnlyReturnConflictingVolumes() throws Exception {
+        HttpServer server = jsonServer("/search.json", """
+                {
+                  "docs": [
+                    {
+                      "title": "Bonne Nuit Punpun - Tome 8",
+                      "author_name": ["Inio Asano"],
+                      "isbn": ["9782505017363"]
+                    },
+                    {
+                      "title": "Bonne Nuit Punpun - Tome 5",
+                      "author_name": ["Inio Asano"],
+                      "isbn": ["9782505015666"]
+                    }
+                  ]
+                }
+                """);
+        server.start();
+        try {
+            DownloadCanonicalResolver resolver = resolver();
+            resolver.openLibraryBaseUrl = baseUrl(server);
+            resolver.googleBooksEnabled = false;
+            resolver.mangaDexEnabled = false;
+            resolver.webtoonsEnabled = false;
+
+            DownloadSearchCriteria parsed = parser.enrich(DownloadSearchCriteria.builder()
+                    .query("bonne nuit punpun tome 1")
+                    .contentKind(DownloadContentKind.AUTO)
+                    .preferredFormats(List.of(DownloadFormat.CBZ))
+                    .build());
+
+            List<DownloadCanonicalResolver.CanonicalCandidate> candidates = resolver.resolveCandidates(parsed);
+
+            assertThat(candidates).hasSize(1);
+            DownloadCanonicalResolver.CanonicalCandidate candidate = candidates.getFirst();
+            assertThat(candidate.provider()).isEqualTo("query");
+            assertThat(candidate.title()).isEqualTo("Bonne Nuit Punpun");
+            assertThat(candidate.query()).isEqualTo("bonne nuit punpun");
+            assertThat(candidate.seriesNumber()).isEqualTo(1F);
+            assertThat(candidate.sequenceNumberType()).isEqualTo(DownloadSequenceNumberType.VOLUME);
+            assertThat(candidate.isbn()).isNull();
+            assertThat(candidate.coverUrl()).isNull();
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     void resolvesMangaAgainstMangaDexWithoutDroppingRequestedChapter() throws Exception {
         HttpServer server = jsonServer("/manga", """
                 {

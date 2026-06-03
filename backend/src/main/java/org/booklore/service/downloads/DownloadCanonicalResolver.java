@@ -198,6 +198,11 @@ public class DownloadCanonicalResolver {
                     }
                 }
             }
+            if (resolvedCandidates.isEmpty()) {
+                return syntheticSequentialCandidate(criteria)
+                        .map(List::of)
+                        .orElseGet(List::of);
+            }
             return resolvedCandidates;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -243,6 +248,51 @@ public class DownloadCanonicalResolver {
             return 10;
         }
         return Math.min(requestedLimit, 10);
+    }
+
+    private Optional<CanonicalCandidate> syntheticSequentialCandidate(DownloadSearchCriteria criteria) {
+        if (criteria == null || criteria.getSeriesNumber() == null) {
+            return Optional.empty();
+        }
+        DownloadSequenceNumberType sequenceType = criteria.getSequenceNumberType() == null
+                ? DownloadSequenceNumberType.AUTO
+                : criteria.getSequenceNumberType();
+        if (sequenceType.isAuto()) {
+            return Optional.empty();
+        }
+
+        String title = firstNonBlank(criteria.getSeriesName(), criteria.getTitle(), criteria.getQuery());
+        if (isBlank(title)) {
+            return Optional.empty();
+        }
+
+        DownloadContentKind kind = requestedKind(criteria);
+        if (kind == DownloadContentKind.BOOK) {
+            kind = DownloadContentKind.AUTO;
+        }
+        String author = firstNonBlank(criteria.getAuthor());
+        String resolvedTitle = titleCase(title);
+        return Optional.of(new CanonicalCandidate(
+                "query",
+                kind,
+                resolvedTitle,
+                author,
+                null,
+                resolvedTitle,
+                0.8D,
+                title,
+                resolvedTitle,
+                author,
+                null,
+                resolvedTitle,
+                criteria.getSeriesNumber(),
+                sequenceType,
+                null,
+                null,
+                null,
+                null,
+                Map.of("source", "query-intent")
+        ));
     }
 
     private List<Candidate> resolveOpenLibrary(String term) throws Exception {
