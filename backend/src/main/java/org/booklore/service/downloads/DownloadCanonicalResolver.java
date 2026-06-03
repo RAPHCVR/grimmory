@@ -218,25 +218,38 @@ public class DownloadCanonicalResolver {
         List<Candidate> candidates = new ArrayList<>();
         DownloadContentKind requested = requestedKind(criteria);
         boolean sequential = likelySequentialArt(criteria);
+        List<String> terms = providerSearchTerms(criteria, term);
 
         if (mangaDexEnabled && (requested == DownloadContentKind.MANGA || requested == DownloadContentKind.AUTO && sequential)) {
-            candidates.addAll(resolveMangaDex(term));
+            for (String providerTerm : terms) {
+                candidates.addAll(resolveMangaDex(providerTerm));
+            }
         }
         if (webtoonsEnabled && requested == DownloadContentKind.WEBTOON) {
-            candidates.addAll(resolveWebtoons(term));
+            for (String providerTerm : terms) {
+                candidates.addAll(resolveWebtoons(providerTerm));
+            }
         }
         if (asuraWebtoonsEnabled && requested == DownloadContentKind.WEBTOON) {
-            candidates.addAll(resolveAsuraWebtoons(term));
+            for (String providerTerm : terms) {
+                candidates.addAll(resolveAsuraWebtoons(providerTerm));
+            }
         }
         if (comicVineEnabled && !isBlank(comicVineApiKey) && requested == DownloadContentKind.COMIC) {
-            candidates.addAll(resolveComicVine(term));
+            for (String providerTerm : terms) {
+                candidates.addAll(resolveComicVine(providerTerm));
+            }
         }
         if (requested == DownloadContentKind.BOOK || requested == DownloadContentKind.AUTO || requested == DownloadContentKind.COMIC) {
             if (openLibraryEnabled) {
-                candidates.addAll(resolveOpenLibrary(term));
+                for (String providerTerm : terms) {
+                    candidates.addAll(resolveOpenLibrary(providerTerm));
+                }
             }
             if (googleBooksEnabled) {
-                candidates.addAll(resolveGoogleBooks(term));
+                for (String providerTerm : terms) {
+                    candidates.addAll(resolveGoogleBooks(providerTerm));
+                }
             }
         }
         return candidates;
@@ -403,7 +416,9 @@ public class DownloadCanonicalResolver {
         }
         List<Candidate> candidates = new ArrayList<>();
         for (JsonNode manga : array(root.get().path("data"))) {
-            String title = localizedTitle(manga.path("attributes"));
+            JsonNode attributes = manga.path("attributes");
+            List<String> titles = localizedTitles(attributes);
+            String title = bestTitleForQuery(term, titles);
             if (isBlank(title)) {
                 continue;
             }
@@ -412,8 +427,8 @@ public class DownloadCanonicalResolver {
             String coverFile = relationshipAttribute(manga, "cover_art", "fileName");
             String coverUrl = mangaDexCoverUrl(mangaId, coverFile);
             String detailsUrl = isBlank(mangaId) ? null : "https://mangadex.org/title/" + mangaId;
-            String description = localizedDescription(manga.path("attributes"));
-            String year = text(manga.path("attributes").path("year"));
+            String description = localizedDescription(attributes);
+            String year = text(attributes.path("year"));
             candidates.add(new Candidate(
                     "mangadex",
                     DownloadContentKind.MANGA,
@@ -421,7 +436,7 @@ public class DownloadCanonicalResolver {
                     author,
                     null,
                     title,
-                    score(term, title, author),
+                    score(term, titles, author),
                     coverUrl,
                     detailsUrl,
                     description,
@@ -907,6 +922,52 @@ public class DownloadCanonicalResolver {
         return kept.isEmpty() ? trimmed : compactJoin(kept.toArray(String[]::new));
     }
 
+    private List<String> providerSearchTerms(DownloadSearchCriteria criteria, String term) {
+        LinkedHashSet<String> terms = new LinkedHashSet<>();
+        addProviderSearchTerm(terms, term);
+
+        String strippedSequence = stripSequenceMarkers(term, true);
+        addProviderSearchTerm(terms, strippedSequence);
+
+        if (criteria != null) {
+            addProviderSearchTerm(terms, criteria.getSeriesName());
+            addProviderSearchTerm(terms, criteria.getTitle());
+            if (criteria.getSeriesNumber() != null) {
+                addProviderSearchTerm(terms, stripTrailingBareNumber(term));
+            }
+        }
+
+        return terms.stream()
+                .filter(value -> !isBlank(value))
+                .limit(4)
+                .toList();
+    }
+
+    private void addProviderSearchTerm(Set<String> terms, String term) {
+        String providerTerm = providerSearchTerm(term);
+        if (!isBlank(providerTerm)) {
+            terms.add(providerTerm);
+        }
+    }
+
+    private String stripSequenceMarkers(String term, boolean stripBareTrailingNumber) {
+        if (isBlank(term)) {
+            return term;
+        }
+        String stripped = EXPLICIT_SEQUENCE_MARKER.matcher(term).replaceAll(" ");
+        if (stripBareTrailingNumber) {
+            stripped = stripTrailingBareNumber(stripped);
+        }
+        return stripped.trim().replaceAll("\\s+", " ");
+    }
+
+    private String stripTrailingBareNumber(String term) {
+        if (isBlank(term)) {
+            return term;
+        }
+        return term.replaceFirst("(?iu)\\s+0*\\d{1,5}(?:\\.\\d+)?\\s*$", "").trim().replaceAll("\\s+", " ");
+    }
+
     private DownloadContentKind requestedKind(DownloadSearchCriteria criteria) {
         return criteria.getContentKind() == null ? DownloadContentKind.AUTO : criteria.getContentKind();
     }
@@ -936,6 +997,16 @@ public class DownloadCanonicalResolver {
             score += 0.10D;
         }
         return Math.min(0.99D, score);
+    }
+
+    private double score(String query, List<String> titles, String author) {
+        if (titles == null || titles.isEmpty()) {
+            return score(query, (String) null, author);
+        }
+        return titles.stream()
+                .mapToDouble(title -> score(query, title, author))
+                .max()
+                .orElse(0D);
     }
 
     private double bookScore(String query, String title, String author, String isbn) {
@@ -993,18 +1064,33 @@ public class DownloadCanonicalResolver {
     }
 
     private String localizedTitle(JsonNode attributes) {
+        List<String> titles = localizedTitles(attributes);
+        return titles.isEmpty() ? null : titles.getFirst();
+    }
+
+    private List<String> localizedTitles(JsonNode attributes) {
+        LinkedHashSet<String> titles = new LinkedHashSet<>();
         JsonNode titleNode = attributes.path("title");
         String title = localizedText(titleNode);
         if (!isBlank(title)) {
-            return title;
+            titles.add(title);
         }
         for (JsonNode altTitle : array(attributes.path("altTitles"))) {
             title = localizedText(altTitle);
             if (!isBlank(title)) {
-                return title;
+                titles.add(title);
             }
         }
-        return null;
+        return new ArrayList<>(titles);
+    }
+
+    private String bestTitleForQuery(String query, List<String> titles) {
+        if (titles == null || titles.isEmpty()) {
+            return null;
+        }
+        return titles.stream()
+                .max((left, right) -> Double.compare(tokenScore(query, left), tokenScore(query, right)))
+                .orElse(titles.getFirst());
     }
 
     private String localizedText(JsonNode object) {

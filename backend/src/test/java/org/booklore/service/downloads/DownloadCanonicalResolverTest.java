@@ -364,6 +364,64 @@ class DownloadCanonicalResolverTest {
     }
 
     @Test
+    void mangaCanonicalLookupRetriesWithoutExplicitVolumeMarker() throws Exception {
+        List<String> seenQueries = new java.util.concurrent.CopyOnWriteArrayList<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/manga", exchange -> {
+            seenQueries.add(exchange.getRequestURI().getRawQuery());
+            String query = exchange.getRequestURI().getRawQuery();
+            if (query != null && query.contains("title=Bonne%20Nuit%20Punpun&")) {
+                respond(exchange, "application/json", """
+                        {
+                          "data": [
+                            {
+                              "id": "punpun",
+                              "attributes": {
+                                "title": {"en": "Goodnight Punpun"},
+                                "altTitles": [{"fr": "Bonne Nuit Punpun"}]
+                              },
+                              "relationships": [
+                                {"type": "author", "attributes": {"name": "Inio Asano"}},
+                                {"type": "cover_art", "attributes": {"fileName": "cover.jpg"}}
+                              ]
+                            }
+                          ]
+                        }
+                        """);
+                return;
+            }
+            respond(exchange, "application/json", "{\"data\":[]}");
+        });
+        server.start();
+        try {
+            DownloadCanonicalResolver resolver = resolver();
+            resolver.openLibraryEnabled = false;
+            resolver.googleBooksEnabled = false;
+            resolver.mangaDexBaseUrl = baseUrl(server);
+            resolver.webtoonsEnabled = false;
+
+            DownloadSearchCriteria parsed = parser.enrich(DownloadSearchCriteria.builder()
+                    .query("Bonne Nuit Punpun tome 1")
+                    .contentKind(DownloadContentKind.MANGA)
+                    .build());
+
+            List<DownloadCanonicalResolver.CanonicalCandidate> candidates = resolver.resolveCandidates(parsed);
+
+            assertThat(seenQueries).anySatisfy(query -> assertThat(query).contains("title=Bonne%20Nuit%20Punpun&"));
+            assertThat(candidates).hasSize(1);
+            DownloadCanonicalResolver.CanonicalCandidate volumeCandidate = candidates.getFirst();
+            assertThat(volumeCandidate.provider()).isEqualTo("mangadex");
+            assertThat(volumeCandidate.resolvedSeriesName()).isEqualTo("Bonne Nuit Punpun");
+            assertThat(volumeCandidate.resolvedAuthor()).isEqualTo("Inio Asano");
+            assertThat(volumeCandidate.coverUrl()).isEqualTo("https://uploads.mangadex.org/covers/punpun/cover.jpg.256.jpg");
+            assertThat(volumeCandidate.seriesNumber()).isEqualTo(1F);
+            assertThat(volumeCandidate.sequenceNumberType()).isEqualTo(DownloadSequenceNumberType.VOLUME);
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     void appliesLockedCanonicalSelectionWithoutProviderLookup() {
         DownloadCanonicalResolver resolver = resolver();
         resolver.enabled = false;
