@@ -414,8 +414,8 @@ public class DownloadScoringService {
         }
         if (result.getSeriesNumber() != null && result.getContentKind() != null && result.getContentKind().isSequentialArt()) {
             if (requestedSequenceType.isVolumeLike() && isChapterEpisodeSource(result)) {
-                reasons.add("-85 chapter/episode result for volume/issue request");
-                return -85;
+                reasons.add("-120 chapter/episode result for volume/issue request");
+                return -120;
             }
             if (matchesSeriesNumber(result.getSeriesNumber(), number)) {
                 reasons.add("+10 requested " + sequenceNumberLabel(requestedSequenceType) + " number match");

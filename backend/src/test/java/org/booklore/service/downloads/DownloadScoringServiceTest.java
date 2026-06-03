@@ -377,7 +377,7 @@ class DownloadScoringServiceTest {
         var score = service.score(criteria, chapterResult);
 
         assertTrue(score.getScore() < 50);
-        assertTrue(score.getReasons().contains("-85 chapter/episode result for volume/issue request"));
+        assertTrue(score.getReasons().contains("-120 chapter/episode result for volume/issue request"));
     }
 
     @Test
@@ -535,7 +535,7 @@ class DownloadScoringServiceTest {
         var volumeScore = service.score(criteria, volume);
 
         assertTrue(volumeScore.getScore() > chapterScore.getScore());
-        assertTrue(chapterScore.getReasons().contains("-85 chapter/episode result for volume/issue request"));
+        assertTrue(chapterScore.getReasons().contains("-120 chapter/episode result for volume/issue request"));
         assertTrue(volumeScore.getReasons().contains("+20 requested volume number match"));
     }
 
