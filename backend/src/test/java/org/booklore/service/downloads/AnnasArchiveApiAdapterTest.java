@@ -445,6 +445,73 @@ class AnnasArchiveApiAdapterTest {
     }
 
     @Test
+    void search_usesSeriesVolumeTitleWhenStacksResultTitleIsOnlyEditionSuffix() throws Exception {
+        HttpServer flareSolverr = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        flareSolverr.createContext("/v1", exchange -> {
+            exchange.getRequestBody().readAllBytes();
+            String html = """
+                    <html>
+                      <body>
+                        <div>
+                          <a href="/md5/0123456789abcdef0123456789abcdef" class="line-clamp-[3] js-vim-focus font-semibold">
+                            (Big Kana) (French Edition)
+                          </a>
+                          <a href="/search?q=Asano%2C%20Inio">
+                            <span class="icon-[mdi--user-edit]"></span>
+                            Asano, Inio
+                          </a>
+                          <span>French CBZ 109 MB, Bonne Nuit Punpun, 2, 2012</span>
+                        </div>
+                      </body>
+                    </html>
+                    """;
+            byte[] response = objectMapper.writeValueAsBytes(Map.of(
+                    "status", "ok",
+                    "solution", Map.of("response", html)
+            ));
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        flareSolverr.start();
+
+        try {
+            String flareSolverrBaseUrl = "http://127.0.0.1:" + flareSolverr.getAddress().getPort();
+            DownloadSourceEntity source = DownloadSourceEntity.builder()
+                    .name("Anna HTML")
+                    .type(DownloadSourceType.ANNAS_ARCHIVE_API)
+                    .configJson(objectMapper.writeValueAsString(Map.of(
+                            "annasArchiveApi", Map.of(
+                                    "baseUrl", "https://annas-archive.li",
+                                    "searchPath", "/search",
+                                    "defaultFormat", "cbz",
+                                    "maxResults", 10
+                            ),
+                            "flareSolverr", Map.of("baseUrl", flareSolverrBaseUrl)
+                    )))
+                    .build();
+
+            var results = adapter().search(source, DownloadSearchCriteria.builder()
+                    .query("bonne nuit punpun")
+                    .contentKind(DownloadContentKind.MANGA)
+                    .preferredFormats(List.of(DownloadFormat.CBZ))
+                    .maxResults(10)
+                    .build());
+
+            assertEquals(1, results.size());
+            var result = results.getFirst();
+            assertEquals("Bonne Nuit Punpun VOLUME 2", result.getTitle());
+            assertEquals("Bonne Nuit Punpun", result.getSeriesName());
+            assertEquals(2F, result.getSeriesNumber());
+            assertEquals(DownloadContentKind.MANGA, result.getContentKind());
+            assertEquals(DownloadFormat.CBZ, result.getFormat());
+        } finally {
+            flareSolverr.stop(0);
+        }
+    }
+
+    @Test
     void search_whenHtmlContainsNoMd5Links_returnsNoResults() throws Exception {
         HttpServer flareSolverr = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         flareSolverr.createContext("/v1", exchange -> {

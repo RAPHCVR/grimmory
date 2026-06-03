@@ -215,7 +215,7 @@ public class AnnasArchiveApiAdapter implements DownloadSourceAdapter {
                 contentKind = criteria.getContentKind();
                 parsed = requestedSequentialMetadata;
             }
-            String title = firstNonBlank(parsed.title(), rawTitle);
+            String title = displayTitle(rawTitle, parsed);
 
             ObjectNode raw = objectMapper.createObjectNode();
             raw.put("md5", md5);
@@ -534,6 +534,42 @@ public class AnnasArchiveApiAdapter implements DownloadSourceAdapter {
 
     private boolean hasSequentialMetadata(ParsedSequentialMetadata parsed) {
         return parsed != null && (parsed.seriesName() != null || parsed.seriesNumber() != null);
+    }
+
+    private String displayTitle(String rawTitle, ParsedSequentialMetadata parsed) {
+        String parsedTitle = parsed == null ? null : parsed.title();
+        if (parsedTitle != null && !parsedTitle.isBlank()) {
+            return parsedTitle;
+        }
+        if (parsed != null
+                && parsed.seriesName() != null
+                && !parsed.seriesName().isBlank()
+                && parsed.seriesNumber() != null
+                && looksLikeEditionOnlyTitle(rawTitle)) {
+            return compact(parsed.seriesName() + " VOLUME " + displayNumber(parsed.seriesNumber()));
+        }
+        return rawTitle;
+    }
+
+    private boolean looksLikeEditionOnlyTitle(String title) {
+        if (title == null || title.isBlank()) {
+            return true;
+        }
+        String normalized = title.toLowerCase(Locale.ROOT);
+        boolean editionWords = normalized.matches(".*\\b(edition|kana|deluxe|collector|digital|scan|rip|french|english)\\b.*");
+        boolean titleWords = normalized.replaceAll("[^\\p{L}\\p{N}]+", " ").trim().split("\\s+").length <= 6;
+        boolean hasSequenceMarker = normalized.matches(".*\\b(vol(?:ume)?|v|tome|chapter|chapitre|ch|issue)\\.?\\s*\\d+.*");
+        return editionWords && titleWords && !hasSequenceMarker;
+    }
+
+    private String displayNumber(Float number) {
+        if (number == null) {
+            return "";
+        }
+        if (Math.abs(number - Math.round(number)) < 0.01F) {
+            return String.valueOf(Math.round(number));
+        }
+        return number.toString();
     }
 
     private Float parseFloat(String value) {
