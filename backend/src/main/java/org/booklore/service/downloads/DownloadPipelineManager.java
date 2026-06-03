@@ -122,6 +122,7 @@ public class DownloadPipelineManager {
                 .canonicalSeriesNumber(canonicalSelection == null ? null : canonicalSelection.seriesNumber())
                 .canonicalSequenceNumberType(canonicalSelection == null ? null : canonicalSelection.sequenceNumberType())
                 .canonicalConfidence(canonicalSelection == null ? null : canonicalSelection.confidence())
+                .canonicalCoverUrl(canonicalSelection == null ? null : canonicalSelection.coverUrl())
                 .status(DownloadSearchStatus.RUNNING)
                 .build());
 

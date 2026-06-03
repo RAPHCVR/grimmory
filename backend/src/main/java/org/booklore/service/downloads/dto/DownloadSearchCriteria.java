@@ -55,6 +55,7 @@ public class DownloadSearchCriteria {
                                      String resolvedIsbn,
                                      String resolvedSeriesName,
                                      Float seriesNumber,
-                                     DownloadSequenceNumberType sequenceNumberType) {
+                                     DownloadSequenceNumberType sequenceNumberType,
+                                     String coverUrl) {
     }
 }

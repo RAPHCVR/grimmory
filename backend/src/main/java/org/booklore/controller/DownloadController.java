@@ -128,7 +128,7 @@ public class DownloadController {
         List<DownloadResultResponse> results = resultRepository.findAllBySearchIdOrderByScoreDescIdAsc(search.getId())
                 .stream()
                 .filter(result -> result.getScore() != null && result.getScore() > 0)
-                .map(this::toResultResponse)
+                .map(result -> toResultResponse(result, search.getCanonicalCoverUrl()))
                 .toList();
         return new DownloadSearchResponse(
                 search.getId(),
@@ -363,7 +363,8 @@ public class DownloadController {
                 trimToNull(selection.getResolvedIsbn()),
                 trimToNull(selection.getResolvedSeriesName()),
                 selection.getSeriesNumber(),
-                selection.getSequenceNumberType() == null ? DownloadSequenceNumberType.AUTO : selection.getSequenceNumberType()
+                selection.getSequenceNumberType() == null ? DownloadSequenceNumberType.AUTO : selection.getSequenceNumberType(),
+                trimToNull(selection.getCoverUrl())
         );
     }
 
@@ -388,7 +389,8 @@ public class DownloadController {
                 search.getCanonicalIsbn(),
                 search.getCanonicalSeriesName(),
                 search.getCanonicalSeriesNumber(),
-                search.getCanonicalSequenceNumberType()
+                search.getCanonicalSequenceNumberType(),
+                search.getCanonicalCoverUrl()
         );
     }
 
@@ -411,7 +413,7 @@ public class DownloadController {
         );
     }
 
-    private DownloadResultResponse toResultResponse(DownloadResultEntity result) {
+    private DownloadResultResponse toResultResponse(DownloadResultEntity result, String coverUrl) {
         return new DownloadResultResponse(
                 result.getId(),
                 result.getSource().getId(),
@@ -430,6 +432,7 @@ public class DownloadController {
                 result.getSizeBytes(),
                 result.getDownloadUrl(),
                 result.getDetailsUrl(),
+                coverUrl,
                 Boolean.TRUE.equals(result.getRequiresFlareSolverr()),
                 result.getScore(),
                 result.getScoreReasons()
@@ -516,7 +519,8 @@ public class DownloadController {
                                                      String resolvedIsbn,
                                                      String resolvedSeriesName,
                                                      Float seriesNumber,
-                                                     DownloadSequenceNumberType sequenceNumberType) {
+                                                     DownloadSequenceNumberType sequenceNumberType,
+                                                     String coverUrl) {
     }
 
     public record DownloadResultResponse(Long id,
@@ -533,12 +537,13 @@ public class DownloadController {
                                          DownloadFormat format,
                                          DownloadContentKind contentKind,
                                          DownloadAcquisitionType acquisitionType,
-                                         Long sizeBytes,
-                                         String downloadUrl,
-                                         String detailsUrl,
-                                         boolean requiresFlareSolverr,
-                                         Integer score,
-                                         String scoreReasons) {
+                                          Long sizeBytes,
+                                          String downloadUrl,
+                                          String detailsUrl,
+                                          String coverUrl,
+                                          boolean requiresFlareSolverr,
+                                          Integer score,
+                                          String scoreReasons) {
     }
 
     public record DownloadJobResponse(Long id,

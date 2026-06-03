@@ -861,7 +861,8 @@ public class DownloadCanonicalResolver {
                 resolved.getIsbn(),
                 resolved.getSeriesName(),
                 resolved.getSeriesNumber(),
-                resolved.getSequenceNumberType()
+                resolved.getSequenceNumberType(),
+                candidate.coverUrl()
         );
     }
 
@@ -880,7 +881,8 @@ public class DownloadCanonicalResolver {
                 resolved.getIsbn(),
                 resolved.getSeriesName(),
                 resolved.getSeriesNumber(),
-                resolved.getSequenceNumberType()
+                resolved.getSequenceNumberType(),
+                selection.coverUrl()
         );
     }
 

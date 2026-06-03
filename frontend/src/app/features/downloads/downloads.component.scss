@@ -482,6 +482,30 @@
   width: 8.5rem;
 }
 
+.result-title-cell {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.result-cover {
+  flex: 0 0 auto;
+  width: 2.75rem;
+  height: 4rem;
+  overflow: hidden;
+  border: 1px solid var(--p-content-border-color);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--p-content-border-color) 18%, transparent);
+
+  img {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: cover;
+  }
+}
+
 .result-title,
 .kind-stack,
 .path-stack {

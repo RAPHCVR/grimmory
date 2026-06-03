@@ -146,6 +146,7 @@ export interface DownloadResult {
   sizeBytes?: number | null;
   downloadUrl?: string | null;
   detailsUrl?: string | null;
+  coverUrl?: string | null;
   requiresFlareSolverr: boolean;
   score?: number | null;
   scoreReasons?: string | null;

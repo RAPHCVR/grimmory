@@ -84,6 +84,9 @@ public class DownloadSearchEntity {
     @Column(name = "canonical_confidence")
     private Double canonicalConfidence;
 
+    @Column(name = "canonical_cover_url", columnDefinition = "TEXT")
+    private String canonicalCoverUrl;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", length = 20, nullable = false)
     @Builder.Default

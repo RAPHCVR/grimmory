@@ -914,7 +914,8 @@ export class DownloadsComponent implements OnInit, OnDestroy {
       resolvedIsbn: candidate.resolvedIsbn ?? null,
       resolvedSeriesName: candidate.resolvedSeriesName ?? null,
       seriesNumber: candidate.seriesNumber ?? null,
-      sequenceNumberType: candidate.sequenceNumberType ?? 'AUTO'
+      sequenceNumberType: candidate.sequenceNumberType ?? 'AUTO',
+      coverUrl: candidate.coverUrl ?? null
     };
   }
 

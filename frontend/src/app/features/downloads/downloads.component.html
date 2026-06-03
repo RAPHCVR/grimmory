@@ -368,26 +368,33 @@
               <p-tag [value]="scoreLabel(result.score)" [severity]="scoreSeverity(result.score)"></p-tag>
             </td>
             <td>
-              <div class="result-title">
-                <strong>{{ resultHeading(result) }}</strong>
-                @if (resultMeta(result)) {
-                  <span>{{ resultMeta(result) }}</span>
-                }
-                @if (result.isbn) {
-                  <small>ISBN {{ result.isbn }}</small>
-                }
-                @if (resultQualityBadges(result).length) {
-                  <div class="result-quality-badges">
-                    @for (badge of resultQualityBadges(result); track badge.labelKey) {
-                      <p-tag
-                        [value]="t(badge.labelKey.replace('downloads.', ''))"
-                        [severity]="badge.severity"
-                        [pTooltip]="t(badge.tooltipKey.replace('downloads.', ''))"
-                        tooltipPosition="top">
-                      </p-tag>
-                    }
+              <div class="result-title-cell">
+                @if (result.coverUrl) {
+                  <div class="result-cover">
+                    <img [src]="result.coverUrl" [alt]="resultHeading(result)" loading="lazy"/>
                   </div>
                 }
+                <div class="result-title">
+                  <strong>{{ resultHeading(result) }}</strong>
+                  @if (resultMeta(result)) {
+                    <span>{{ resultMeta(result) }}</span>
+                  }
+                  @if (result.isbn) {
+                    <small>ISBN {{ result.isbn }}</small>
+                  }
+                  @if (resultQualityBadges(result).length) {
+                    <div class="result-quality-badges">
+                      @for (badge of resultQualityBadges(result); track badge.labelKey) {
+                        <p-tag
+                          [value]="t(badge.labelKey.replace('downloads.', ''))"
+                          [severity]="badge.severity"
+                          [pTooltip]="t(badge.tooltipKey.replace('downloads.', ''))"
+                          tooltipPosition="top">
+                        </p-tag>
+                      }
+                    </div>
+                  }
+                </div>
               </div>
             </td>
             <td>

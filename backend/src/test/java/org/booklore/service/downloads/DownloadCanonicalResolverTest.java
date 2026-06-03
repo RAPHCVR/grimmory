@@ -443,7 +443,8 @@ class DownloadCanonicalResolverTest {
                         null,
                         "Dragon Ball Super",
                         24F,
-                        DownloadSequenceNumberType.CHAPTER
+                        DownloadSequenceNumberType.CHAPTER,
+                        null
                 ))
                 .build());
 
@@ -479,7 +480,8 @@ class DownloadCanonicalResolverTest {
                         null,
                         "Bonne Nuit Punpun",
                         3F,
-                        DownloadSequenceNumberType.VOLUME
+                        DownloadSequenceNumberType.VOLUME,
+                        null
                 ))
                 .build());
 

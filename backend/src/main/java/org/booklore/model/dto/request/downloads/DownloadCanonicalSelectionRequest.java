@@ -20,4 +20,5 @@ public class DownloadCanonicalSelectionRequest {
     private String resolvedSeriesName;
     private Float seriesNumber;
     private DownloadSequenceNumberType sequenceNumberType = DownloadSequenceNumberType.AUTO;
+    private String coverUrl;
 }
