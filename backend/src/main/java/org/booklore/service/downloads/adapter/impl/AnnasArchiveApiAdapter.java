@@ -538,14 +538,14 @@ public class AnnasArchiveApiAdapter implements DownloadSourceAdapter {
 
     private String displayTitle(String rawTitle, ParsedSequentialMetadata parsed) {
         String parsedTitle = parsed == null ? null : parsed.title();
-        if (parsedTitle != null && !parsedTitle.isBlank()) {
+        if (parsedTitle != null && !parsedTitle.isBlank() && !looksLikeEditionOnlyTitle(parsedTitle)) {
             return parsedTitle;
         }
         if (parsed != null
                 && parsed.seriesName() != null
                 && !parsed.seriesName().isBlank()
                 && parsed.seriesNumber() != null
-                && looksLikeEditionOnlyTitle(rawTitle)) {
+                && ((rawTitle == null || rawTitle.isBlank()) || looksLikeEditionOnlyTitle(rawTitle) || looksLikeEditionOnlyTitle(parsedTitle))) {
             return compact(parsed.seriesName() + " VOLUME " + displayNumber(parsed.seriesNumber()));
         }
         return rawTitle;
@@ -553,7 +553,7 @@ public class AnnasArchiveApiAdapter implements DownloadSourceAdapter {
 
     private boolean looksLikeEditionOnlyTitle(String title) {
         if (title == null || title.isBlank()) {
-            return true;
+            return false;
         }
         String normalized = title.toLowerCase(Locale.ROOT);
         boolean editionWords = normalized.matches(".*\\b(edition|kana|deluxe|collector|digital|scan|rip|french|english)\\b.*");

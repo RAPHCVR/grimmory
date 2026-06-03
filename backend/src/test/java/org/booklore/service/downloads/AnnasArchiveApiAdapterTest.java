@@ -454,7 +454,7 @@ class AnnasArchiveApiAdapterTest {
                       <body>
                         <div>
                           <a href="/md5/0123456789abcdef0123456789abcdef" class="line-clamp-[3] js-vim-focus font-semibold">
-                            (Big Kana) (French Edition)
+                            Bonne Nuit Punpun - Tome 2 - (Big Kana) (French Edition)
                           </a>
                           <a href="/search?q=Asano%2C%20Inio">
                             <span class="icon-[mdi--user-edit]"></span>
