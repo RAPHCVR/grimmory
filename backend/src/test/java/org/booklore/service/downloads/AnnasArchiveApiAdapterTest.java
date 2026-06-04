@@ -512,6 +512,61 @@ class AnnasArchiveApiAdapterTest {
     }
 
     @Test
+    void search_usesSeriesVolumeTitleWhenParsedTitleIsBareNumber() throws Exception {
+        HttpServer flareSolverr = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        flareSolverr.createContext("/v1", exchange -> {
+            exchange.getRequestBody().readAllBytes();
+            String html = """
+                    <html>
+                      <body>
+                        <div>
+                          <a href="/md5/0123456789abcdef0123456789abcdef" class="line-clamp-[3] js-vim-focus font-semibold">
+                            One Piece - Tome 1 - 01
+                          </a>
+                          <span>English EPUB 94 MB, One Piece, 1, 1997</span>
+                        </div>
+                      </body>
+                    </html>
+                    """;
+            byte[] response = objectMapper.writeValueAsBytes(Map.of(
+                    "status", "ok",
+                    "solution", Map.of("response", html)
+            ));
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        flareSolverr.start();
+
+        try {
+            String flareSolverrBaseUrl = "http://127.0.0.1:" + flareSolverr.getAddress().getPort();
+            DownloadSourceEntity source = DownloadSourceEntity.builder()
+                    .name("Anna HTML")
+                    .type(DownloadSourceType.ANNAS_ARCHIVE_API)
+                    .configJson(objectMapper.writeValueAsString(Map.of(
+                            "annasArchiveApi", Map.of("baseUrl", "https://annas-archive.li", "searchPath", "/search", "defaultFormat", "epub"),
+                            "flareSolverr", Map.of("baseUrl", flareSolverrBaseUrl)
+                    )))
+                    .build();
+
+            var results = adapter().search(source, DownloadSearchCriteria.builder()
+                    .query("one piece")
+                    .contentKind(DownloadContentKind.MANGA)
+                    .preferredFormats(List.of(DownloadFormat.EPUB))
+                    .maxResults(10)
+                    .build());
+
+            assertEquals(1, results.size());
+            assertEquals("One Piece VOLUME 1", results.getFirst().getTitle());
+            assertEquals("One Piece", results.getFirst().getSeriesName());
+            assertEquals(1F, results.getFirst().getSeriesNumber());
+        } finally {
+            flareSolverr.stop(0);
+        }
+    }
+
+    @Test
     void search_whenHtmlContainsNoMd5Links_returnsNoResults() throws Exception {
         HttpServer flareSolverr = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         flareSolverr.createContext("/v1", exchange -> {

@@ -298,6 +298,46 @@ class DownloadScoringServiceTest {
     }
 
     @Test
+    void score_explicitVolumeRequestPenalizesLocalizedAndPlusBundleRanges() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("naruto tome 1")
+                .title("Naruto")
+                .seriesName("Naruto")
+                .seriesNumber(1f)
+                .sequenceNumberType(DownloadSequenceNumberType.VOLUME)
+                .contentKind(DownloadContentKind.MANGA)
+                .preferredFormats(List.of(DownloadFormat.CBZ))
+                .build();
+
+        NormalizedDownloadResult localizedRange = NormalizedDownloadResult.builder()
+                .title("Naruto (Tome 1 à 72 + Naruto Gaiden) - VF - .cbz")
+                .format(DownloadFormat.CBZ)
+                .contentKind(DownloadContentKind.MANGA)
+                .acquisitionType(DownloadAcquisitionType.TORRENT)
+                .downloadUrl("magnet:?xt=urn:btih:abcdef")
+                .sizeBytes(5_000_000_000L)
+                .build();
+        NormalizedDownloadResult plusRange = NormalizedDownloadResult.builder()
+                .title("Naruto v01+72 (Colored) (Digital) (PZG)")
+                .format(DownloadFormat.UNKNOWN)
+                .contentKind(DownloadContentKind.MANGA)
+                .acquisitionType(DownloadAcquisitionType.TORRENT)
+                .downloadUrl("magnet:?xt=urn:btih:123456")
+                .sizeBytes(5_000_000_000L)
+                .build();
+
+        var localizedScore = service.score(criteria, localizedRange);
+        var plusScore = service.score(criteria, plusRange);
+
+        assertTrue(localizedScore.getScore() < 50);
+        assertTrue(plusScore.getScore() < 50);
+        assertTrue(localizedScore.getReasons().contains("-45 bundled range cannot satisfy requested volume exactly"));
+        assertTrue(plusScore.getReasons().contains("-45 bundled range cannot satisfy requested volume exactly"));
+        assertTrue(localizedScore.getReasons().stream().noneMatch("+20 requested volume number match"::equals));
+        assertTrue(plusScore.getReasons().stream().noneMatch("+20 requested volume number match"::equals));
+    }
+
+    @Test
     void score_explicitVolumeRequestDoesNotTreatReleaseVersionAsVolume() {
         DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
                 .query("one piece tome 1")

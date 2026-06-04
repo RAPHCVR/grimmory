@@ -538,6 +538,13 @@ public class AnnasArchiveApiAdapter implements DownloadSourceAdapter {
 
     private String displayTitle(String rawTitle, ParsedSequentialMetadata parsed) {
         String parsedTitle = parsed == null ? null : parsed.title();
+        if (parsed != null
+                && parsed.seriesName() != null
+                && !parsed.seriesName().isBlank()
+                && parsed.seriesNumber() != null
+                && (looksLikeBareSequenceTitle(parsedTitle) || looksLikeEditionOnlyTitle(rawTitle) || looksLikeEditionOnlyTitle(parsedTitle))) {
+            return compact(parsed.seriesName() + " VOLUME " + displayNumber(parsed.seriesNumber()));
+        }
         if (parsedTitle != null && !parsedTitle.isBlank() && !looksLikeEditionOnlyTitle(parsedTitle)) {
             return parsedTitle;
         }
@@ -549,6 +556,14 @@ public class AnnasArchiveApiAdapter implements DownloadSourceAdapter {
             return compact(parsed.seriesName() + " VOLUME " + displayNumber(parsed.seriesNumber()));
         }
         return rawTitle;
+    }
+
+    private boolean looksLikeBareSequenceTitle(String title) {
+        if (title == null || title.isBlank()) {
+            return false;
+        }
+        String normalized = title.trim();
+        return normalized.matches("^[#(\\[]?\\s*0*\\d{1,5}(?:\\.\\d+)?\\s*[)\\]]?$");
     }
 
     private boolean looksLikeEditionOnlyTitle(String title) {

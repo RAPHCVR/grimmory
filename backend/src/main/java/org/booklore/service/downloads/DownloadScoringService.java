@@ -17,8 +17,9 @@ import java.util.regex.Pattern;
 public class DownloadScoringService {
 
     private static final Pattern NON_ALNUM = Pattern.compile("[^a-z0-9]+");
-    private static final Pattern NUMBER_RANGE = Pattern.compile("(?<!\\d)0*(\\d{1,5})\\s*[-–]\\s*0*(\\d{1,5})(?!\\d)");
-    private static final Pattern SEQUENTIAL_MARKED_RANGE = Pattern.compile("(?iu)\\b(?:vol(?:ume)?|v|t(?:ome|omo)?|ch(?:apter)?|chapitre)\\.?\\s*0*(\\d{1,5})\\s*[-–]\\s*(?:vol(?:ume)?|v|t(?:ome|omo)?|ch(?:apter)?|chapitre)?\\.?\\s*0*(\\d{1,5})(?!\\d)");
+    private static final String RANGE_SEPARATOR = "(?:\\s*[-–—+]\\s*|\\s+(?:a|à|to|through|thru)\\s+)";
+    private static final Pattern NUMBER_RANGE = Pattern.compile("(?iu)(?<!\\d)0*(\\d{1,5})" + RANGE_SEPARATOR + "0*(\\d{1,5})(?!\\d)");
+    private static final Pattern SEQUENTIAL_MARKED_RANGE = Pattern.compile("(?iu)\\b(?:vol(?:ume)?|v|t(?:ome|omo)?|ch(?:apter)?|chapitre)\\.?\\s*0*(\\d{1,5})" + RANGE_SEPARATOR + "(?:vol(?:ume)?|v|t(?:ome|omo)?|ch(?:apter)?|chapitre)?\\.?\\s*0*(\\d{1,5})(?!\\d)");
     private static final Pattern COMPACT_NUMBER_MARKER = Pattern.compile("(?iu)\\b(vol(?:ume)?|v|t(?:ome|omo)?|ch(?:apter)?|chapitre)\\.?\\s*0*(\\d{1,5})\\b");
     private static final Pattern ANY_NUMBER_MARKER = Pattern.compile("(?iu)(?:\\b(?:vol(?:ume)?|v|t(?:ome|omo)?|ch(?:apter)?|chapitre)\\.?\\s*0*\\d{1,5}\\b|#\\s*0*\\d{1,5}\\b)");
     private static final Pattern EXPLICIT_WEBTOON_EPISODE_MARKER = Pattern.compile("(?iu)\\b(?:ep(?:isode)?|ch(?:apter)?|chapitre)\\.?\\s*0*(\\d{1,5})\\b|#\\s*0*(\\d{1,5})\\b");
