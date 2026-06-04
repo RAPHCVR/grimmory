@@ -21,6 +21,7 @@ public class DownloadScoringService {
     private static final Pattern NUMBER_RANGE = Pattern.compile("(?iu)(?<!\\d)0*(\\d{1,5})" + RANGE_SEPARATOR + "0*(\\d{1,5})(?!\\d)");
     private static final Pattern SEQUENTIAL_MARKED_RANGE = Pattern.compile("(?iu)\\b(?:vol(?:ume)?|v|t(?:ome|omo)?|ch(?:apter)?|chapitre)\\.?\\s*0*(\\d{1,5})" + RANGE_SEPARATOR + "(?:vol(?:ume)?|v|t(?:ome|omo)?|ch(?:apter)?|chapitre)?\\.?\\s*0*(\\d{1,5})(?!\\d)");
     private static final Pattern EAST_ASIAN_VOLUME_RANGE = Pattern.compile("(?iu)第\\s*0*(\\d{1,5})\\s*巻?\\s*(?:[-–—+~〜～]|\\s+(?:to|through|thru)\\s+)\\s*(?:第\\s*)?0*(\\d{1,5})\\s*巻");
+    private static final Pattern BUNDLE_COLLECTION_MARKER = Pattern.compile("(?iu)\\b(?:all|complete|collection|batch|pack|omnibus|int[eé]grale?)\\b.{0,80}\\b(?:volumes?|tomes?|chapters?|chapitres?|manga)\\b");
     private static final Pattern COMPACT_NUMBER_MARKER = Pattern.compile("(?iu)\\b(vol(?:ume)?|v|t(?:ome|omo)?|ch(?:apter)?|chapitre)\\.?\\s*0*(\\d{1,5})\\b");
     private static final Pattern ANY_NUMBER_MARKER = Pattern.compile("(?iu)(?:\\b(?:vol(?:ume)?|v|t(?:ome|omo)?|ch(?:apter)?|chapitre)\\.?\\s*0*\\d{1,5}\\b|#\\s*0*\\d{1,5}\\b|第\\s*0*\\d{1,5}\\s*巻)");
     private static final Pattern EXPLICIT_WEBTOON_EPISODE_MARKER = Pattern.compile("(?iu)\\b(?:ep(?:isode)?|ch(?:apter)?|chapitre)\\.?\\s*0*(\\d{1,5})\\b|#\\s*0*(\\d{1,5})\\b");
@@ -498,6 +499,18 @@ public class DownloadScoringService {
             reasons.add("-5 bundled range contains requested number");
             return -5;
         }
+        if (hasBundleCollectionMarker(evidence)) {
+            if (requestedSequenceType.isChapterLike()) {
+                reasons.add("-65 bundled collection cannot satisfy requested " + sequenceNumberLabel(requestedSequenceType) + " exactly");
+                return -65;
+            }
+            if (requestedSequenceType.isVolumeLike()) {
+                reasons.add("-45 bundled collection cannot satisfy requested " + sequenceNumberLabel(requestedSequenceType) + " exactly");
+                return -45;
+            }
+            reasons.add("-5 bundled collection contains multiple sequential items");
+            return -5;
+        }
         if (hasExactNumberMarker(evidence, number, requestedSequenceType)) {
             reasons.add("+20 requested " + sequenceNumberLabel(requestedSequenceType) + " number match");
             return 20;
@@ -592,6 +605,10 @@ public class DownloadScoringService {
         }
         var matcher = NUMBER_RANGE.matcher(title);
         return markedRangeContains(matcher, number);
+    }
+
+    private boolean hasBundleCollectionMarker(String title) {
+        return BUNDLE_COLLECTION_MARKER.matcher(title == null ? "" : title).find();
     }
 
     private boolean markedRangeContains(java.util.regex.Matcher matcher, int number) {

@@ -352,6 +352,33 @@ class DownloadScoringServiceTest {
         assertTrue(score.getReasons().stream().noneMatch("+20 requested volume number match"::equals));
     }
 
+    @Test
+    void score_explicitVolumeRequestPenalizesIntegralMultiVolumeCollection() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("bonne nuit punpun tome 1")
+                .title("Bonne nuit Punpun")
+                .seriesName("Bonne nuit Punpun")
+                .seriesNumber(1f)
+                .sequenceNumberType(DownloadSequenceNumberType.VOLUME)
+                .contentKind(DownloadContentKind.MANGA)
+                .preferredFormats(List.of(DownloadFormat.PDF))
+                .build();
+
+        NormalizedDownloadResult result = NormalizedDownloadResult.builder()
+                .title("Manga FR - Bonne nuit Punpun (Intégrale 13 volumes) PDF")
+                .format(DownloadFormat.PDF)
+                .contentKind(DownloadContentKind.MANGA)
+                .acquisitionType(DownloadAcquisitionType.EXTERNAL_STACKS)
+                .downloadUrl("http://stacks/download/bonne-nuit-punpun-integrale")
+                .build();
+
+        var score = service.score(criteria, result);
+
+        assertTrue(score.getScore() < 50);
+        assertTrue(score.getReasons().contains("-45 bundled collection cannot satisfy requested volume exactly"));
+        assertTrue(score.getReasons().stream().noneMatch("+20 requested volume number match"::equals));
+    }
+
 
 
     @Test

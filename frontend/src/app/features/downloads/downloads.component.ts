@@ -620,7 +620,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
   }
 
   private titleLooksLikeBundle(title: string): boolean {
-    return /\b(?:all|complete|collection|batch|pack|omnibus)\s+(?:volumes?|chapters?|manga)\b/i.test(title)
+    return /\b(?:all|complete|collection|batch|pack|omnibus|int[eé]grale?)\b.{0,80}\b(?:volumes?|tomes?|chapters?|chapitres?|manga)\b/i.test(title)
       || /\b(?:vol(?:ume)?s?|tomes?|v|ch(?:apter)?s?)\s*0?\d{1,4}\s*(?:-|–|—|à|a|to|\+)\s*0?\d{1,4}\b/i.test(title)
       || /\b0?\d{1,4}\s*(?:-|–|—|à|a|to|\+)\s*0?\d{1,4}\s*(?:vol(?:ume)?s?|tomes?|chapters?|manga)\b/i.test(title);
   }
