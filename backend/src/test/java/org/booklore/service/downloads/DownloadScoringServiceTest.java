@@ -298,6 +298,35 @@ class DownloadScoringServiceTest {
     }
 
 
+
+    @Test
+    void score_explicitMangaVolumeRequestStronglyPenalizesDifferentKnownVolume() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("naruto tome 1")
+                .title("Naruto")
+                .seriesName("Naruto")
+                .seriesNumber(1f)
+                .sequenceNumberType(DownloadSequenceNumberType.VOLUME)
+                .contentKind(DownloadContentKind.MANGA)
+                .preferredFormats(List.of(DownloadFormat.PDF))
+                .build();
+
+        NormalizedDownloadResult wrongVolume = NormalizedDownloadResult.builder()
+                .title("Naruto VOLUME 58")
+                .seriesName("Naruto")
+                .seriesNumber(58f)
+                .format(DownloadFormat.PDF)
+                .contentKind(DownloadContentKind.MANGA)
+                .acquisitionType(DownloadAcquisitionType.EXTERNAL_STACKS)
+                .downloadUrl("http://stacks/download/naruto-58")
+                .build();
+
+        var score = service.score(criteria, wrongVolume);
+
+        assertTrue(score.getScore() < 50);
+        assertTrue(score.getReasons().contains("-55 series number mismatch"));
+    }
+
     @Test
     void score_explicitMangaVolumeRequestPenalizesSpinOffNovels() {
         DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()

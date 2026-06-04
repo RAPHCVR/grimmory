@@ -132,8 +132,9 @@ public class DownloadScoringService {
                 score += 6;
                 reasons.add("+6 series number close match");
             } else {
-                score -= 20;
-                reasons.add("-20 series number mismatch");
+                int penalty = explicitSequentialNumberRequested(criteria) ? -55 : -20;
+                score += penalty;
+                reasons.add(penalty + " series number mismatch");
             }
         }
 
@@ -179,6 +180,16 @@ public class DownloadScoringService {
                 .score(clamped)
                 .reasons(reasons)
                 .build();
+    }
+
+    private boolean explicitSequentialNumberRequested(DownloadSearchCriteria criteria) {
+        if (criteria == null || criteria.getSeriesNumber() == null) {
+            return false;
+        }
+        DownloadSequenceNumberType sequenceNumberType = criteria.getSequenceNumberType() == null
+                ? DownloadSequenceNumberType.AUTO
+                : criteria.getSequenceNumberType();
+        return sequenceNumberType.isVolumeLike() || sequenceNumberType.isChapterLike();
     }
 
     private int scoreSequentialArtSeriesDisambiguation(DownloadSearchCriteria criteria, NormalizedDownloadResult result, List<String> reasons) {
