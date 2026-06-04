@@ -577,6 +577,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
 
   resultQualityBadges(result: DownloadResult): ResultQualityBadge[] {
     const reasons = (result.scoreReasons || '').toLowerCase();
+    const title = (result.title || '').toLowerCase();
     const badges: ResultQualityBadge[] = [];
     const add = (labelKey: string, tooltipKey: string, severity: ResultQualityBadge['severity']) => {
       if (!badges.some(badge => badge.labelKey === labelKey)) {
@@ -587,7 +588,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     if ((result.score ?? 0) < this.weakResultThreshold) {
       add('downloads.quality.weakScore', 'downloads.qualityTooltips.weakScore', 'danger');
     }
-    if (reasons.includes('bundled range') || reasons.includes('pack')) {
+    if (reasons.includes('bundled range') || reasons.includes('pack') || this.titleLooksLikeBundle(title)) {
       add('downloads.quality.packDetected', 'downloads.qualityTooltips.packDetected', 'warn');
     }
     if (reasons.includes('chapter/episode result for volume/issue request') || reasons.includes('chapter result for volume') || reasons.includes('episode result for volume')) {
@@ -616,6 +617,12 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     }
 
     return badges;
+  }
+
+  private titleLooksLikeBundle(title: string): boolean {
+    return /\b(?:all|complete|collection|batch|pack|omnibus)\s+(?:volumes?|chapters?|manga)\b/i.test(title)
+      || /\b(?:vol(?:ume)?s?|tomes?|v|ch(?:apter)?s?)\s*0?\d{1,4}\s*(?:-|–|—|à|a|to|\+)\s*0?\d{1,4}\b/i.test(title)
+      || /\b0?\d{1,4}\s*(?:-|–|—|à|a|to|\+)\s*0?\d{1,4}\s*(?:vol(?:ume)?s?|tomes?|chapters?|manga)\b/i.test(title);
   }
 
   canAcquireResult(result: DownloadResult): boolean {
