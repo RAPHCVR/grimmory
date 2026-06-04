@@ -23,7 +23,6 @@ public class DownloadScoringService {
     private static final Pattern COMPACT_NUMBER_MARKER = Pattern.compile("(?iu)\\b(vol(?:ume)?|v|t(?:ome|omo)?|ch(?:apter)?|chapitre)\\.?\\s*0*(\\d{1,5})\\b");
     private static final Pattern ANY_NUMBER_MARKER = Pattern.compile("(?iu)(?:\\b(?:vol(?:ume)?|v|t(?:ome|omo)?|ch(?:apter)?|chapitre)\\.?\\s*0*\\d{1,5}\\b|#\\s*0*\\d{1,5}\\b)");
     private static final Pattern EXPLICIT_WEBTOON_EPISODE_MARKER = Pattern.compile("(?iu)\\b(?:ep(?:isode)?|ch(?:apter)?|chapitre)\\.?\\s*0*(\\d{1,5})\\b|#\\s*0*(\\d{1,5})\\b");
-    private static final Pattern UNSUPPORTED_MEDIA_MARKER = Pattern.compile("(?i)(?:\\bmp4\\b|\\bmkv\\b|\\bavi\\b|\\bmov\\b|\\bwmv\\b|\\bflac\\b|\\bmp3\\b|\\baac\\b|\\bopus\\b|\\b480p\\b|\\b720p\\b|\\b1080p\\b|\\b2160p\\b|\\bfullhd\\b|\\bbdrip\\b|\\bwebrip\\b|\\bhdtv\\b|\\bbluray\\b|\\bblu ray\\b|\\bx264\\b|\\bx265\\b|\\bhevc\\b|\\bh\\s?264\\b|\\bh\\s?265\\b|\\b10bit\\b|\\bdual audio\\b|\\bsubbed\\b|\\bsoftsubs?\\b|\\bvostfr\\b|\\bsub ita\\b|\\bsub esp\\b|\\bsoundtrack\\b|\\bost\\b|\\bs\\d{1,2}\\s?e\\d{1,3}\\b|\\btv anime\\b|\\bmovies other\\b|\\bfitgirl\\b|\\bdodi\\b|\\belamigos\\b|\\bsteamrip\\b|\\bskidrow\\b|\\breloaded\\b|\\bplaza\\b|\\brazor1911\\b|\\bcodex\\b|\\bgame repack\\b|\\bxxx\\b|\\bporn(?:o|ography)?\\b|\\bjav\\b|\\badult toys?\\b|\\berotic\\b|\\bnaked\\b|\\bundress\\b|\\bmasturbation\\b|\\btits?\\b|\\bbreasts?\\b|\\bhard\\s+ass\\b|\\bhot\\s+ass\\b|\\badult\\s+video\\b|\\bsex\\s+video\\b)");
     private static final int MIN_REASONABLE_SIZE_BYTES = 2 * 1024;
 
     public DownloadScoreBreakdown score(DownloadSearchCriteria criteria, NormalizedDownloadResult result) {
@@ -627,7 +626,7 @@ public class DownloadScoringService {
                 safe(result.getDetailsUrl()),
                 safe(result.getRawJson())
         ));
-        return UNSUPPORTED_MEDIA_MARKER.matcher(evidence).find();
+        return DownloadUnsupportedMediaDetector.matches(evidence);
     }
 
     private double similarity(String left, String right) {

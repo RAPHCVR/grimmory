@@ -8,6 +8,7 @@ import org.booklore.model.enums.DownloadContentKind;
 import org.booklore.model.enums.DownloadFormat;
 import org.booklore.model.enums.DownloadSourceType;
 import org.booklore.service.downloads.DownloadContentClassifier;
+import org.booklore.service.downloads.DownloadUnsupportedMediaDetector;
 import org.booklore.service.downloads.adapter.DownloadSourceAdapter;
 import org.booklore.service.downloads.dto.DownloadSearchCriteria;
 import org.booklore.service.downloads.dto.NormalizedDownloadResult;
@@ -29,7 +30,6 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.*;
-import java.util.regex.Pattern;
 
 @Slf4j
 @Component
@@ -38,10 +38,6 @@ public class ProwlarrTorznabAdapter implements DownloadSourceAdapter {
 
     private static final int DEFAULT_TIMEOUT_SECONDS = 60;
     private static final String DEFAULT_INDEXER = "all";
-    private static final Pattern UNSUPPORTED_SEQUENTIAL_MEDIA_MARKER = Pattern.compile(
-            "(?i)(?:\\bmp4\\b|\\bmkv\\b|\\bavi\\b|\\bmov\\b|\\bwmv\\b|\\bflac\\b|\\bmp3\\b|\\baac\\b|\\bopus\\b|\\b480p\\b|\\b720p\\b|\\b1080p\\b|\\b2160p\\b|\\bfullhd\\b|\\bbdrip\\b|\\bwebrip\\b|\\bhdtv\\b|\\bbluray\\b|\\bblu ray\\b|\\bx264\\b|\\bx265\\b|\\bhevc\\b|\\bh\\s?264\\b|\\bh\\s?265\\b|\\b10bit\\b|\\bdual audio\\b|\\bsubbed\\b|\\bsoftsubs?\\b|\\bvostfr\\b|\\bsub ita\\b|\\bsub esp\\b|\\bsoundtrack\\b|\\bost\\b|\\bs\\d{1,2}\\s?e\\d{1,3}\\b|\\btv anime\\b|\\bmovies other\\b|\\bfitgirl\\b|\\bdodi\\b|\\belamigos\\b|\\bsteamrip\\b|\\bskidrow\\b|\\breloaded\\b|\\bplaza\\b|\\brazor1911\\b|\\bcodex\\b|\\bgame repack\\b|\\bxxx\\b|\\bporn(?:o|ography)?\\b|\\bjav\\b|\\badult toys?\\b|\\berotic\\b|\\bnaked\\b|\\bundress\\b|\\bmasturbation\\b|\\btits?\\b|\\bbreasts?\\b|\\bhard\\s+ass\\b|\\bhot\\s+ass\\b|\\badult\\s+video\\b|\\bsex\\s+video\\b)"
-    );
-
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final DownloadContentClassifier contentClassifier;
@@ -346,7 +342,7 @@ public class ProwlarrTorznabAdapter implements DownloadSourceAdapter {
                 safe(downloadUrl),
                 safe(rawJson)
         );
-        return UNSUPPORTED_SEQUENTIAL_MEDIA_MARKER.matcher(evidence).find();
+        return DownloadUnsupportedMediaDetector.matches(evidence);
     }
 
     private String firstNonBlank(String... values) {

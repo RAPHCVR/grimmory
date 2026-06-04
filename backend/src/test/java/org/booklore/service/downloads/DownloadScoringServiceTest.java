@@ -758,6 +758,82 @@ class DownloadScoringServiceTest {
     }
 
     @Test
+    void score_gameFranchiseTorrentForMangaQueryScoresZero() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("Naruto tome 1")
+                .title("Naruto")
+                .seriesName("Naruto")
+                .seriesNumber(1f)
+                .sequenceNumberType(DownloadSequenceNumberType.VOLUME)
+                .contentKind(DownloadContentKind.MANGA)
+                .preferredFormats(List.of(DownloadFormat.CBZ))
+                .build();
+
+        NormalizedDownloadResult result = NormalizedDownloadResult.builder()
+                .title("NARUTO SHIPPUDEN ULTIMATE NINJA STORM 4 + UPDATE 2 + DLCS")
+                .format(DownloadFormat.UNKNOWN)
+                .contentKind(DownloadContentKind.MANGA)
+                .acquisitionType(DownloadAcquisitionType.TORRENT)
+                .downloadUrl("magnet:?xt=urn:btih:abcdef")
+                .sizeBytes(30_000_000_000L)
+                .build();
+
+        var score = service.score(criteria, result);
+
+        assertEquals(0, score.getScore());
+        assertTrue(score.getReasons().contains("-90 unsupported media payload"));
+    }
+
+    @Test
+    void score_platformGameTorrentForMangaQueryScoresZero() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("Boruto manga")
+                .title("Boruto")
+                .seriesName("Boruto")
+                .contentKind(DownloadContentKind.MANGA)
+                .preferredFormats(List.of(DownloadFormat.CBZ))
+                .build();
+
+        NormalizedDownloadResult result = NormalizedDownloadResult.builder()
+                .title("Naruto to Boruto Shinobi Striker (A0209 V0100) (CUSA08767) PS4 PKG [AUCTOR.TV]")
+                .format(DownloadFormat.UNKNOWN)
+                .contentKind(DownloadContentKind.MANGA)
+                .acquisitionType(DownloadAcquisitionType.TORRENT)
+                .downloadUrl("magnet:?xt=urn:btih:abcdef")
+                .sizeBytes(20_000_000_000L)
+                .build();
+
+        var score = service.score(criteria, result);
+
+        assertEquals(0, score.getScore());
+        assertTrue(score.getReasons().contains("-90 unsupported media payload"));
+    }
+
+    @Test
+    void score_mangaTitleContainingSteamDoesNotLookLikeGame() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("Naruto Konoha Story")
+                .title("Naruto")
+                .seriesName("Naruto")
+                .contentKind(DownloadContentKind.MANGA)
+                .preferredFormats(List.of(DownloadFormat.CBZ))
+                .build();
+
+        NormalizedDownloadResult result = NormalizedDownloadResult.builder()
+                .title("Naruto - Konoha's Story - The Steam Ninja Scrolls - The Manga (2024) (Digital)")
+                .format(DownloadFormat.UNKNOWN)
+                .contentKind(DownloadContentKind.MANGA)
+                .acquisitionType(DownloadAcquisitionType.TORRENT)
+                .downloadUrl("magnet:?xt=urn:btih:abcdef")
+                .sizeBytes(333_000_000L)
+                .build();
+
+        var score = service.score(criteria, result);
+
+        assertTrue(!score.getReasons().contains("-90 unsupported media payload"));
+    }
+
+    @Test
     void score_adultVideoNoiseTorrentForMangaQueryScoresZero() {
         DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
                 .query("One Piece chapter 100")
