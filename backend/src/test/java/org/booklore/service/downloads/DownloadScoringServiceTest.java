@@ -297,6 +297,61 @@ class DownloadScoringServiceTest {
         assertTrue(score.getReasons().stream().noneMatch("+20 requested volume number match"::equals));
     }
 
+    @Test
+    void score_explicitVolumeRequestMatchesEastAsianVolumeMarker() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("dr stone tome 1")
+                .title("Dr. Stone")
+                .seriesName("Dr. Stone")
+                .seriesNumber(1f)
+                .sequenceNumberType(DownloadSequenceNumberType.VOLUME)
+                .contentKind(DownloadContentKind.MANGA)
+                .preferredFormats(List.of(DownloadFormat.CBZ))
+                .build();
+
+        NormalizedDownloadResult result = NormalizedDownloadResult.builder()
+                .title("[稲垣理一郎×Boichi] Dr.STONE 第01巻")
+                .format(DownloadFormat.UNKNOWN)
+                .contentKind(DownloadContentKind.MANGA)
+                .acquisitionType(DownloadAcquisitionType.TORRENT)
+                .downloadUrl("magnet:?xt=urn:btih:abcdef")
+                .sizeBytes(150_000_000L)
+                .build();
+
+        var score = service.score(criteria, result);
+
+        assertTrue(score.getScore() >= 70);
+        assertTrue(score.getReasons().contains("+20 requested volume number match"));
+    }
+
+    @Test
+    void score_explicitVolumeRequestPenalizesEastAsianBundleRange() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("dr stone tome 1")
+                .title("Dr. Stone")
+                .seriesName("Dr. Stone")
+                .seriesNumber(1f)
+                .sequenceNumberType(DownloadSequenceNumberType.VOLUME)
+                .contentKind(DownloadContentKind.MANGA)
+                .preferredFormats(List.of(DownloadFormat.CBZ))
+                .build();
+
+        NormalizedDownloadResult result = NormalizedDownloadResult.builder()
+                .title("(一般コミック) [稲垣理一郎×Boichi] Dr.STONE 第01巻～第11巻")
+                .format(DownloadFormat.UNKNOWN)
+                .contentKind(DownloadContentKind.MANGA)
+                .acquisitionType(DownloadAcquisitionType.TORRENT)
+                .downloadUrl("magnet:?xt=urn:btih:abcdef")
+                .sizeBytes(1_500_000_000L)
+                .build();
+
+        var score = service.score(criteria, result);
+
+        assertTrue(score.getScore() < 50);
+        assertTrue(score.getReasons().contains("-45 bundled range cannot satisfy requested volume exactly"));
+        assertTrue(score.getReasons().stream().noneMatch("+20 requested volume number match"::equals));
+    }
+
 
 
     @Test
@@ -354,6 +409,33 @@ class DownloadScoringServiceTest {
         assertTrue(score.getScore() < 50);
         assertTrue(score.getReasons().contains("-45 novel/light-novel payload for sequential art request"));
         assertTrue(score.getReasons().contains("-40 spin-off series cannot satisfy main-series volume exactly"));
+    }
+
+    @Test
+    void score_explicitMangaVolumeRequestPenalizesRebootSideMaterial() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("dr stone tome 1")
+                .title("Dr. Stone")
+                .seriesName("Dr. Stone")
+                .seriesNumber(1f)
+                .sequenceNumberType(DownloadSequenceNumberType.VOLUME)
+                .contentKind(DownloadContentKind.MANGA)
+                .preferredFormats(List.of(DownloadFormat.PDF))
+                .build();
+
+        NormalizedDownloadResult reboot = NormalizedDownloadResult.builder()
+                .title("Dr. Stone reboot : Byakuya")
+                .seriesName("Dr. Stone")
+                .format(DownloadFormat.PDF)
+                .contentKind(DownloadContentKind.MANGA)
+                .acquisitionType(DownloadAcquisitionType.EXTERNAL_STACKS)
+                .downloadUrl("http://stacks/download/dr-stone-reboot-byakuya")
+                .build();
+
+        var score = service.score(criteria, reboot);
+
+        assertTrue(score.getScore() < 50);
+        assertTrue(score.getReasons().contains("-50 side-story/reboot payload cannot satisfy main-series volume exactly"));
     }
 
     @Test

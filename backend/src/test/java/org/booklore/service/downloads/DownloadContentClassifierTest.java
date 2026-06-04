@@ -30,6 +30,23 @@ class DownloadContentClassifierTest {
     }
 
     @Test
+    void infer_prowlarrEastAsianVolumeMarker_returnsManga() {
+        DownloadContentKind kind = classifier.infer(
+                DownloadSourceType.PROWLARR_TORZNAB,
+                "Prowlarr",
+                "[稲垣理一郎×Boichi] Dr.STONE 第01巻",
+                null,
+                null,
+                "magnet:?xt=urn:btih:abcdef",
+                DownloadFormat.UNKNOWN,
+                DownloadAcquisitionType.TORRENT,
+                "{\"category\":\"Comics\"}"
+        );
+
+        assertEquals(DownloadContentKind.MANGA, kind);
+    }
+
+    @Test
     void infer_archiveComicFormatWithoutMangaEvidence_returnsComic() {
         DownloadContentKind kind = classifier.infer(
                 DownloadSourceType.PROWLARR_TORZNAB,

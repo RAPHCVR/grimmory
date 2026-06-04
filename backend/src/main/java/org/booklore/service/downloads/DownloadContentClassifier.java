@@ -16,6 +16,9 @@ public class DownloadContentClassifier {
 
     private static final Pattern NON_ALNUM = Pattern.compile("[^a-z0-9]+");
     private static final Pattern MANGA_RELEASE_MARKER = Pattern.compile("(?i)(?:\\bvol(?:ume)?\\b|\\bv0?\\d{2,4}\\b|\\btom[eo]\\b|\\bch(?:apter)?\\b|\\bchapitre\\b|digital colored comics|one[- ]?shot|tankou?bon)");
+    private static final Pattern EAST_ASIAN_MANGA_VOLUME_MARKER = Pattern.compile(
+            "(?iu)(?:第\\s*0*\\d{1,5}\\s*巻(?:\\s*[-–—+~〜～]\\s*(?:第\\s*)?0*\\d{1,5}\\s*巻)?|第\\s*0*\\d{1,5}\\s*[-–—+~〜～]\\s*0*\\d{1,5}\\s*巻)"
+    );
 
     public DownloadContentKind resolve(DownloadContentKind requested,
                                        DownloadContentKind inferred,
@@ -65,6 +68,11 @@ public class DownloadContentClassifier {
                 safe(title),
                 safe(seriesName)
         ));
+        String rawPrimaryEvidence = String.join(" ",
+                safe(sourceName),
+                safe(title),
+                safe(seriesName)
+        );
         String evidence = normalize(String.join(" ",
                 safe(sourceName),
                 safe(title),
@@ -73,6 +81,14 @@ public class DownloadContentClassifier {
                 safe(downloadUrl),
                 safe(rawText)
         ));
+        String rawEvidence = String.join(" ",
+                safe(sourceName),
+                safe(title),
+                safe(seriesName),
+                safe(detailsUrl),
+                safe(downloadUrl),
+                safe(rawText)
+        );
 
         if (sourceType == DownloadSourceType.MANGADEX) {
             return DownloadContentKind.MANGA;
@@ -86,7 +102,10 @@ public class DownloadContentClassifier {
             return DownloadContentKind.WEBTOON;
         }
 
-        if (isMangaEvidence(primaryEvidence) || isMangaEvidence(evidence)) {
+        if (isMangaEvidence(primaryEvidence)
+                || isMangaEvidence(evidence)
+                || hasEastAsianMangaVolumeMarker(rawPrimaryEvidence)
+                || hasEastAsianMangaVolumeMarker(rawEvidence)) {
             return DownloadContentKind.MANGA;
         }
 
@@ -136,6 +155,10 @@ public class DownloadContentClassifier {
 
     private boolean hasMangaReleaseMarker(String evidence) {
         return MANGA_RELEASE_MARKER.matcher(evidence).find();
+    }
+
+    private boolean hasEastAsianMangaVolumeMarker(String evidence) {
+        return EAST_ASIAN_MANGA_VOLUME_MARKER.matcher(evidence == null ? "" : evidence).find();
     }
 
     private boolean isComicEvidence(String evidence) {

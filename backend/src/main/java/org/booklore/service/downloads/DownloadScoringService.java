@@ -20,8 +20,9 @@ public class DownloadScoringService {
     private static final String RANGE_SEPARATOR = "(?:\\s*[-–—+]\\s*|\\s+(?:a|à|to|through|thru)\\s+)";
     private static final Pattern NUMBER_RANGE = Pattern.compile("(?iu)(?<!\\d)0*(\\d{1,5})" + RANGE_SEPARATOR + "0*(\\d{1,5})(?!\\d)");
     private static final Pattern SEQUENTIAL_MARKED_RANGE = Pattern.compile("(?iu)\\b(?:vol(?:ume)?|v|t(?:ome|omo)?|ch(?:apter)?|chapitre)\\.?\\s*0*(\\d{1,5})" + RANGE_SEPARATOR + "(?:vol(?:ume)?|v|t(?:ome|omo)?|ch(?:apter)?|chapitre)?\\.?\\s*0*(\\d{1,5})(?!\\d)");
+    private static final Pattern EAST_ASIAN_VOLUME_RANGE = Pattern.compile("(?iu)第\\s*0*(\\d{1,5})\\s*巻?\\s*(?:[-–—+~〜～]|\\s+(?:to|through|thru)\\s+)\\s*(?:第\\s*)?0*(\\d{1,5})\\s*巻");
     private static final Pattern COMPACT_NUMBER_MARKER = Pattern.compile("(?iu)\\b(vol(?:ume)?|v|t(?:ome|omo)?|ch(?:apter)?|chapitre)\\.?\\s*0*(\\d{1,5})\\b");
-    private static final Pattern ANY_NUMBER_MARKER = Pattern.compile("(?iu)(?:\\b(?:vol(?:ume)?|v|t(?:ome|omo)?|ch(?:apter)?|chapitre)\\.?\\s*0*\\d{1,5}\\b|#\\s*0*\\d{1,5}\\b)");
+    private static final Pattern ANY_NUMBER_MARKER = Pattern.compile("(?iu)(?:\\b(?:vol(?:ume)?|v|t(?:ome|omo)?|ch(?:apter)?|chapitre)\\.?\\s*0*\\d{1,5}\\b|#\\s*0*\\d{1,5}\\b|第\\s*0*\\d{1,5}\\s*巻)");
     private static final Pattern EXPLICIT_WEBTOON_EPISODE_MARKER = Pattern.compile("(?iu)\\b(?:ep(?:isode)?|ch(?:apter)?|chapitre)\\.?\\s*0*(\\d{1,5})\\b|#\\s*0*(\\d{1,5})\\b");
     private static final int MIN_REASONABLE_SIZE_BYTES = 2 * 1024;
 
@@ -207,6 +208,12 @@ public class DownloadScoringService {
             penalty -= 40;
             reasons.add("-40 spin-off series cannot satisfy main-series volume exactly");
         }
+        if (explicitSequentialNumberRequested(criteria)
+                && !queryContainsSideMaterialIntent(query)
+                && containsSideMaterialMarker(evidence)) {
+            penalty -= 50;
+            reasons.add("-50 side-story/reboot payload cannot satisfy main-series volume exactly");
+        }
         return penalty;
     }
 
@@ -238,6 +245,24 @@ public class DownloadScoringService {
                 || hasToken(normalizedEvidence, "novel")
                 || normalizedEvidence.contains("light novel")
                 || hasToken(normalizedEvidence, "reboot");
+    }
+
+    private boolean queryContainsSideMaterialIntent(String normalizedQuery) {
+        return containsSideMaterialMarker(normalizedQuery)
+                || hasToken(normalizedQuery, "special")
+                || hasToken(normalizedQuery, "extra");
+    }
+
+    private boolean containsSideMaterialMarker(String normalizedEvidence) {
+        return normalizedEvidence.contains("spin off")
+                || normalizedEvidence.contains("side story")
+                || normalizedEvidence.contains("side stories")
+                || normalizedEvidence.contains("one shot")
+                || hasToken(normalizedEvidence, "oneshot")
+                || hasToken(normalizedEvidence, "gaiden")
+                || hasToken(normalizedEvidence, "reboot")
+                || hasToken(normalizedEvidence, "fanbook")
+                || normalizedEvidence.contains("fan book");
     }
 
     private boolean hasToken(String normalizedValue, String token) {
@@ -541,7 +566,7 @@ public class DownloadScoringService {
     private boolean hasExactNumberMarker(String title, int number, DownloadSequenceNumberType requestedSequenceType) {
         String numberPattern = "0*" + number + "\\b(?!\\s*[.]\\s*\\d)";
         String markerPattern = switch (requestedSequenceType) {
-            case VOLUME -> "(?iu)\\b(?:vol(?:ume)?|v|t(?:ome|omo)?)\\.?\\s*" + numberPattern;
+            case VOLUME -> "(?iu)(?:\\b(?:vol(?:ume)?|v|t(?:ome|omo)?)\\.?\\s*" + numberPattern + "|第\\s*0*" + number + "\\s*巻)";
             case ISSUE -> "(?iu)(?:\\b(?:issue|iss)\\.?\\s*" + numberPattern + "|#\\s*" + numberPattern + ")";
             case CHAPTER, EPISODE -> "(?iu)(?:\\b(?:ch(?:apter)?|chapitre|episode|ep)\\.?\\s*" + numberPattern + "|#\\s*" + numberPattern + ")";
             case AUTO -> "(?iu)(?:\\b(?:vol(?:ume)?|v|t(?:ome|omo)?|ch(?:apter)?|chapitre|episode|ep|issue|iss)\\.?\\s*" + numberPattern + "|#\\s*" + numberPattern + ")";
@@ -560,6 +585,9 @@ public class DownloadScoringService {
 
     private boolean hasRangeContaining(String title, int number) {
         if (markedRangeContains(SEQUENTIAL_MARKED_RANGE.matcher(title), number)) {
+            return true;
+        }
+        if (markedRangeContains(EAST_ASIAN_VOLUME_RANGE.matcher(title), number)) {
             return true;
         }
         var matcher = NUMBER_RANGE.matcher(title);
