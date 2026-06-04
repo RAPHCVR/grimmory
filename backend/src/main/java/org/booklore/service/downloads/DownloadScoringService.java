@@ -121,6 +121,8 @@ public class DownloadScoringService {
             }
         }
 
+        score += scoreSequentialArtSeriesDisambiguation(criteria, result, reasons);
+
         if (criteria.getSeriesNumber() != null && result.getSeriesNumber() != null) {
             float delta = Math.abs(criteria.getSeriesNumber() - result.getSeriesNumber());
             if (delta < 0.01f) {
@@ -177,6 +179,62 @@ public class DownloadScoringService {
                 .score(clamped)
                 .reasons(reasons)
                 .build();
+    }
+
+    private int scoreSequentialArtSeriesDisambiguation(DownloadSearchCriteria criteria, NormalizedDownloadResult result, List<String> reasons) {
+        DownloadContentKind requestedKind = criteria.getContentKind() == null ? DownloadContentKind.AUTO : criteria.getContentKind();
+        if (!requestedKind.isSequentialArt()) {
+            return 0;
+        }
+        String query = normalize(criteria.effectiveQuery());
+        String evidence = normalize(String.join(" ", safe(result.getTitle()), safe(result.getSeriesName()), safe(result.getRawJson())));
+        int penalty = 0;
+        if (!queryContainsNarrativeTextIntent(query) && containsNarrativeTextMarker(evidence)) {
+            penalty -= 45;
+            reasons.add("-45 novel/light-novel payload for sequential art request");
+        }
+        if (!isBlank(criteria.getSeriesName()) && isLikelySpinOffSeries(criteria.getSeriesName(), result.getSeriesName(), evidence)) {
+            penalty -= 40;
+            reasons.add("-40 spin-off series cannot satisfy main-series volume exactly");
+        }
+        return penalty;
+    }
+
+    private boolean queryContainsNarrativeTextIntent(String normalizedQuery) {
+        return hasToken(normalizedQuery, "novel")
+                || normalizedQuery.contains("light novel")
+                || normalizedQuery.contains("roman")
+                || normalizedQuery.contains("ln");
+    }
+
+    private boolean containsNarrativeTextMarker(String normalizedEvidence) {
+        return hasToken(normalizedEvidence, "novel")
+                || normalizedEvidence.contains("light novel")
+                || normalizedEvidence.contains("novels")
+                || normalizedEvidence.contains("roman");
+    }
+
+    private boolean isLikelySpinOffSeries(String expectedSeries, String resultSeries, String normalizedEvidence) {
+        String expected = normalize(expectedSeries);
+        String actual = normalize(resultSeries);
+        if (expected.isBlank() || actual.isBlank() || actual.equals(expected) || !actual.startsWith(expected + " ")) {
+            return false;
+        }
+        return normalizedEvidence.contains("spin off")
+                || normalizedEvidence.contains("side story")
+                || hasToken(normalizedEvidence, "gaiden")
+                || hasToken(normalizedEvidence, "story")
+                || hasToken(normalizedEvidence, "stories")
+                || hasToken(normalizedEvidence, "novel")
+                || normalizedEvidence.contains("light novel")
+                || hasToken(normalizedEvidence, "reboot");
+    }
+
+    private boolean hasToken(String normalizedValue, String token) {
+        if (normalizedValue == null || normalizedValue.isBlank() || token == null || token.isBlank()) {
+            return false;
+        }
+        return Arrays.asList(normalizedValue.split(" ")).contains(token);
     }
 
     private int scoreFormat(List<DownloadFormat> preferredFormats, NormalizedDownloadResult result, List<String> reasons) {

@@ -297,6 +297,36 @@ class DownloadScoringServiceTest {
         assertTrue(score.getReasons().stream().noneMatch("+20 requested volume number match"::equals));
     }
 
+
+    @Test
+    void score_explicitMangaVolumeRequestPenalizesSpinOffNovels() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("naruto tome 1")
+                .title("Naruto")
+                .seriesName("Naruto")
+                .seriesNumber(1f)
+                .sequenceNumberType(DownloadSequenceNumberType.VOLUME)
+                .contentKind(DownloadContentKind.MANGA)
+                .preferredFormats(List.of(DownloadFormat.EPUB))
+                .build();
+
+        NormalizedDownloadResult spinOffNovel = NormalizedDownloadResult.builder()
+                .title("Daylight (Naruto Novels)")
+                .seriesName("Naruto: Itachi's Story")
+                .seriesNumber(1f)
+                .format(DownloadFormat.EPUB)
+                .contentKind(DownloadContentKind.MANGA)
+                .acquisitionType(DownloadAcquisitionType.EXTERNAL_STACKS)
+                .downloadUrl("http://stacks/download/naruto-itachi-story")
+                .build();
+
+        var score = service.score(criteria, spinOffNovel);
+
+        assertTrue(score.getScore() < 50);
+        assertTrue(score.getReasons().contains("-45 novel/light-novel payload for sequential art request"));
+        assertTrue(score.getReasons().contains("-40 spin-off series cannot satisfy main-series volume exactly"));
+    }
+
     @Test
     void score_explicitVolumeRequestPenalizesLocalizedAndPlusBundleRanges() {
         DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
