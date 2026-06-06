@@ -36,6 +36,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -296,7 +297,7 @@ public class DownloadPipelineManager {
                 if (isSupersededByRetry(jobId)) {
                     return jobRepository.findById(jobId).orElse(job);
                 }
-                Optional<DownloadResultEntity> fallback = fallbackResult(job, attemptedResultIds);
+                Optional<DownloadResultEntity> fallback = fallbackResult(job, attemptedResultIds, e);
                 if (fallback.isPresent()) {
                     DownloadResultEntity next = fallback.get();
                     log.warn("Download job {} falling back from result {} to result {} after failure: {}",
@@ -401,14 +402,36 @@ public class DownloadPipelineManager {
         return null;
     }
 
-    private Optional<DownloadResultEntity> fallbackResult(DownloadJobEntity job, List<Long> attemptedResultIds) {
-        if (!Boolean.TRUE.equals(job.getFallbackEnabled()) || job.getSearch() == null || job.getSearch().getId() == null) {
+    private Optional<DownloadResultEntity> fallbackResult(DownloadJobEntity job, List<Long> attemptedResultIds, Exception failure) {
+        if (!shouldAttemptFallback(job, failure) || job.getSearch() == null || job.getSearch().getId() == null) {
             return Optional.empty();
         }
         return resultRepository.findAllBySearchIdOrderByScoreDescIdAsc(job.getSearch().getId()).stream()
                 .filter(candidate -> candidate.getId() != null && !attemptedResultIds.contains(candidate.getId()))
                 .filter(candidate -> candidate.getScore() != null && candidate.getScore() >= MIN_DOWNLOADABLE_SCORE)
                 .findFirst();
+    }
+
+    private boolean shouldAttemptFallback(DownloadJobEntity job, Exception failure) {
+        if (Boolean.TRUE.equals(job.getFallbackEnabled())) {
+            return true;
+        }
+        if (job == null || job.getResult() == null || failure == null) {
+            return false;
+        }
+        DownloadAcquisitionType acquisitionType = job.getResult().getAcquisitionType();
+        return acquisitionType == DownloadAcquisitionType.EXTERNAL_STACKS
+                && isStacksMirrorFailure(failure.getMessage());
+    }
+
+    private boolean isStacksMirrorFailure(String message) {
+        if (message == null || message.isBlank()) {
+            return false;
+        }
+        String normalized = message.toLowerCase(Locale.ROOT);
+        return normalized.contains("stacks download failed")
+                && normalized.contains("mirror ")
+                && normalized.contains(" failed");
     }
 
     private DownloadJobEntity switchJobToFallbackResult(DownloadJobEntity job, DownloadResultEntity result) {

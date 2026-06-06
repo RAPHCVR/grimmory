@@ -134,7 +134,7 @@ class DirectUrlAdapterTest {
     }
 
     @Test
-    void search_webtoonKeywordSearch_returnsGalleryDlSeriesResult() throws Exception {
+    void search_webtoonKeywordSearch_returnsGalleryDlEpisodeResult() throws Exception {
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/search", exchange -> {
             byte[] body = """
@@ -143,6 +143,17 @@ class DirectUrlAdapterTest {
                         <strong class="title">Lore Olympus</strong>
                         <div class="author">Rachel Smythe</div>
                       </a>
+                    </body></html>
+                    """.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "text/html");
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.createContext("/episodes", exchange -> {
+            byte[] body = """
+                    <html><body>
+                      <a href="https://www.webtoons.com/en/romance/lore-olympus/episode-1/viewer?title_no=1320&episode_no=1">Episode 1</a>
                     </body></html>
                     """.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().add("Content-Type", "text/html");
@@ -163,11 +174,12 @@ class DirectUrlAdapterTest {
                                 "metadataProbeEnabled": false,
                                 "webtoons": {
                                   "searchUrlTemplate": "http://127.0.0.1:%d/search?keyword={query}",
+                                  "episodeListUrlTemplate": "http://127.0.0.1:%d/episodes?title_no={titleNo}&page={page}",
                                   "maxResults": 3
                                 }
                               }
                             }
-                            """.formatted(server.getAddress().getPort()))
+                            """.formatted(server.getAddress().getPort(), server.getAddress().getPort()))
                     .build();
             DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
                     .query("Lore Olympus")
@@ -182,10 +194,13 @@ class DirectUrlAdapterTest {
             assertEquals(DownloadAcquisitionType.CLI_GALLERY_DL, result.getAcquisitionType());
             assertEquals(DownloadContentKind.WEBTOON, result.getContentKind());
             assertEquals(DownloadFormat.CBZ, result.getFormat());
-            assertEquals("Lore Olympus", result.getTitle());
+            assertEquals("Episode 1", result.getTitle());
             assertEquals("Lore Olympus", result.getSeriesName());
+            assertEquals(1f, result.getSeriesNumber());
             assertEquals(List.of("Rachel Smythe"), result.getAuthors());
+            assertTrue(result.getDownloadUrl().contains("/viewer?"));
             assertTrue(result.getDownloadUrl().contains("title_no=1320"));
+            assertTrue(result.getDownloadUrl().contains("episode_no=1"));
         } finally {
             server.stop(0);
         }
@@ -212,6 +227,20 @@ class DirectUrlAdapterTest {
             exchange.getResponseBody().write(body);
             exchange.close();
         });
+        server.createContext("/episodes", exchange -> {
+            String query = exchange.getRequestURI().getRawQuery();
+            String titleNo = query == null || !query.contains("8888") ? "9999" : "8888";
+            String slug = "8888".equals(titleNo) ? "walmart-solo-leveling" : "solo-leveling";
+            byte[] body = """
+                    <html><body>
+                      <a href="https://www.webtoons.com/en/action/%s/episode-1/viewer?title_no=%s&episode_no=1">Episode 1</a>
+                    </body></html>
+                    """.formatted(slug, titleNo).getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "text/html");
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
         server.start();
 
         try {
@@ -225,11 +254,12 @@ class DirectUrlAdapterTest {
                                 "metadataProbeEnabled": false,
                                 "webtoons": {
                                   "searchUrlTemplate": "http://127.0.0.1:%d/search?keyword={query}",
+                                  "episodeListUrlTemplate": "http://127.0.0.1:%d/episodes?title_no={titleNo}&page={page}",
                                   "maxResults": 3
                                 }
                               }
                             }
-                            """.formatted(server.getAddress().getPort()))
+                            """.formatted(server.getAddress().getPort(), server.getAddress().getPort()))
                     .build();
             DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
                     .query("solo leveling")
@@ -243,11 +273,11 @@ class DirectUrlAdapterTest {
 
             assertEquals(2, results.size());
             var exact = results.stream()
-                    .filter(result -> "Solo Leveling".equals(result.getTitle()))
+                    .filter(result -> "Solo Leveling".equals(result.getSeriesName()))
                     .findFirst()
                     .orElseThrow();
             var falsePositive = results.stream()
-                    .filter(result -> "Walmart Solo Leveling".equals(result.getTitle()))
+                    .filter(result -> "Walmart Solo Leveling".equals(result.getSeriesName()))
                     .findFirst()
                     .orElseThrow();
             assertEquals("Solo Leveling", exact.getSeriesName());

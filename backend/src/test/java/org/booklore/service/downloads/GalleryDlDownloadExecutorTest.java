@@ -23,6 +23,7 @@ import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GalleryDlDownloadExecutorTest {
@@ -50,7 +51,7 @@ class GalleryDlDownloadExecutorTest {
                 .contentKind(DownloadContentKind.WEBTOON)
                 .format(DownloadFormat.CBZ)
                 .acquisitionType(DownloadAcquisitionType.CLI_GALLERY_DL)
-                .downloadUrl("https://www.webtoons.com/en/canvas/lets-play/list?title_no=82982")
+                .downloadUrl("https://www.webtoons.com/en/canvas/lets-play/episode-1/viewer?title_no=82982&episode_no=1")
                 .build();
         GalleryDlDownloadExecutor executor = new GalleryDlDownloadExecutor(new DownloadSourceConfigReader(objectMapper));
         List<Integer> progress = new ArrayList<>();
@@ -66,6 +67,39 @@ class GalleryDlDownloadExecutorTest {
         assertTrue(Files.size(downloaded) > 0);
         assertEquals(List.of("001.jpg"), zipEntries(downloaded));
         assertEquals(100, progress.getLast());
+    }
+
+    @Test
+    void download_rejectsUnboundedWebtoonsSeriesListUrlBeforeStartingProcess() throws Exception {
+        DownloadSourceEntity source = DownloadSourceEntity.builder()
+                .name("gallery-dl")
+                .type(DownloadSourceType.DIRECT_URL)
+                .configJson(objectMapper.writeValueAsString(Map.of(
+                        "galleryDl", Map.of(
+                                "binaryPath", fakeGalleryDlCommand().binaryPath(),
+                                "timeoutMinutes", 1,
+                                "extraArgs", fakeGalleryDlCommand().extraArgs()
+                        )
+                )))
+                .build();
+        NormalizedDownloadResult result = NormalizedDownloadResult.builder()
+                .title("Let's Play")
+                .contentKind(DownloadContentKind.WEBTOON)
+                .format(DownloadFormat.CBZ)
+                .acquisitionType(DownloadAcquisitionType.CLI_GALLERY_DL)
+                .downloadUrl("https://www.webtoons.com/en/canvas/lets-play/list?title_no=82982")
+                .build();
+        GalleryDlDownloadExecutor executor = new GalleryDlDownloadExecutor(new DownloadSourceConfigReader(objectMapper));
+
+        var error = assertThrows(org.booklore.service.downloads.exception.DownloadSourceException.class, () -> executor.download(DownloadExecutionRequest.builder()
+                .source(source)
+                .result(result)
+                .stagingDir(tempDir.resolve("staging-list"))
+                .targetPartFile(tempDir.resolve("staging-list").resolve("ignored.part"))
+                .build(), progress -> {
+                }));
+
+        assertTrue(error.getMessage().contains("series/list URL"));
     }
 
     private String javaBinary() {

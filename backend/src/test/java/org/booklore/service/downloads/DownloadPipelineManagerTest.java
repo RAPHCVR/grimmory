@@ -170,6 +170,87 @@ class DownloadPipelineManagerTest {
     }
 
     @Test
+    void processQueuedJob_whenSelectedStacksMirrorFailsFallsBackToNextScoredResult() {
+        AppProperties appProperties = new AppProperties();
+        appProperties.setBookdropFolder(tempDir.toString());
+
+        DownloadResultRepository resultRepository = mock(DownloadResultRepository.class);
+        DownloadJobRepository jobRepository = mock(DownloadJobRepository.class);
+        DownloadExecutorRegistry executorRegistry = mock(DownloadExecutorRegistry.class);
+        DownloadNamingService namingService = mock(DownloadNamingService.class);
+        DownloadedCbxMetadataService downloadedCbxMetadataService = mock(DownloadedCbxMetadataService.class);
+        BookdropDeliveryService bookdropDeliveryService = mock(BookdropDeliveryService.class);
+
+        DownloadPipelineManager manager = new DownloadPipelineManager(
+                appProperties,
+                mock(DownloadSourceRepository.class),
+                mock(DownloadSearchRepository.class),
+                resultRepository,
+                jobRepository,
+                mock(DownloadAdapterRegistry.class),
+                executorRegistry,
+                mock(DownloadScoringService.class),
+                namingService,
+                mock(DownloadTargetResolver.class),
+                downloadedCbxMetadataService,
+                bookdropDeliveryService,
+                mock(DownloadQueryIntentParser.class),
+                mock(DownloadCanonicalResolver.class),
+                new ObjectMapper()
+        );
+
+        DownloadSourceEntity stacksSource = source(1L, "Stacks", DownloadSourceType.ANNAS_ARCHIVE_API);
+        DownloadSourceEntity fallbackSource = source(2L, "Direct", DownloadSourceType.DIRECT_URL);
+        DownloadSearchEntity search = DownloadSearchEntity.builder()
+                .id(10L)
+                .query("michelle obama")
+                .contentKind(DownloadContentKind.BOOK)
+                .build();
+        DownloadResultEntity failingResult = result(100L, search, stacksSource, "Mirror candidate", 90, DownloadAcquisitionType.EXTERNAL_STACKS);
+        DownloadResultEntity fallbackResult = result(101L, search, fallbackSource, "Fallback candidate", 90, DownloadAcquisitionType.DIRECT_FILE);
+        DownloadJobEntity job = DownloadJobEntity.builder()
+                .id(55L)
+                .search(search)
+                .result(failingResult)
+                .source(stacksSource)
+                .status(DownloadJobStatus.QUEUED)
+                .confidenceScore(90)
+                .autoFinalize(false)
+                .confidenceThreshold(90)
+                .fallbackEnabled(false)
+                .build();
+
+        DownloadExecutor failingExecutor = mock(DownloadExecutor.class);
+        DownloadExecutor fallbackExecutor = mock(DownloadExecutor.class);
+
+        when(jobRepository.findWithSearchAndResultAndSourceById(55L)).thenReturn(Optional.of(job));
+        when(jobRepository.findById(55L)).thenReturn(Optional.of(job));
+        when(jobRepository.save(any(DownloadJobEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(resultRepository.findAllBySearchIdOrderByScoreDescIdAsc(10L)).thenReturn(List.of(failingResult, fallbackResult));
+        when(executorRegistry.executorFor(DownloadAcquisitionType.EXTERNAL_STACKS)).thenReturn(failingExecutor);
+        when(executorRegistry.executorFor(DownloadAcquisitionType.DIRECT_FILE)).thenReturn(fallbackExecutor);
+        when(failingExecutor.download(any(), any())).thenThrow(new DownloadSourceException("Stacks download failed: Mirror randombook.org failed"));
+        when(fallbackExecutor.download(any(), any())).thenAnswer(invocation -> {
+            DownloadExecutionRequest request = invocation.getArgument(0);
+            Path downloaded = request.getTargetPartFile().resolveSibling("fallback.epub");
+            Files.writeString(downloaded, "EPUB payload");
+            return downloaded;
+        });
+        when(namingService.buildFinalFileName(any(), eq(DownloadFormat.EPUB))).thenReturn("Fallback candidate.epub");
+        doNothing().when(downloadedCbxMetadataService).embedIfApplicable(any(), any(), any());
+        when(bookdropDeliveryService.deliver(any(), any(), any(), eq("Fallback candidate.epub")))
+                .thenReturn(new BookdropDeliveryService.DeliveryResult(tempDir.resolve("Fallback candidate.epub"), false));
+
+        DownloadJobEntity processed = manager.processQueuedJob(55L);
+
+        assertEquals(DownloadJobStatus.PENDING_REVIEW, processed.getStatus());
+        assertEquals(101L, processed.getResult().getId());
+        assertEquals(2L, processed.getSource().getId());
+        verify(failingExecutor).download(any(), any());
+        verify(fallbackExecutor).download(any(), any());
+    }
+
+    @Test
     void retryJob_enablesFallbackForLegacyJobs() {
         DownloadJobRepository jobRepository = mock(DownloadJobRepository.class);
         DownloadTargetResolver targetResolver = mock(DownloadTargetResolver.class);

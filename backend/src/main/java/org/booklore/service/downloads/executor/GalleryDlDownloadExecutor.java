@@ -13,6 +13,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -57,6 +58,9 @@ public class GalleryDlDownloadExecutor implements DownloadExecutor {
         String url = firstNonBlank(request.getResult().getDownloadUrl(), request.getResult().getDetailsUrl());
         if (url == null) {
             throw new DownloadSourceException("gallery-dl result does not expose a URL");
+        }
+        if (isUnboundedWebtoonsSeriesUrl(url)) {
+            throw new DownloadSourceException("gallery-dl Webtoons series/list URL is not a bounded acquisition target; select a concrete episode/viewer URL or include an episode number");
         }
 
         Instant startedAt = Instant.now();
@@ -285,6 +289,30 @@ public class GalleryDlDownloadExecutor implements DownloadExecutor {
             }
         }
         return null;
+    }
+
+    private boolean isUnboundedWebtoonsSeriesUrl(String url) {
+        try {
+            URI uri = URI.create(url);
+            String host = uri.getHost();
+            String path = uri.getPath();
+            String query = uri.getRawQuery();
+            if (host == null || path == null) {
+                return false;
+            }
+            String normalizedHost = host.toLowerCase(Locale.ROOT);
+            boolean webtoons = normalizedHost.equals("webtoons.com") || normalizedHost.endsWith(".webtoons.com");
+            if (!webtoons) {
+                return false;
+            }
+            String normalizedPath = path.toLowerCase(Locale.ROOT);
+            String normalizedQuery = query == null ? "" : query.toLowerCase(Locale.ROOT);
+            return normalizedPath.endsWith("/list")
+                    && normalizedQuery.contains("title_no=")
+                    && !normalizedQuery.contains("episode_no=");
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     private long clampLong(long value, long min, long max) {
