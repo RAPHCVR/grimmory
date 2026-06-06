@@ -1072,6 +1072,38 @@ class DownloadScoringServiceTest {
     }
 
     @Test
+    void score_webtoonEpisodeRange_acceptsEachEpisodeInRange() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("Surviving the Game as a Barbarian")
+                .seriesName("Surviving the Game As a Barbarian")
+                .seriesNumber(145f)
+                .seriesNumberEnd(146f)
+                .sequenceNumberType(DownloadSequenceNumberType.EPISODE)
+                .contentKind(DownloadContentKind.WEBTOON)
+                .preferredFormats(List.of(DownloadFormat.CBZ))
+                .build();
+
+        NormalizedDownloadResult episode146 = NormalizedDownloadResult.builder()
+                .title("S3 Ep 146 Like Fire")
+                .seriesName("Surviving the Game As a Barbarian")
+                .seriesNumber(146f)
+                .language("en")
+                .format(DownloadFormat.CBZ)
+                .contentKind(DownloadContentKind.WEBTOON)
+                .acquisitionType(DownloadAcquisitionType.CLI_GALLERY_DL)
+                .downloadUrl("https://www.webtoons.com/en/fantasy/surviving-the-game-as-a-barbarian/s3-ep-146-like-fire/viewer?title_no=5515&episode_no=146")
+                .build();
+
+        var score = service.score(criteria, episode146);
+
+        assertTrue(score.getScore() >= 90);
+        assertTrue(score.getReasons().contains("+15 series number exact match"));
+        assertTrue(score.getReasons().stream().noneMatch("-55 series number mismatch"::equals));
+        assertTrue(score.getReasons().stream().noneMatch("-65 requested episode number mismatch"::equals));
+        assertTrue(score.getReasons().stream().noneMatch("-50 explicit episode marker missing from result title"::equals));
+    }
+
+    @Test
     void score_canonicalWebtoonEpisodeCriteriaPrefersEpisodeTitleOverSeriesIntroTie() {
         DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
                 .query("Lore Olympus")

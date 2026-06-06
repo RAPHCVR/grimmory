@@ -69,6 +69,11 @@ public class DownloadCanonicalResolver {
             "manhwa", "manhwas",
             "manhua", "manhuas"
     );
+    private static final Set<String> BOOK_DERIVATIVE_TOKENS = Set.of(
+            "review", "reviews", "summary", "summaries", "analysis", "analyses",
+            "guide", "guides", "study", "workbook", "commentary", "criticism",
+            "critique", "résumé", "resume", "fiche", "synthese", "synthèse"
+    );
     private static final List<String> TITLE_LANGUAGE_ORDER = List.of("en", "fr", "ja-ro", "ja", "ko", "zh", "es", "de", "it");
 
     private final HttpClient httpClient;
@@ -1015,7 +1020,26 @@ public class DownloadCanonicalResolver {
         if (isbnMatches(query, isbn)) {
             return 0.99D;
         }
-        return score(query, title, author);
+        double score = score(query, title, author);
+        if (containsBookDerivativeIntent(title) && !containsBookDerivativeIntent(query)) {
+            score -= 0.45D;
+        }
+        return Math.max(0D, score);
+    }
+
+    private boolean containsBookDerivativeIntent(String value) {
+        Set<String> tokens = tokens(value);
+        if (tokens.stream().anyMatch(BOOK_DERIVATIVE_TOKENS::contains)) {
+            return true;
+        }
+        String normalized = normalized(value);
+        return normalized.contains("study guide")
+                || normalized.contains("book summary")
+                || normalized.contains("reading guide")
+                || normalized.contains("review of")
+                || normalized.contains("analyse de")
+                || normalized.contains("résumé de")
+                || normalized.contains("resume de");
     }
 
     private boolean isbnMatches(String left, String right) {

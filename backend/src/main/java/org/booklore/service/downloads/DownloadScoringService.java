@@ -125,11 +125,10 @@ public class DownloadScoringService {
         score += scoreSequentialArtSeriesDisambiguation(criteria, result, reasons);
 
         if (criteria.getSeriesNumber() != null && result.getSeriesNumber() != null) {
-            float delta = Math.abs(criteria.getSeriesNumber() - result.getSeriesNumber());
-            if (delta < 0.01f) {
+            if (matchesRequestedSeriesNumber(criteria, result.getSeriesNumber())) {
                 score += 15;
                 reasons.add("+15 series number exact match");
-            } else if (delta <= 0.10f) {
+            } else if (Math.abs(criteria.getSeriesNumber() - result.getSeriesNumber()) <= 0.10f) {
                 score += 6;
                 reasons.add("+6 series number close match");
             } else {
@@ -363,6 +362,11 @@ public class DownloadScoringService {
                 || result.getAcquisitionType() != DownloadAcquisitionType.CLI_GALLERY_DL) {
             return 0;
         }
+        if (criteria.getSeriesNumberEnd() != null
+                && result.getSeriesNumber() != null
+                && matchesRequestedSeriesNumber(criteria, result.getSeriesNumber())) {
+            return 0;
+        }
         OptionalInt requestedEpisode = requestedWebtoonEpisode(criteria);
         if (requestedEpisode.isEmpty() || resultTitleHasWebtoonEpisodeMarker(result, requestedEpisode.getAsInt())) {
             return 0;
@@ -553,7 +557,8 @@ public class DownloadScoringService {
                 reasons.add("-120 chapter/episode result for volume/issue request");
                 return -120;
             }
-            if (matchesSeriesNumber(result.getSeriesNumber(), number)) {
+            if (matchesRequestedSeriesNumber(criteria, result.getSeriesNumber())
+                    || Math.abs(result.getSeriesNumber() - number) < 0.01f) {
                 reasons.add("+10 requested " + sequenceNumberLabel(requestedSequenceType) + " number match");
                 return 10;
             }
@@ -578,11 +583,21 @@ public class DownloadScoringService {
         return 0;
     }
 
-    private boolean matchesSeriesNumber(Float seriesNumber, int requestedNumber) {
+    private boolean matchesRequestedSeriesNumber(DownloadSearchCriteria criteria, Float seriesNumber) {
         if (seriesNumber == null) {
             return false;
         }
-        return Math.abs(seriesNumber - requestedNumber) < 0.01f;
+        Float start = criteria == null ? null : criteria.getSeriesNumber();
+        Float end = criteria == null ? null : criteria.getSeriesNumberEnd();
+        if (start == null) {
+            return false;
+        }
+        if (end == null || Math.abs(end - start) < 0.001f) {
+            return Math.abs(seriesNumber - start) < 0.01f;
+        }
+        float lower = Math.min(start, end) - 0.01f;
+        float upper = Math.max(start, end) + 0.01f;
+        return seriesNumber >= lower && seriesNumber <= upper;
     }
 
     private boolean isChapterEpisodeSource(NormalizedDownloadResult result) {
