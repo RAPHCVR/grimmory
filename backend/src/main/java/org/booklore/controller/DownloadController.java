@@ -229,11 +229,29 @@ public class DownloadController {
     @Operation(summary = "List download jobs")
     @ApiResponse(responseCode = "200", description = "Download jobs returned successfully")
     @GetMapping("/jobs")
-    public List<DownloadJobResponse> listJobs(@RequestParam(required = false) DownloadJobStatus status) {
-        List<DownloadJobEntity> jobs = status == null
+    public List<DownloadJobResponse> listJobs(@RequestParam(required = false) DownloadJobStatus status,
+                                              @RequestParam(defaultValue = "false") boolean includeHidden) {
+        List<DownloadJobEntity> jobs = includeHidden
+                ? (status == null
                 ? jobRepository.findAll(Sort.by(Sort.Order.desc("createdAt")))
-                : jobRepository.findAllByStatusOrderByCreatedAtAsc(status);
+                : jobRepository.findAllByStatusOrderByCreatedAtAsc(status))
+                : (status == null
+                ? jobRepository.findAllByHiddenFromDownloadsFalseOrderByCreatedAtDesc()
+                : jobRepository.findAllByStatusAndHiddenFromDownloadsFalseOrderByCreatedAtAsc(status));
         return jobs.stream().map(this::toJobResponse).toList();
+    }
+
+    @Operation(summary = "Archive a terminal download job from the downloads UI")
+    @ApiResponse(responseCode = "200", description = "Download job archived")
+    @PostMapping("/jobs/{jobId}/archive")
+    public DownloadJobResponse archiveJob(@PathVariable Long jobId) {
+        DownloadJobEntity job = jobRepository.findWithSearchAndResultAndSourceById(jobId)
+                .orElseThrow(() -> new IllegalArgumentException("Download job not found: " + jobId));
+        if (!isTerminalJobStatus(job.getStatus())) {
+            throw new IllegalArgumentException("Only terminal download jobs can be archived. Job " + jobId + " is " + job.getStatus());
+        }
+        job.setHiddenFromDownloads(Boolean.TRUE);
+        return toJobResponse(jobRepository.save(job));
     }
 
     @Operation(summary = "Delete a download source")
@@ -261,6 +279,8 @@ public class DownloadController {
                 .isbn(request.getIsbn())
                 .seriesName(request.getSeriesName())
                 .seriesNumber(request.getSeriesNumber())
+                .seriesNumberEnd(request.getSeriesNumberEnd())
+                .preferredLanguage(trimToNull(request.getPreferredLanguage()))
                 .sequenceNumberType(request.getSequenceNumberType() == null ? DownloadSequenceNumberType.AUTO : request.getSequenceNumberType())
                 .contentKind(request.getContentKind() == null ? DownloadContentKind.AUTO : request.getContentKind())
                 .preferredFormats(request.getPreferredFormats() == null ? List.of() : request.getPreferredFormats())
@@ -268,6 +288,13 @@ public class DownloadController {
                 .canonicalSelection(toCanonicalSelection(request.getCanonicalSelection()))
                 .maxResults(request.getMaxResults() == null ? 25 : Math.max(1, request.getMaxResults()))
                 .build();
+    }
+
+    private boolean isTerminalJobStatus(DownloadJobStatus status) {
+        return status == DownloadJobStatus.COMPLETED
+                || status == DownloadJobStatus.PENDING_REVIEW
+                || status == DownloadJobStatus.FAILED
+                || status == DownloadJobStatus.CANCELLED;
     }
 
     private DownloadSourceTestResponse testSourceEntity(DownloadSourceEntity source, DownloadSourceTestRequest request) {
@@ -452,6 +479,7 @@ public class DownloadController {
                 job.getStagedFilePath(),
                 job.getDeliveredFilePath(),
                 job.getErrorMessage(),
+                Boolean.TRUE.equals(job.getHiddenFromDownloads()),
                 job.getCreatedAt(),
                 job.getUpdatedAt(),
                 job.getCompletedAt()
@@ -557,6 +585,7 @@ public class DownloadController {
                                       String stagedFilePath,
                                       String deliveredFilePath,
                                       String errorMessage,
+                                      Boolean hiddenFromDownloads,
                                       Instant createdAt,
                                       Instant updatedAt,
                                       Instant completedAt) {

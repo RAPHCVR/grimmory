@@ -16,6 +16,10 @@ import java.util.Optional;
 public interface DownloadJobRepository extends JpaRepository<DownloadJobEntity, Long> {
     List<DownloadJobEntity> findAllByStatusOrderByCreatedAtAsc(DownloadJobStatus status);
 
+    List<DownloadJobEntity> findAllByHiddenFromDownloadsFalseOrderByCreatedAtDesc();
+
+    List<DownloadJobEntity> findAllByStatusAndHiddenFromDownloadsFalseOrderByCreatedAtAsc(DownloadJobStatus status);
+
     List<DownloadJobEntity> findAllByStatusIn(Collection<DownloadJobStatus> statuses);
 
     List<DownloadJobEntity> findAllByStatusInAndLastProgressAtBefore(Collection<DownloadJobStatus> statuses, Instant cutoff);

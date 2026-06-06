@@ -14,7 +14,8 @@
     "clearCanonical": "Unlock",
     "details": "Details",
     "close": "Close",
-    "acquireDisabledLowScore": "Score below {{threshold}}/100: weak/hidden candidate, acquisition blocked."
+    "acquireDisabledLowScore": "Score below {{threshold}}/100: weak/hidden candidate, acquisition blocked.",
+    "archiveJob": "Archive job"
   },
   "search": {
     "placeholder": "Search by title, author, ISBN, series, or paste a direct URL below",
@@ -36,7 +37,10 @@
     "targetPath": "Target path",
     "targetLibraryPlaceholder": "Choose a library",
     "targetPathPlaceholder": "Choose a path",
-    "autoFinalizeTargetRequired": "Choose a target library and path before auto-finalizing."
+    "autoFinalizeTargetRequired": "Choose a target library and path before auto-finalizing.",
+    "seriesNumberEnd": "To number",
+    "seriesNumberEndPlaceholder": "Optional range end",
+    "preferredLanguage": "Preferred language"
   },
   "results": {
     "title": "Results",
@@ -104,7 +108,9 @@
     "resolveRequiredDetail": "Enter a query, title, ISBN, or series before resolving a canonical work.",
     "targetRequiredSummary": "Target required",
     "targetRequiredDetail": "Choose a library and path before acquiring with auto-finalize enabled.",
-    "onlyWeakResultsDetail": "{{count}} candidate(s) returned, but all are below {{threshold}}/100. They are hidden to avoid a wrong acquisition."
+    "onlyWeakResultsDetail": "{{count}} candidate(s) returned, but all are below {{threshold}}/100. They are hidden to avoid a wrong acquisition.",
+    "jobArchivedDetail": "Job #{{id}} has been archived from the downloads list.",
+    "archiveError": "Job archive failed."
   },
   "resolve": {
     "title": "Canonical work candidates",
@@ -156,7 +162,8 @@
     "chapterIncompatible": "Chapter mismatch",
     "wrongNumber": "Wrong number",
     "unsupportedMedia": "Rejected media",
-    "deferredFormat": "Format pending"
+    "deferredFormat": "Format pending",
+    "languageMismatch": "Language mismatch"
   },
   "qualityTooltips": {
     "weakScore": "Score is below the default display threshold; verify before acquiring.",
@@ -164,6 +171,18 @@
     "chapterIncompatible": "The request targets a volume/issue, but this result is a chapter/episode.",
     "wrongNumber": "The requested number does not clearly match this result.",
     "unsupportedMedia": "The candidate contains video/media markers instead of an expected book/comic payload.",
-    "deferredFormat": "Torrent/NZB: the exact format is confirmed after metadata/files are downloaded."
+    "deferredFormat": "Torrent/NZB: the exact format is confirmed after metadata/files are downloaded.",
+    "languageMismatch": "The candidate language or script does not match the requested language/query."
+  },
+  "languages": {
+    "auto": "Auto",
+    "fr": "French",
+    "en": "English",
+    "es": "Spanish",
+    "it": "Italian",
+    "de": "German",
+    "zh": "Chinese",
+    "ja": "Japanese",
+    "ko": "Korean"
   }
 }

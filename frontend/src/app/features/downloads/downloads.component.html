@@ -311,6 +311,21 @@
           <label for="download-series-number">{{ t('search.seriesNumber') }}</label>
           <p-inputnumber inputId="download-series-number" [(ngModel)]="seriesNumber" [min]="0" [maxFractionDigits]="2"></p-inputnumber>
         </div>
+        <div class="field">
+          <label for="download-series-number-end">{{ t('search.seriesNumberEnd') }}</label>
+          <p-inputnumber inputId="download-series-number-end" [(ngModel)]="seriesNumberEnd" [min]="0" [maxFractionDigits]="2" [placeholder]="t('search.seriesNumberEndPlaceholder')"></p-inputnumber>
+        </div>
+        <div class="field">
+          <label for="download-preferred-language">{{ t('search.preferredLanguage') }}</label>
+          <p-select
+            inputId="download-preferred-language"
+            [options]="languageOptions"
+            [(ngModel)]="preferredLanguage"
+            optionLabel="label"
+            optionValue="value"
+            [appendTo]="'body'">
+          </p-select>
+        </div>
         <div class="field direct-url">
           <label for="download-direct-url">{{ t('search.directUrl') }}</label>
           <input id="download-direct-url" pInputText [(ngModel)]="directUrl" placeholder="https://..."/>
@@ -523,6 +538,17 @@
                 [disabled]="!canRetry(job)"
                 (onClick)="retryJob(job)"
                 [pTooltip]="t('actions.retry')">
+              </p-button>
+              <p-button
+                icon="pi pi-eye-slash"
+                size="small"
+                severity="secondary"
+                [rounded]="true"
+                [outlined]="true"
+                [loading]="archivingJobIds.has(job.id)"
+                [disabled]="!canArchive(job)"
+                (onClick)="archiveJob(job)"
+                [pTooltip]="t('actions.archiveJob')">
               </p-button>
             </td>
           </tr>

@@ -18,6 +18,8 @@ public class DownloadSearchCriteria {
     String isbn;
     String seriesName;
     Float seriesNumber;
+    Float seriesNumberEnd;
+    String preferredLanguage;
     @Builder.Default
     DownloadSequenceNumberType sequenceNumberType = DownloadSequenceNumberType.AUTO;
     @Builder.Default

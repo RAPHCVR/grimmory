@@ -73,6 +73,8 @@ export interface DownloadSearchRequest {
   isbn?: string | null;
   seriesName?: string | null;
   seriesNumber?: number | null;
+  seriesNumberEnd?: number | null;
+  preferredLanguage?: string | null;
   sequenceNumberType?: DownloadSequenceNumberType;
   contentKind?: DownloadContentKind;
   preferredFormats?: DownloadFormat[];
@@ -167,6 +169,7 @@ export interface DownloadJob {
   createdAt?: string | null;
   updatedAt?: string | null;
   completedAt?: string | null;
+  hiddenFromDownloads?: boolean | null;
 }
 
 export const DOWNLOAD_SOURCE_TYPES: DownloadSourceType[] = ['PROWLARR_TORZNAB', 'MANGADEX', 'ANNAS_ARCHIVE_API', 'OPDS', 'DIRECT_URL', 'CUSTOM_WEB_PLUGIN'];

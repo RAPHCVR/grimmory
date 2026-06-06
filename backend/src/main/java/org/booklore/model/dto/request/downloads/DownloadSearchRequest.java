@@ -15,6 +15,8 @@ public class DownloadSearchRequest {
     private String isbn;
     private String seriesName;
     private Float seriesNumber;
+    private Float seriesNumberEnd;
+    private String preferredLanguage;
     private DownloadSequenceNumberType sequenceNumberType = DownloadSequenceNumberType.AUTO;
     private DownloadContentKind contentKind = DownloadContentKind.AUTO;
     private List<DownloadFormat> preferredFormats = List.of();

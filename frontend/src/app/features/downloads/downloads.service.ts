@@ -79,6 +79,10 @@ export class DownloadsService {
     return this.http.post<DownloadJob>(`${this.baseUrl}/jobs/${jobId}/retry`, {});
   }
 
+  archiveJob(jobId: number): Observable<DownloadJob> {
+    return this.http.post<DownloadJob>(`${this.baseUrl}/jobs/${jobId}/archive`, {});
+  }
+
   getJob(jobId: number): Observable<DownloadJob> {
     return this.http.get<DownloadJob>(`${this.baseUrl}/jobs/${jobId}`);
   }

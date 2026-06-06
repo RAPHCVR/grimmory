@@ -61,6 +61,10 @@ public class DownloadJobEntity {
     @Builder.Default
     private Boolean fallbackEnabled = Boolean.FALSE;
 
+    @Column(name = "hidden_from_downloads", nullable = false)
+    @Builder.Default
+    private Boolean hiddenFromDownloads = Boolean.FALSE;
+
     @Column(name = "target_library_id")
     private Long targetLibraryId;
 

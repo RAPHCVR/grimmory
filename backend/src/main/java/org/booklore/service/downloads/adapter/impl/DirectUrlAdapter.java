@@ -156,41 +156,41 @@ public class DirectUrlAdapter implements DownloadSourceAdapter {
             List<WebtoonsSeriesCandidate> candidates = parseWebtoonsSearch(response.body(), searchQuery);
             List<NormalizedDownloadResult> results = new ArrayList<>();
             for (WebtoonsSeriesCandidate candidate : candidates.stream().limit(config.maxResults()).toList()) {
-                Optional<String> resolvedUrl = criteria.getSeriesNumber() == null
-                        ? resolveWebtoonsDefaultEpisodeUrl(candidate.url(), config)
-                        : resolveWebtoonsEpisodeUrl(candidate.url(), criteria.getSeriesNumber(), config);
-                if (resolvedUrl.isEmpty()) {
+                List<String> resolvedUrls = resolveWebtoonsAcquirableEpisodeUrls(candidate.url(), criteria, config);
+                if (resolvedUrls.isEmpty()) {
                     continue;
                 }
-                UrlMetadata metadata = inferUrlMetadata(resolvedUrl.get(), DownloadAcquisitionType.CLI_GALLERY_DL)
-                        .orElse(new UrlMetadata(candidate.title(), candidate.title(), criteria.getSeriesNumber(), candidate.language(), DownloadContentKind.WEBTOON, candidate.author() == null ? List.of() : List.of(candidate.author()), null));
-                Map<String, Object> raw = new LinkedHashMap<>();
-                raw.put("provider", "webtoons-search");
-                raw.put("query", searchQuery);
-                raw.put("seriesUrl", candidate.url());
-                raw.put("resolvedUrl", resolvedUrl.get());
-                raw.put("titleNo", candidate.titleNo());
-                raw.put("score", candidate.score());
-                raw.put("section", candidate.section());
-                raw.put("metadata", metadata.rawJson());
+                for (String resolvedUrl : resolvedUrls) {
+                    UrlMetadata metadata = inferUrlMetadata(resolvedUrl, DownloadAcquisitionType.CLI_GALLERY_DL)
+                            .orElse(new UrlMetadata(candidate.title(), candidate.title(), criteria.getSeriesNumber(), candidate.language(), DownloadContentKind.WEBTOON, candidate.author() == null ? List.of() : List.of(candidate.author()), null));
+                    Map<String, Object> raw = new LinkedHashMap<>();
+                    raw.put("provider", "webtoons-search");
+                    raw.put("query", searchQuery);
+                    raw.put("seriesUrl", candidate.url());
+                    raw.put("resolvedUrl", resolvedUrl);
+                    raw.put("titleNo", candidate.titleNo());
+                    raw.put("score", candidate.score());
+                    raw.put("section", candidate.section());
+                    raw.put("metadata", metadata.rawJson());
 
-                results.add(NormalizedDownloadResult.builder()
-                        .sourceResultId(resolvedUrl.get())
-                        .title(firstNonBlank(metadata.title(), candidate.title()))
-                        .authors(metadata.authors() == null || metadata.authors().isEmpty()
-                                ? candidate.author() == null ? List.of() : List.of(candidate.author())
-                                : metadata.authors())
-                        .seriesName(firstNonBlank(metadata.seriesName(), candidate.title()))
-                        .seriesNumber(criteria.getSeriesNumber() != null ? criteria.getSeriesNumber() : metadata.seriesNumber())
-                        .language(firstNonBlank(metadata.language(), candidate.language()))
-                        .contentKind(DownloadContentKind.WEBTOON)
-                        .format(DownloadFormat.CBZ)
-                        .downloadUrl(resolvedUrl.get())
-                        .detailsUrl(candidate.url())
-                        .requiresFlareSolverr(useFlareSolverr(source))
-                        .acquisitionType(DownloadAcquisitionType.CLI_GALLERY_DL)
-                        .rawJson(writeJson(raw))
-                        .build());
+                    results.add(NormalizedDownloadResult.builder()
+                            .sourceResultId(resolvedUrl)
+                            .title(firstNonBlank(metadata.title(), candidate.title()))
+                            .authors(metadata.authors() == null || metadata.authors().isEmpty()
+                                    ? candidate.author() == null ? List.of() : List.of(candidate.author())
+                                    : metadata.authors())
+                            .seriesName(firstNonBlank(metadata.seriesName(), candidate.title()))
+                            .seriesNumber(metadata.seriesNumber() != null ? metadata.seriesNumber() : criteria.getSeriesNumber())
+                            .language(firstNonBlank(metadata.language(), candidate.language()))
+                            .contentKind(DownloadContentKind.WEBTOON)
+                            .format(DownloadFormat.CBZ)
+                            .downloadUrl(resolvedUrl)
+                            .detailsUrl(candidate.url())
+                            .requiresFlareSolverr(useFlareSolverr(source))
+                            .acquisitionType(DownloadAcquisitionType.CLI_GALLERY_DL)
+                            .rawJson(writeJson(raw))
+                            .build());
+                }
             }
             return results;
         } catch (InterruptedException e) {
@@ -239,6 +239,16 @@ public class DirectUrlAdapter implements DownloadSourceAdapter {
                 .toList();
     }
 
+    private List<String> resolveWebtoonsAcquirableEpisodeUrls(String seriesUrl, DownloadSearchCriteria criteria, WebtoonsSearchConfig config) {
+        if (criteria.getSeriesNumber() == null) {
+            return resolveWebtoonsDefaultEpisodeUrl(seriesUrl, config).stream().toList();
+        }
+        if (criteria.getSeriesNumberEnd() == null || Math.abs(criteria.getSeriesNumberEnd() - criteria.getSeriesNumber()) < 0.001f) {
+            return resolveWebtoonsEpisodeUrl(seriesUrl, criteria.getSeriesNumber(), config).stream().toList();
+        }
+        return resolveWebtoonsEpisodeRangeUrls(seriesUrl, criteria.getSeriesNumber(), criteria.getSeriesNumberEnd(), config);
+    }
+
     private Optional<String> resolveWebtoonsDefaultEpisodeUrl(String seriesUrl, WebtoonsSearchConfig config) {
         if (seriesUrl == null || seriesUrl.isBlank()) {
             return Optional.empty();
@@ -265,6 +275,30 @@ public class DirectUrlAdapter implements DownloadSourceAdapter {
             }
         }
         return Optional.empty();
+    }
+
+    private List<String> resolveWebtoonsEpisodeRangeUrls(String seriesUrl, Float startNumber, Float endNumber, WebtoonsSearchConfig config) {
+        if (seriesUrl == null || seriesUrl.isBlank() || startNumber == null || endNumber == null) {
+            return List.of();
+        }
+        float start = Math.min(startNumber, endNumber);
+        float end = Math.max(startNumber, endNumber);
+        Map<Float, String> urlsByNumber = new LinkedHashMap<>();
+        for (int page = 1; page <= config.maxEpisodePages(); page++) {
+            fetchWebtoonsEpisodePage(seriesUrl, page, config)
+                    .map(this::parseWebtoonsEpisodeUrls)
+                    .orElse(List.of())
+                    .stream()
+                    .filter(episode -> episode.number() != null && episode.number() >= start - 0.001f && episode.number() <= end + 0.001f)
+                    .forEach(episode -> urlsByNumber.putIfAbsent(episode.number(), episode.url()));
+            if (containsAllWholeNumbers(urlsByNumber.keySet(), start, end)) {
+                break;
+            }
+        }
+        return urlsByNumber.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(Map.Entry::getValue)
+                .toList();
     }
 
     private Optional<String> fetchWebtoonsEpisodePage(String seriesUrl, int page, WebtoonsSearchConfig config) {
@@ -306,21 +340,21 @@ public class DirectUrlAdapter implements DownloadSourceAdapter {
     }
 
     private Optional<String> parseFirstWebtoonsEpisodeUrl(String html) {
-        Document document = Jsoup.parse(html);
-        for (Element link : document.select("a[href*=episode_no][href*=/viewer]")) {
-            String url = link.absUrl("href");
-            if (url.isBlank()) {
-                url = link.attr("href");
-            }
-            if (!url.isBlank()) {
-                return Optional.of(url);
-            }
-        }
-        return Optional.empty();
+        return parseWebtoonsEpisodeUrls(html).stream()
+                .map(WebtoonsEpisodeCandidate::url)
+                .findFirst();
     }
 
     private Optional<String> parseWebtoonsEpisodeUrl(String html, Float requestedNumber) {
+        return parseWebtoonsEpisodeUrls(html).stream()
+                .filter(episode -> episode.number() != null && Math.abs(episode.number() - requestedNumber) < 0.001f)
+                .map(WebtoonsEpisodeCandidate::url)
+                .findFirst();
+    }
+
+    private List<WebtoonsEpisodeCandidate> parseWebtoonsEpisodeUrls(String html) {
         Document document = Jsoup.parse(html);
+        List<WebtoonsEpisodeCandidate> episodes = new ArrayList<>();
         for (Element link : document.select("a[href*=episode_no][href*=/viewer]")) {
             String url = link.absUrl("href");
             if (url.isBlank()) {
@@ -336,11 +370,23 @@ public class DirectUrlAdapter implements DownloadSourceAdapter {
                 continue;
             }
             Float number = firstNonNull(metadata.seriesNumber(), parseEpisodeNumber(link.text()));
-            if (number != null && Math.abs(number - requestedNumber) < 0.001f) {
-                return Optional.of(url);
+            episodes.add(new WebtoonsEpisodeCandidate(url, number));
+        }
+        return episodes;
+    }
+
+    private boolean containsAllWholeNumbers(Set<Float> values, float start, float end) {
+        if (start % 1 != 0 || end % 1 != 0 || end - start > 50) {
+            return false;
+        }
+        for (int number = Math.round(start); number <= Math.round(end); number++) {
+            int expected = number;
+            boolean present = values.stream().anyMatch(value -> Math.abs(value - expected) < 0.001f);
+            if (!present) {
+                return false;
             }
         }
-        return Optional.empty();
+        return true;
     }
 
     private Optional<UrlMetadata> probeGalleryDlMetadata(DownloadSourceEntity source, String directUrl) {
@@ -991,6 +1037,9 @@ public class DirectUrlAdapter implements DownloadSourceAdapter {
                                            String titleNo,
                                            String section,
                                            int score) {
+    }
+
+    private record WebtoonsEpisodeCandidate(String url, Float number) {
     }
 
     private record UrlMetadata(String title,

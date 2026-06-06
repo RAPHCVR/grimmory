@@ -159,6 +159,7 @@ public class DownloadScoringService {
         }
 
         score += scoreFormat(criteria.getPreferredFormats(), result, reasons);
+        score += scoreLanguageAndScript(criteria, result, reasons);
 
         if (result.getSizeBytes() != null) {
             if (result.getSizeBytes() >= MIN_REASONABLE_SIZE_BYTES) {
@@ -181,6 +182,34 @@ public class DownloadScoringService {
                 .score(clamped)
                 .reasons(reasons)
                 .build();
+    }
+
+    private int scoreLanguageAndScript(DownloadSearchCriteria criteria, NormalizedDownloadResult result, List<String> reasons) {
+        if (criteria == null || result == null) {
+            return 0;
+        }
+        int score = 0;
+        String preferredLanguage = normalizeLanguage(criteria.getPreferredLanguage());
+        String resultLanguage = normalizeLanguage(result.getLanguage());
+        if (!isBlank(preferredLanguage)) {
+            if (!isBlank(resultLanguage) && languageMatches(preferredLanguage, resultLanguage)) {
+                score += 30;
+                reasons.add("+30 preferred language match");
+            } else if (!isBlank(resultLanguage)) {
+                score -= 45;
+                reasons.add("-45 preferred language mismatch");
+            }
+        }
+
+        String queryEvidence = String.join(" ", safe(criteria.effectiveQuery()), safe(criteria.getTitle()), safe(criteria.getSeriesName()));
+        String resultEvidence = String.join(" ", safe(result.getTitle()), safe(result.getSeriesName()), safe(result.getRawJson()));
+        if (isLatinDominant(queryEvidence) && isEastAsianDominant(resultEvidence)) {
+            if (isBlank(preferredLanguage) || isLatinLanguage(preferredLanguage)) {
+                score -= 35;
+                reasons.add("-35 script mismatch for latin query");
+            }
+        }
+        return score;
     }
 
     private boolean explicitSequentialNumberRequested(DownloadSearchCriteria criteria) {
@@ -755,5 +784,68 @@ public class DownloadScoringService {
 
     private String safe(String value) {
         return value == null ? "" : value;
+    }
+
+    private String normalizeLanguage(String value) {
+        if (isBlank(value)) {
+            return null;
+        }
+        String normalized = value.trim().toLowerCase(Locale.ROOT);
+        return switch (normalized) {
+            case "french", "fra", "fre" -> "fr";
+            case "english", "eng" -> "en";
+            case "chinese", "zho", "chi", "cn", "zh-cn", "zh-hans", "zh-hant" -> "zh";
+            case "japanese", "jpn", "jp" -> "ja";
+            case "korean", "kor", "kr" -> "ko";
+            case "spanish", "spa", "es-es" -> "es";
+            case "italian", "ita" -> "it";
+            case "german", "deu", "ger" -> "de";
+            case "portuguese", "por" -> "pt";
+            default -> normalized.matches("[a-z]{2,3}") ? normalized : null;
+        };
+    }
+
+    private boolean languageMatches(String preferredLanguage, String resultLanguage) {
+        return Objects.equals(normalizeLanguage(preferredLanguage), normalizeLanguage(resultLanguage));
+    }
+
+    private boolean isLatinLanguage(String language) {
+        String normalized = normalizeLanguage(language);
+        return normalized == null || Set.of("fr", "en", "es", "it", "de", "pt", "nl", "pl", "sv", "da", "hr", "hu", "sk", "sl").contains(normalized);
+    }
+
+    private boolean isLatinDominant(String value) {
+        ScriptCounts counts = scriptCounts(value);
+        return counts.latin() >= 4 && counts.latin() >= counts.eastAsian() * 2;
+    }
+
+    private boolean isEastAsianDominant(String value) {
+        ScriptCounts counts = scriptCounts(value);
+        return counts.eastAsian() >= 3 && counts.eastAsian() > counts.latin();
+    }
+
+    private ScriptCounts scriptCounts(String value) {
+        if (value == null || value.isBlank()) {
+            return new ScriptCounts(0, 0);
+        }
+        int latin = 0;
+        int eastAsian = 0;
+        for (int offset = 0; offset < value.length(); ) {
+            int codePoint = value.codePointAt(offset);
+            Character.UnicodeScript script = Character.UnicodeScript.of(codePoint);
+            if (script == Character.UnicodeScript.LATIN) {
+                latin++;
+            } else if (script == Character.UnicodeScript.HAN
+                    || script == Character.UnicodeScript.HIRAGANA
+                    || script == Character.UnicodeScript.KATAKANA
+                    || script == Character.UnicodeScript.HANGUL) {
+                eastAsian++;
+            }
+            offset += Character.charCount(codePoint);
+        }
+        return new ScriptCounts(latin, eastAsian);
+    }
+
+    private record ScriptCounts(int latin, int eastAsian) {
     }
 }

@@ -46,6 +46,8 @@ interface CanonicalAppliedState {
   isbn: string;
   seriesName: string;
   seriesNumber: number | null;
+  seriesNumberEnd: number | null;
+  preferredLanguage: string | null;
   sequenceNumberType: DownloadSequenceNumberType;
   contentKind: DownloadContentKind;
 }
@@ -91,6 +93,8 @@ export class DownloadsComponent implements OnInit, OnDestroy {
   isbn = '';
   seriesName = '';
   seriesNumber: number | null = null;
+  seriesNumberEnd: number | null = null;
+  preferredLanguage: string | null = 'fr';
   sequenceNumberType: DownloadSequenceNumberType = 'AUTO';
   directUrl = '';
   contentKind: DownloadContentKind = 'AUTO';
@@ -123,9 +127,21 @@ export class DownloadsComponent implements OnInit, OnDestroy {
   acquiringResultIds = new Set<number>();
   processingJobIds = new Set<number>();
   retryingJobIds = new Set<number>();
+  archivingJobIds = new Set<number>();
 
   contentKindOptions: SelectOption<DownloadContentKind>[] = DOWNLOAD_CONTENT_KINDS.map(value => ({label: this.contentKindLabel(value), value}));
   formatOptions: SelectOption<DownloadFormat>[] = DOWNLOAD_FORMATS.map(value => ({label: value, value}));
+  languageOptions: SelectOption<string | null>[] = [
+    {label: this.t.translate('downloads.languages.auto'), value: null},
+    {label: this.t.translate('downloads.languages.fr'), value: 'fr'},
+    {label: this.t.translate('downloads.languages.en'), value: 'en'},
+    {label: this.t.translate('downloads.languages.es'), value: 'es'},
+    {label: this.t.translate('downloads.languages.it'), value: 'it'},
+    {label: this.t.translate('downloads.languages.de'), value: 'de'},
+    {label: this.t.translate('downloads.languages.zh'), value: 'zh'},
+    {label: this.t.translate('downloads.languages.ja'), value: 'ja'},
+    {label: this.t.translate('downloads.languages.ko'), value: 'ko'}
+  ];
 
   private pollSub?: Subscription;
   private searchProgressTimer?: ReturnType<typeof setInterval>;
@@ -442,6 +458,35 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     });
   }
 
+  archiveJob(job: DownloadJob): void {
+    if (!this.canArchive(job) || this.archivingJobIds.has(job.id)) return;
+    this.archivingJobIds.add(job.id);
+    this.downloadsService.archiveJob(job.id).pipe(
+      finalize(() => {
+        this.archivingJobIds.delete(job.id);
+        this.markViewDirty();
+      })
+    ).subscribe({
+      next: () => {
+        this.loadJobs(false);
+        this.messageService.add({
+          severity: 'success',
+          summary: this.t.translate('common.success'),
+          detail: this.t.translate('downloads.toast.jobArchivedDetail', {id: job.id})
+        });
+        this.markViewDirty();
+      },
+      error: err => {
+        this.messageService.add({
+          severity: 'error',
+          summary: this.t.translate('common.error'),
+          detail: err?.error?.message || err?.message || this.t.translate('downloads.toast.archiveError')
+        });
+        this.markViewDirty();
+      }
+    });
+  }
+
   loadJobs(showLoader = true): void {
     if (showLoader) {
       this.loadingJobs = true;
@@ -494,6 +539,8 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     this.isbn = '';
     this.seriesName = '';
     this.seriesNumber = null;
+    this.seriesNumberEnd = null;
+    this.preferredLanguage = 'fr';
     this.sequenceNumberType = 'AUTO';
     this.directUrl = '';
     this.contentKind = 'AUTO';
@@ -611,6 +658,9 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     }
     if (reasons.includes('unsupported media payload') || reasons.includes('.mkv') || reasons.includes('.mp4') || reasons.includes('1080p') || reasons.includes('bdrip') || reasons.includes('hevc') || reasons.includes('x264')) {
       add('downloads.quality.unsupportedMedia', 'downloads.qualityTooltips.unsupportedMedia', 'danger');
+    }
+    if (reasons.includes('preferred language mismatch') || reasons.includes('script mismatch')) {
+      add('downloads.quality.languageMismatch', 'downloads.qualityTooltips.languageMismatch', 'warn');
     }
     if ((result.acquisitionType === 'TORRENT' || result.acquisitionType === 'NZB') && result.format === 'UNKNOWN') {
       add('downloads.quality.deferredFormat', 'downloads.qualityTooltips.deferredFormat', 'info');
@@ -833,6 +883,10 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     return !this.retryingJobIds.has(job.id) && (job.status === 'FAILED' || job.status === 'CANCELLED' || this.isStaleJob(job));
   }
 
+  canArchive(job: DownloadJob): boolean {
+    return !this.archivingJobIds.has(job.id) && this.isTerminalStatus(job.status);
+  }
+
   isActiveJob(job: DownloadJob): boolean {
     return ['QUEUED', 'SEARCHING', 'SCORING', 'DOWNLOADING', 'VALIDATING', 'STAGED', 'DELIVERING', 'AUTO_FINALIZING'].includes(job.status);
   }
@@ -865,6 +919,8 @@ export class DownloadsComponent implements OnInit, OnDestroy {
       isbn: this.clean(this.isbn),
       seriesName: this.clean(this.seriesName),
       seriesNumber: this.seriesNumber,
+      seriesNumberEnd: this.seriesNumberEnd,
+      preferredLanguage: this.preferredLanguage,
       sequenceNumberType: this.sequenceNumberType,
       directUrl: this.clean(this.directUrl),
       contentKind: this.contentKind,
@@ -934,6 +990,8 @@ export class DownloadsComponent implements OnInit, OnDestroy {
       isbn: request.isbn ?? null,
       seriesName: request.seriesName ?? null,
       seriesNumber: request.seriesNumber ?? null,
+      seriesNumberEnd: request.seriesNumberEnd ?? null,
+      preferredLanguage: request.preferredLanguage ?? null,
       sequenceNumberType: request.sequenceNumberType ?? 'AUTO',
       directUrl: request.directUrl ?? null,
       contentKind: request.contentKind ?? 'AUTO'
@@ -948,6 +1006,8 @@ export class DownloadsComponent implements OnInit, OnDestroy {
       isbn: this.isbn,
       seriesName: this.seriesName,
       seriesNumber: this.seriesNumber,
+      seriesNumberEnd: this.seriesNumberEnd,
+      preferredLanguage: this.preferredLanguage,
       sequenceNumberType: this.sequenceNumberType,
       contentKind: this.contentKind
     };
@@ -966,6 +1026,8 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     if (this.isbn === applied.isbn) this.isbn = '';
     if (this.seriesName === applied.seriesName) this.seriesName = '';
     if (this.seriesNumber === applied.seriesNumber) this.seriesNumber = null;
+    if (this.seriesNumberEnd === applied.seriesNumberEnd) this.seriesNumberEnd = null;
+    if (this.preferredLanguage === applied.preferredLanguage) this.preferredLanguage = 'fr';
     if (this.sequenceNumberType === applied.sequenceNumberType) this.sequenceNumberType = 'AUTO';
     if (this.contentKind === applied.contentKind) this.contentKind = 'AUTO';
     this.selectedCanonicalCandidate = null;

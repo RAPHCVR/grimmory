@@ -70,6 +70,45 @@ class DownloadScoringServiceTest {
     }
 
     @Test
+    void score_preferredFrenchLanguagePenalizesChineseBookResult() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("michelle obama becoming")
+                .title("Becoming")
+                .author("Michelle Obama")
+                .preferredLanguage("fr")
+                .contentKind(DownloadContentKind.BOOK)
+                .preferredFormats(List.of(DownloadFormat.EPUB))
+                .build();
+
+        NormalizedDownloadResult chineseResult = NormalizedDownloadResult.builder()
+                .title("成为米歇尔·奥巴马自传")
+                .authors(List.of("Michelle Obama"))
+                .language("zh")
+                .format(DownloadFormat.EPUB)
+                .contentKind(DownloadContentKind.BOOK)
+                .downloadUrl("https://example.test/becoming-zh.epub")
+                .build();
+
+        NormalizedDownloadResult frenchResult = NormalizedDownloadResult.builder()
+                .title("Devenir")
+                .authors(List.of("Michelle Obama"))
+                .language("fr")
+                .format(DownloadFormat.EPUB)
+                .contentKind(DownloadContentKind.BOOK)
+                .downloadUrl("https://example.test/devenir-fr.epub")
+                .build();
+
+        var chineseScore = service.score(criteria, chineseResult);
+        var frenchScore = service.score(criteria, frenchResult);
+
+        assertTrue(frenchScore.getScore() > chineseScore.getScore());
+        assertTrue(chineseScore.getScore() < 50);
+        assertTrue(chineseScore.getReasons().contains("-45 preferred language mismatch"));
+        assertTrue(chineseScore.getReasons().contains("-35 script mismatch for latin query"));
+        assertTrue(frenchScore.getReasons().contains("+30 preferred language match"));
+    }
+
+    @Test
     void score_releaseTitleWithExtraWords_stillMatchesQueryTokens() {
         DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
                 .query("One Piece 100")

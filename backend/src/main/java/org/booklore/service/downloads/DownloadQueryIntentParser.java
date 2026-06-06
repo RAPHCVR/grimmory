@@ -18,6 +18,10 @@ public class DownloadQueryIntentParser {
     private static final Pattern EXPLICIT_NUMBER_MARKER = Pattern.compile(
             "(?iu)\\b(vol(?:ume)?|v|t(?:ome|omo)?|issue|iss|ch(?:apter)?|chap(?:itre)?|chapter|episode|ep)\\.?\\s*0*(\\d{1,5}(?:\\.\\d+)?)\\b|#\\s*0*(\\d{1,5}(?:\\.\\d+)?)\\b"
     );
+    private static final Pattern EXPLICIT_RANGE_MARKER = Pattern.compile(
+            "(?iu)\\b(vol(?:ume)?|v|t(?:ome|omo)?|issue|iss|ch(?:apter)?s?|chap(?:itre)?s?|chapter|episodes?|ep)\\.?\\s*0*(\\d{1,5}(?:\\.\\d+)?)\\s*(?:[-–—+]|à|a|to|through|thru)\\s*0*(\\d{1,5}(?:\\.\\d+)?)\\b|#\\s*0*(\\d{1,5}(?:\\.\\d+)?)\\s*(?:[-–—+]|à|a|to|through|thru)\\s*0*(\\d{1,5}(?:\\.\\d+)?)\\b"
+    );
+    private static final Pattern TRAILING_RANGE = Pattern.compile("(?iu)^(.+?)\\s+0*(\\d{1,5}(?:\\.\\d+)?)\\s*(?:[-–—+]|à|a|to|through|thru)\\s*0*(\\d{1,5}(?:\\.\\d+)?)$");
     private static final Pattern TRAILING_NUMBER = Pattern.compile("(?iu)^(.+?)\\s+0*(\\d{1,5}(?:\\.\\d+)?)$");
     private static final Pattern DANGLING_SEPARATORS = Pattern.compile("(?iu)[\\s,;:_\\-–—#]+$|^[\\s,;:_\\-–—#]+");
     private static final Pattern MULTISPACE = Pattern.compile("\\s+");
@@ -43,6 +47,9 @@ public class DownloadQueryIntentParser {
         if (criteria.getSeriesNumber() == null) {
             builder.seriesNumber(parsed.number());
         }
+        if (criteria.getSeriesNumberEnd() == null && parsed.numberEnd() != null) {
+            builder.seriesNumberEnd(parsed.numberEnd());
+        }
         if (criteria.getSequenceNumberType() == null || criteria.getSequenceNumberType().isAuto()) {
             builder.sequenceNumberType(parsed.sequenceNumberType());
         }
@@ -67,6 +74,26 @@ public class DownloadQueryIntentParser {
             return Optional.empty();
         }
 
+        Matcher explicitRange = EXPLICIT_RANGE_MARKER.matcher(value);
+        ParsedNumberIntent bestRange = null;
+        while (explicitRange.find()) {
+            String marker = explicitRange.group(1);
+            String startText = explicitRange.group(2) != null ? explicitRange.group(2) : explicitRange.group(4);
+            String endText = explicitRange.group(3) != null ? explicitRange.group(3) : explicitRange.group(5);
+            Float start = parseNumber(startText);
+            Float end = parseNumber(endText);
+            if (start == null || end == null || looksLikeYear(start) || looksLikeYear(end)) {
+                continue;
+            }
+            String cleanTitle = cleanExplicitTitle(value, explicitRange);
+            if (!cleanTitle.isBlank()) {
+                bestRange = new ParsedNumberIntent(cleanTitle, Math.min(start, end), Math.max(start, end), sequenceTypeForExplicitMarker(marker, contentKind));
+            }
+        }
+        if (bestRange != null) {
+            return Optional.of(bestRange);
+        }
+
         Matcher explicit = EXPLICIT_NUMBER_MARKER.matcher(value);
         ParsedNumberIntent best = null;
         while (explicit.find()) {
@@ -78,11 +105,23 @@ public class DownloadQueryIntentParser {
             }
             String cleanTitle = cleanExplicitTitle(value, explicit);
             if (!cleanTitle.isBlank()) {
-                best = new ParsedNumberIntent(cleanTitle, number, sequenceTypeForExplicitMarker(marker, contentKind));
+                best = new ParsedNumberIntent(cleanTitle, number, null, sequenceTypeForExplicitMarker(marker, contentKind));
             }
         }
         if (best != null) {
             return Optional.of(best);
+        }
+
+        Matcher trailingRange = TRAILING_RANGE.matcher(value.trim());
+        if (trailingRange.matches()) {
+            Float start = parseNumber(trailingRange.group(2));
+            Float end = parseNumber(trailingRange.group(3));
+            if (start != null && end != null && !looksLikeYear(start) && !looksLikeYear(end)) {
+                String cleanTitle = cleanTitle(trailingRange.group(1));
+                return cleanTitle.isBlank()
+                        ? Optional.empty()
+                        : Optional.of(new ParsedNumberIntent(cleanTitle, Math.min(start, end), Math.max(start, end), sequenceTypeForTrailingNumber(contentKind)));
+            }
         }
 
         Matcher trailing = TRAILING_NUMBER.matcher(value.trim());
@@ -94,7 +133,7 @@ public class DownloadQueryIntentParser {
             return Optional.empty();
         }
         String cleanTitle = cleanTitle(trailing.group(1));
-        return cleanTitle.isBlank() ? Optional.empty() : Optional.of(new ParsedNumberIntent(cleanTitle, number, sequenceTypeForTrailingNumber(contentKind)));
+        return cleanTitle.isBlank() ? Optional.empty() : Optional.of(new ParsedNumberIntent(cleanTitle, number, null, sequenceTypeForTrailingNumber(contentKind)));
     }
 
     private boolean isSequentialSearch(DownloadSearchCriteria criteria) {
@@ -191,10 +230,13 @@ public class DownloadQueryIntentParser {
         return DownloadSequenceNumberType.VOLUME;
     }
 
-    record ParsedNumberIntent(String cleanTitle, Float number, DownloadSequenceNumberType sequenceNumberType) {
+    record ParsedNumberIntent(String cleanTitle, Float number, Float numberEnd, DownloadSequenceNumberType sequenceNumberType) {
         @Override
         public String toString() {
-            return cleanTitle + " " + sequenceNumberType + " " + String.format(Locale.ROOT, "%.2f", number);
+            String numberText = numberEnd == null
+                    ? String.format(Locale.ROOT, "%.2f", number)
+                    : String.format(Locale.ROOT, "%.2f-%.2f", number, numberEnd);
+            return cleanTitle + " " + sequenceNumberType + " " + numberText;
         }
     }
 }

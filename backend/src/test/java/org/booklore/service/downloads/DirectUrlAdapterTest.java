@@ -207,6 +207,74 @@ class DirectUrlAdapterTest {
     }
 
     @Test
+    void search_webtoonKeywordSearchWithEpisodeRange_returnsEveryRequestedViewerUrl() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/search", exchange -> {
+            byte[] body = """
+                    <html><body>
+                      <a href="https://www.webtoons.com/en/fantasy/surviving-the-game-as-a-barbarian/list?title_no=5515" class="link _card_item" data-title-no="5515" data-webtoon-type="WEBTOON">
+                        <strong class="title">Surviving the Game as a Barbarian</strong>
+                        <div class="author">Jung Yoon-kang</div>
+                      </a>
+                    </body></html>
+                    """.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "text/html");
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.createContext("/episodes", exchange -> {
+            byte[] body = """
+                    <html><body>
+                      <a href="https://www.webtoons.com/en/fantasy/surviving-the-game-as-a-barbarian/s3-ep-145/viewer?title_no=5515&episode_no=145">S3 Ep 145</a>
+                      <a href="https://www.webtoons.com/en/fantasy/surviving-the-game-as-a-barbarian/s3-ep-146/viewer?title_no=5515&episode_no=146">S3 Ep 146</a>
+                    </body></html>
+                    """.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "text/html");
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+
+        try {
+            DownloadSourceEntity source = DownloadSourceEntity.builder()
+                    .name("Webtoons")
+                    .type(DownloadSourceType.DIRECT_URL)
+                    .configJson("""
+                            {
+                              "galleryDl": {
+                                "enabled": true,
+                                "metadataProbeEnabled": false,
+                                "webtoons": {
+                                  "searchUrlTemplate": "http://127.0.0.1:%d/search?keyword={query}",
+                                  "episodeListUrlTemplate": "http://127.0.0.1:%d/episodes?title_no={titleNo}&page={page}",
+                                  "maxResults": 3
+                                }
+                              }
+                            }
+                            """.formatted(server.getAddress().getPort(), server.getAddress().getPort()))
+                    .build();
+            DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                    .query("Surviving the Game as a Barbarian")
+                    .contentKind(DownloadContentKind.WEBTOON)
+                    .seriesNumber(145f)
+                    .seriesNumberEnd(146f)
+                    .preferredFormats(List.of(DownloadFormat.CBZ))
+                    .build();
+
+            var results = adapter.search(source, criteria);
+
+            assertEquals(2, results.size());
+            assertEquals(List.of(145f, 146f), results.stream().map(result -> result.getSeriesNumber()).toList());
+            assertTrue(results.stream().allMatch(result -> result.getDownloadUrl().contains("/viewer?")));
+            assertTrue(results.stream().noneMatch(result -> result.getDownloadUrl().contains("/list?")));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     void search_webtoonKeywordSearch_doesNotStampCanonicalQueryMetadataOnEveryCandidate() throws Exception {
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/search", exchange -> {

@@ -14,7 +14,8 @@
     "clearCanonical": "Déverrouiller",
     "details": "Détails",
     "close": "Fermer",
-    "acquireDisabledLowScore": "Score inférieur à {{threshold}}/100 : candidat masqué/faible, acquisition bloquée."
+    "acquireDisabledLowScore": "Score inférieur à {{threshold}}/100 : candidat masqué/faible, acquisition bloquée.",
+    "archiveJob": "Archiver le job"
   },
   "search": {
     "placeholder": "Rechercher par titre, auteur, ISBN, série, ou coller une URL directe ci-dessous",
@@ -36,7 +37,10 @@
     "directUrl": "URL directe",
     "progressStarting": "Recherche en cours sur les sources rapides... {{seconds}} s",
     "progressFlareSolverr": "Anna / FlareSolverr peut prendre quelques secondes ; les sources sont interrogées en parallèle... {{seconds}} s",
-    "progressSlow": "Toujours en cours : une source lente est isolée, les autres résultats seront classés dès réception... {{seconds}} s"
+    "progressSlow": "Toujours en cours : une source lente est isolée, les autres résultats seront classés dès réception... {{seconds}} s",
+    "seriesNumberEnd": "Jusqu’au numéro",
+    "seriesNumberEndPlaceholder": "Fin de range optionnelle",
+    "preferredLanguage": "Langue préférée"
   },
   "contentKinds": {
     "AUTO": "Auto",
@@ -124,7 +128,9 @@
     "jobFinishedDetail": "Le job #{{id}} s'est terminé avec le statut {{status}}.",
     "jobFailedSummary": "Job en échec",
     "resolveRequiredDetail": "Renseigne une requête, un titre, un ISBN ou une série avant de résoudre l'œuvre canonique.",
-    "onlyWeakResultsDetail": "{{count}} candidat(s) retourné(s), mais tous sous {{threshold}}/100. Ils sont masqués pour éviter une mauvaise acquisition."
+    "onlyWeakResultsDetail": "{{count}} candidat(s) retourné(s), mais tous sous {{threshold}}/100. Ils sont masqués pour éviter une mauvaise acquisition.",
+    "jobArchivedDetail": "Le job #{{id}} a été archivé de la liste des téléchargements.",
+    "archiveError": "L’archivage du job a échoué."
   },
   "resolve": {
     "title": "Œuvres canoniques candidates",
@@ -156,7 +162,8 @@
     "chapterIncompatible": "Chapitre incompatible",
     "wrongNumber": "Mauvais numéro",
     "unsupportedMedia": "Média rejeté",
-    "deferredFormat": "Format à valider"
+    "deferredFormat": "Format à valider",
+    "languageMismatch": "Langue incompatible"
   },
   "qualityTooltips": {
     "weakScore": "Score sous le seuil affiché par défaut : à vérifier avant toute acquisition.",
@@ -164,6 +171,18 @@
     "chapterIncompatible": "La demande cible un volume/issue, mais ce résultat est typé chapitre/épisode.",
     "wrongNumber": "Le numéro demandé ne correspond pas clairement au résultat retourné.",
     "unsupportedMedia": "Le candidat contient des marqueurs vidéo ou média non livre/comic attendus.",
-    "deferredFormat": "Torrent/NZB : le format exact sera confirmé après téléchargement des métadonnées/fichiers."
+    "deferredFormat": "Torrent/NZB : le format exact sera confirmé après téléchargement des métadonnées/fichiers.",
+    "languageMismatch": "La langue ou le script du candidat ne correspond pas à la langue/requête demandée."
+  },
+  "languages": {
+    "auto": "Auto",
+    "fr": "Français",
+    "en": "Anglais",
+    "es": "Espagnol",
+    "it": "Italien",
+    "de": "Allemand",
+    "zh": "Chinois",
+    "ja": "Japonais",
+    "ko": "Coréen"
   }
 }

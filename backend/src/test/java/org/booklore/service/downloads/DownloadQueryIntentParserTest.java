@@ -74,6 +74,22 @@ class DownloadQueryIntentParserTest {
     }
 
     @Test
+    void enrich_webtoonEpisodeRange_setsSeriesNumberRange() {
+        DownloadSearchCriteria enriched = parser.enrich(DownloadSearchCriteria.builder()
+                .query("Surviving the Game as a Barbarian ep 145-146")
+                .contentKind(DownloadContentKind.WEBTOON)
+                .preferredFormats(List.of(DownloadFormat.CBZ))
+                .build());
+
+        assertEquals("Surviving the Game as a Barbarian", enriched.getQuery());
+        assertEquals("Surviving the Game as a Barbarian", enriched.getTitle());
+        assertEquals("Surviving the Game as a Barbarian", enriched.getSeriesName());
+        assertEquals(145f, enriched.getSeriesNumber());
+        assertEquals(146f, enriched.getSeriesNumberEnd());
+        assertEquals(DownloadSequenceNumberType.EPISODE, enriched.getSequenceNumberType());
+    }
+
+    @Test
     void enrich_bookQuery_doesNotTreatYearAsVolume() {
         DownloadSearchCriteria enriched = parser.enrich(DownloadSearchCriteria.builder()
                 .query("Dune 1965")
