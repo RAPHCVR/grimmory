@@ -25,6 +25,11 @@ public class DownloadScoringService {
     private static final Pattern COMPACT_NUMBER_MARKER = Pattern.compile("(?iu)\\b(vol(?:ume)?|v|t(?:ome|omo)?|ch(?:apter)?|chapitre)\\.?\\s*0*(\\d{1,5})\\b");
     private static final Pattern ANY_NUMBER_MARKER = Pattern.compile("(?iu)(?:\\b(?:vol(?:ume)?|v|t(?:ome|omo)?|ch(?:apter)?|chapitre)\\.?\\s*0*\\d{1,5}\\b|#\\s*0*\\d{1,5}\\b|第\\s*0*\\d{1,5}\\s*巻)");
     private static final Pattern EXPLICIT_WEBTOON_EPISODE_MARKER = Pattern.compile("(?iu)\\b(?:ep(?:isode)?|ch(?:apter)?|chapitre)\\.?\\s*0*(\\d{1,5})\\b|#\\s*0*(\\d{1,5})\\b");
+    private static final Set<String> BOOK_DERIVATIVE_TOKENS = Set.of(
+            "review", "reviews", "summary", "summaries", "analysis", "analyses",
+            "guide", "guides", "study", "workbook", "commentary", "criticism",
+            "critique", "résumé", "resume", "fiche", "synthese", "synthèse"
+    );
     private static final int MIN_REASONABLE_SIZE_BYTES = 2 * 1024;
 
     public DownloadScoreBreakdown score(DownloadSearchCriteria criteria, NormalizedDownloadResult result) {
@@ -172,6 +177,7 @@ public class DownloadScoringService {
 
         score += scoreWebtoonEpisodeSource(criteria, result, reasons);
         score += scoreWebtoonEpisodeTitleTieBreaker(criteria, result, reasons);
+        score += scoreDerivativeBookResult(criteria, result, reasons);
 
         int clamped = Math.max(0, Math.min(100, score));
         if (clamped != score) {
@@ -412,6 +418,41 @@ public class DownloadScoringService {
         return result == null
                 || result.getAcquisitionType() == null
                 || result.getAcquisitionType() != org.booklore.model.enums.DownloadAcquisitionType.EXTERNAL_STACKS;
+    }
+
+    private int scoreDerivativeBookResult(DownloadSearchCriteria criteria, NormalizedDownloadResult result, List<String> reasons) {
+        if (criteria == null || result == null) {
+            return 0;
+        }
+        DownloadContentKind requestedKind = criteria.getContentKind() == null ? DownloadContentKind.AUTO : criteria.getContentKind();
+        if (requestedKind != DownloadContentKind.BOOK && result.getContentKind() != DownloadContentKind.BOOK) {
+            return 0;
+        }
+        String queryEvidence = String.join(" ", safe(criteria.effectiveQuery()), safe(criteria.getTitle()));
+        String resultEvidence = String.join(" ", safe(result.getTitle()), safe(result.getSeriesName()), safe(result.getRawJson()));
+        if (containsBookDerivativeIntent(resultEvidence) && !containsBookDerivativeIntent(queryEvidence)) {
+            reasons.add("-45 derivative book payload not requested");
+            return -45;
+        }
+        return 0;
+    }
+
+    private boolean containsBookDerivativeIntent(String value) {
+        String normalized = normalize(value);
+        if (normalized.isBlank()) {
+            return false;
+        }
+        Set<String> tokens = tokens(normalized);
+        if (tokens.stream().anyMatch(BOOK_DERIVATIVE_TOKENS::contains)) {
+            return true;
+        }
+        return normalized.contains("study guide")
+                || normalized.contains("book summary")
+                || normalized.contains("reading guide")
+                || normalized.contains("review of")
+                || normalized.contains("analyse de")
+                || normalized.contains("résumé de")
+                || normalized.contains("resume de");
     }
 
     private boolean queryContainsMoreThanAuthor(String query, NormalizedDownloadResult result) {

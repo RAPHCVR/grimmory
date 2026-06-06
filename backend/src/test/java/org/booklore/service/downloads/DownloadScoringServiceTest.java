@@ -109,6 +109,40 @@ class DownloadScoringServiceTest {
     }
 
     @Test
+    void score_bookDerivativeSummaryIsPenalizedUnlessRequested() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("michelle obama becoming")
+                .title("Becoming")
+                .author("Michelle Obama")
+                .contentKind(DownloadContentKind.BOOK)
+                .preferredFormats(List.of(DownloadFormat.EPUB))
+                .build();
+
+        NormalizedDownloadResult actualBook = NormalizedDownloadResult.builder()
+                .title("Becoming")
+                .authors(List.of("Michelle Obama"))
+                .format(DownloadFormat.EPUB)
+                .contentKind(DownloadContentKind.BOOK)
+                .downloadUrl("https://example.test/becoming.epub")
+                .build();
+
+        NormalizedDownloadResult summary = NormalizedDownloadResult.builder()
+                .title("Becoming--Michelle Obama (Book Summary)")
+                .authors(List.of("Michelle Obama"))
+                .format(DownloadFormat.EPUB)
+                .contentKind(DownloadContentKind.BOOK)
+                .downloadUrl("https://example.test/becoming-summary.epub")
+                .build();
+
+        var actualScore = service.score(criteria, actualBook);
+        var summaryScore = service.score(criteria, summary);
+
+        assertTrue(actualScore.getScore() > summaryScore.getScore());
+        assertTrue(summaryScore.getScore() < 70);
+        assertTrue(summaryScore.getReasons().contains("-45 derivative book payload not requested"));
+    }
+
+    @Test
     void score_releaseTitleWithExtraWords_stillMatchesQueryTokens() {
         DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
                 .query("One Piece 100")
