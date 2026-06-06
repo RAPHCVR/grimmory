@@ -143,6 +143,31 @@ class DownloadScoringServiceTest {
     }
 
     @Test
+    void score_preferredLanguageUsesEditionMarkerWhenLanguageFieldMissing() {
+        DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
+                .query("michelle obama becoming")
+                .title("Becoming")
+                .author("Michelle Obama")
+                .preferredLanguage("fr")
+                .contentKind(DownloadContentKind.BOOK)
+                .preferredFormats(List.of(DownloadFormat.EPUB))
+                .build();
+
+        NormalizedDownloadResult koreanEdition = NormalizedDownloadResult.builder()
+                .title("Becoming (Korean Edition)")
+                .authors(List.of("Michelle Obama"))
+                .format(DownloadFormat.EPUB)
+                .contentKind(DownloadContentKind.BOOK)
+                .downloadUrl("https://example.test/becoming-ko.epub")
+                .build();
+
+        var score = service.score(criteria, koreanEdition);
+
+        assertTrue(score.getScore() < 70);
+        assertTrue(score.getReasons().contains("-45 preferred language mismatch"));
+    }
+
+    @Test
     void score_releaseTitleWithExtraWords_stillMatchesQueryTokens() {
         DownloadSearchCriteria criteria = DownloadSearchCriteria.builder()
                 .query("One Piece 100")

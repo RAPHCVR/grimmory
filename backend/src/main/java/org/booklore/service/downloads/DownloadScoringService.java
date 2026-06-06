@@ -195,7 +195,8 @@ public class DownloadScoringService {
         }
         int score = 0;
         String preferredLanguage = normalizeLanguage(criteria.getPreferredLanguage());
-        String resultLanguage = normalizeLanguage(result.getLanguage());
+        String resultEvidence = String.join(" ", safe(result.getTitle()), safe(result.getSeriesName()), safe(result.getRawJson()));
+        String resultLanguage = firstNonBlank(normalizeLanguage(result.getLanguage()), inferLanguageFromText(resultEvidence));
         if (!isBlank(preferredLanguage)) {
             if (!isBlank(resultLanguage) && languageMatches(preferredLanguage, resultLanguage)) {
                 score += 30;
@@ -207,7 +208,6 @@ public class DownloadScoringService {
         }
 
         String queryEvidence = String.join(" ", safe(criteria.effectiveQuery()), safe(criteria.getTitle()), safe(criteria.getSeriesName()));
-        String resultEvidence = String.join(" ", safe(result.getTitle()), safe(result.getSeriesName()), safe(result.getRawJson()));
         if (isLatinDominant(queryEvidence) && isEastAsianDominant(resultEvidence)) {
             if (isBlank(preferredLanguage) || isLatinLanguage(preferredLanguage)) {
                 score -= 35;
@@ -859,6 +859,38 @@ public class DownloadScoringService {
             case "portuguese", "por" -> "pt";
             default -> normalized.matches("[a-z]{2,3}") ? normalized : null;
         };
+    }
+
+    private String inferLanguageFromText(String value) {
+        String normalized = normalize(value);
+        if (normalized.isBlank()) {
+            return null;
+        }
+        if (normalized.contains("french edition") || hasToken(normalized, "french") || hasToken(normalized, "français") || hasToken(normalized, "francaise") || hasToken(normalized, "française")) {
+            return "fr";
+        }
+        if (normalized.contains("english edition") || hasToken(normalized, "english")) {
+            return "en";
+        }
+        if (normalized.contains("spanish edition") || hasToken(normalized, "spanish") || hasToken(normalized, "castellano")) {
+            return "es";
+        }
+        if (normalized.contains("italian edition") || hasToken(normalized, "italian")) {
+            return "it";
+        }
+        if (normalized.contains("german edition") || hasToken(normalized, "german")) {
+            return "de";
+        }
+        if (normalized.contains("chinese edition") || hasToken(normalized, "chinese")) {
+            return "zh";
+        }
+        if (normalized.contains("japanese edition") || hasToken(normalized, "japanese")) {
+            return "ja";
+        }
+        if (normalized.contains("korean edition") || hasToken(normalized, "korean")) {
+            return "ko";
+        }
+        return null;
     }
 
     private boolean languageMatches(String preferredLanguage, String resultLanguage) {
