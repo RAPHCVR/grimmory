@@ -364,16 +364,17 @@ public class DownloadPipelineManager {
         if (result == null || result.getSource() == null || result.getSource().getId() == null) {
             return Optional.empty();
         }
+        String downloadUrl = trimToNull(result.getDownloadUrl());
         String externalId = trimToNull(result.getExternalId());
         String detailsUrl = trimToNull(result.getDetailsUrl());
-        String downloadUrl = trimToNull(result.getDownloadUrl());
-        if (externalId == null && detailsUrl == null && downloadUrl == null) {
+        String fingerprint = firstNonBlank(downloadUrl, externalId, detailsUrl);
+        if (fingerprint == null) {
             return Optional.empty();
         }
         return jobRepository.findReusableByResultFingerprint(
                         result.getSource().getId(),
-                        externalId,
-                        detailsUrl,
+                        downloadUrl == null ? externalId : null,
+                        downloadUrl == null && externalId == null ? detailsUrl : null,
                         downloadUrl,
                         REUSABLE_JOB_STATUSES
                 )
@@ -382,7 +383,7 @@ public class DownloadPipelineManager {
     }
 
     private String resultFingerprint(DownloadResultEntity result) {
-        return firstNonBlank(result.getExternalId(), result.getDetailsUrl(), result.getDownloadUrl(), String.valueOf(result.getId()));
+        return firstNonBlank(result.getDownloadUrl(), result.getExternalId(), result.getDetailsUrl(), String.valueOf(result.getId()));
     }
 
     private String trimToNull(String value) {

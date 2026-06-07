@@ -345,13 +345,85 @@ class DownloadPipelineManagerTest {
                 .build();
 
         when(resultRepository.findWithSearchAndSourceById(100L)).thenReturn(Optional.of(selectedResult));
-        when(jobRepository.findReusableByResultFingerprint(eq(1L), eq("bcdd1d9448f4939baa1e7f75fa7b8be5"), eq("https://annas-archive.test/md5/bcdd1d9448f4939baa1e7f75fa7b8be5"), eq(null), any()))
+        when(jobRepository.findReusableByResultFingerprint(eq(1L), eq("bcdd1d9448f4939baa1e7f75fa7b8be5"), eq(null), eq(null), any()))
                 .thenReturn(List.of(existingJob));
 
         DownloadJobEntity queued = manager.queueResult(100L, null, null, false, 90);
 
         assertSame(existingJob, queued);
         verify(targetResolver, org.mockito.Mockito.never()).resolve(any(), any(), org.mockito.ArgumentMatchers.anyBoolean(), any());
+    }
+
+    @Test
+    void queueResult_doesNotReuseDifferentWebtoonEpisodeWithSameSeriesDetailsUrl() {
+        DownloadResultRepository resultRepository = mock(DownloadResultRepository.class);
+        DownloadJobRepository jobRepository = mock(DownloadJobRepository.class);
+        DownloadTargetResolver targetResolver = mock(DownloadTargetResolver.class);
+
+        DownloadPipelineManager manager = new DownloadPipelineManager(
+                new AppProperties(),
+                mock(DownloadSourceRepository.class),
+                mock(DownloadSearchRepository.class),
+                resultRepository,
+                jobRepository,
+                mock(DownloadAdapterRegistry.class),
+                mock(DownloadExecutorRegistry.class),
+                mock(DownloadScoringService.class),
+                mock(DownloadNamingService.class),
+                targetResolver,
+                mock(DownloadedCbxMetadataService.class),
+                mock(BookdropDeliveryService.class),
+                mock(DownloadQueryIntentParser.class),
+                mock(DownloadCanonicalResolver.class),
+                new ObjectMapper()
+        );
+
+        DownloadSourceEntity source = source(4L, "Webtoons", DownloadSourceType.DIRECT_URL);
+        DownloadSearchEntity search = DownloadSearchEntity.builder()
+                .id(10L)
+                .query("surviving the game as a barbarian ep 145")
+                .contentKind(DownloadContentKind.WEBTOON)
+                .build();
+        DownloadResultEntity selectedResult = result(145L, search, source, "S3 Ep 145 Warriors Smile", 100, DownloadAcquisitionType.CLI_GALLERY_DL);
+        selectedResult.setContentKind(DownloadContentKind.WEBTOON);
+        selectedResult.setFormat(DownloadFormat.CBZ);
+        selectedResult.setDetailsUrl("https://www.webtoons.com/en/fantasy/surviving-the-game-as-a-barbarian/list?title_no=5515");
+        selectedResult.setDownloadUrl("https://www.webtoons.com/en/fantasy/surviving-the-game-as-a-barbarian/s3-ep-145-warriors-smile/viewer?title_no=5515&episode_no=145");
+        DownloadJobEntity episode146Job = DownloadJobEntity.builder()
+                .id(31L)
+                .search(search)
+                .result(selectedResult)
+                .source(source)
+                .status(DownloadJobStatus.PENDING_REVIEW)
+                .confidenceScore(100)
+                .build();
+
+        when(resultRepository.findWithSearchAndSourceById(145L)).thenReturn(Optional.of(selectedResult));
+        when(jobRepository.findReusableByResultFingerprint(
+                eq(4L),
+                eq(null),
+                eq(null),
+                eq("https://www.webtoons.com/en/fantasy/surviving-the-game-as-a-barbarian/s3-ep-145-warriors-smile/viewer?title_no=5515&episode_no=145"),
+                any()
+        )).thenReturn(List.of());
+        when(targetResolver.resolve(null, null, false, DownloadFormat.CBZ)).thenReturn(DownloadTargetResolver.ResolvedTarget.empty());
+        when(jobRepository.save(any(DownloadJobEntity.class))).thenAnswer(invocation -> {
+            DownloadJobEntity job = invocation.getArgument(0);
+            job.setId(99L);
+            return job;
+        });
+
+        DownloadJobEntity queued = manager.queueResult(145L, null, null, false, 90);
+
+        assertEquals(99L, queued.getId());
+        verify(jobRepository).findReusableByResultFingerprint(
+                eq(4L),
+                eq(null),
+                eq(null),
+                eq("https://www.webtoons.com/en/fantasy/surviving-the-game-as-a-barbarian/s3-ep-145-warriors-smile/viewer?title_no=5515&episode_no=145"),
+                any()
+        );
+        verify(targetResolver).resolve(null, null, false, DownloadFormat.CBZ);
     }
 
     private DownloadSourceEntity source(Long id, String name, DownloadSourceType type) {
