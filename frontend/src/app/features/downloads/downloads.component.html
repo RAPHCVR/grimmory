@@ -308,6 +308,17 @@
           <input id="download-series-name" pInputText [(ngModel)]="seriesName"/>
         </div>
         <div class="field">
+          <label for="download-sequence-number-type">{{ t('search.sequenceNumberType') }}</label>
+          <p-select
+            inputId="download-sequence-number-type"
+            [options]="sequenceNumberTypeOptions"
+            [(ngModel)]="sequenceNumberType"
+            optionLabel="label"
+            optionValue="value"
+            [appendTo]="'body'">
+          </p-select>
+        </div>
+        <div class="field">
           <label for="download-series-number">{{ t('search.seriesNumber') }}</label>
           <p-inputnumber inputId="download-series-number" [(ngModel)]="seriesNumber" [min]="0" [maxFractionDigits]="2"></p-inputnumber>
         </div>

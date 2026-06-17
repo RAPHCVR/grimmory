@@ -33,6 +33,7 @@
     "author": "Auteur",
     "isbn": "ISBN",
     "seriesName": "Série",
+    "sequenceNumberType": "Type de numéro",
     "seriesNumber": "Numéro",
     "directUrl": "URL directe",
     "progressStarting": "Recherche en cours sur les sources rapides... {{seconds}} s",
@@ -48,6 +49,13 @@
     "MANGA": "Manga",
     "COMIC": "Comics / BD",
     "WEBTOON": "Webtoon"
+  },
+  "sequenceNumberTypes": {
+    "AUTO": "Auto",
+    "VOLUME": "Volume",
+    "ISSUE": "Issue",
+    "CHAPTER": "Chapitre",
+    "EPISODE": "Épisode"
   },
   "acquisitionTypes": {
     "DIRECT_FILE": "Fichier direct",
@@ -137,6 +145,9 @@
     "description": "Choisis d'abord l'identité publique/catalogue, puis lance la recherche avec l'œuvre verrouillée.",
     "noneSummary": "Aucune correspondance canonique",
     "noneDetail": "Aucun resolver public n'a retourné de candidat assez fiable.",
+    "noneThenSearchDetail": "Aucun candidat canonique fiable ; je lance la recherche sources sans œuvre verrouillée.",
+    "selectionRequiredSummary": "Choix canonique requis",
+    "selectionRequiredDetail": "Des œuvres candidates sont affichées. Choisis “Utiliser cette œuvre” ou réinitialise la recherche avant de lancer les sources.",
     "error": "La résolution canonique a échoué.",
     "appliedSummary": "Œuvre canonique sélectionnée",
     "appliedDetail": "{{title}} est maintenant verrouillée dans les champs de recherche.",

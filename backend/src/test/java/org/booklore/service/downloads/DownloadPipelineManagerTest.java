@@ -20,6 +20,7 @@ import org.booklore.service.downloads.exception.DownloadSourceException;
 import org.booklore.service.downloads.executor.DownloadExecutionRequest;
 import org.booklore.service.downloads.executor.DownloadExecutor;
 import org.booklore.service.downloads.executor.DownloadExecutorRegistry;
+import org.hibernate.LazyInitializationException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import tools.jackson.databind.ObjectMapper;
@@ -37,6 +38,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -145,6 +147,8 @@ class DownloadPipelineManagerTest {
         when(jobRepository.findById(55L)).thenReturn(Optional.of(job));
         when(jobRepository.save(any(DownloadJobEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(resultRepository.findAllBySearchIdOrderByScoreDescIdAsc(10L)).thenReturn(List.of(failingResult, fallbackResult));
+        when(resultRepository.findWithSearchAndSourceById(100L)).thenReturn(Optional.of(failingResult));
+        when(resultRepository.findWithSearchAndSourceById(101L)).thenReturn(Optional.of(fallbackResult));
         when(executorRegistry.executorFor(DownloadAcquisitionType.EXTERNAL_STACKS)).thenReturn(failingExecutor);
         when(executorRegistry.executorFor(DownloadAcquisitionType.DIRECT_FILE)).thenReturn(fallbackExecutor);
         when(failingExecutor.download(any(), any())).thenThrow(new DownloadSourceException("Mirror archive.org failed"));
@@ -227,6 +231,8 @@ class DownloadPipelineManagerTest {
         when(jobRepository.findById(55L)).thenReturn(Optional.of(job));
         when(jobRepository.save(any(DownloadJobEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(resultRepository.findAllBySearchIdOrderByScoreDescIdAsc(10L)).thenReturn(List.of(failingResult, fallbackResult));
+        when(resultRepository.findWithSearchAndSourceById(100L)).thenReturn(Optional.of(failingResult));
+        when(resultRepository.findWithSearchAndSourceById(101L)).thenReturn(Optional.of(fallbackResult));
         when(executorRegistry.executorFor(DownloadAcquisitionType.EXTERNAL_STACKS)).thenReturn(failingExecutor);
         when(executorRegistry.executorFor(DownloadAcquisitionType.DIRECT_FILE)).thenReturn(fallbackExecutor);
         when(failingExecutor.download(any(), any())).thenThrow(new DownloadSourceException("Stacks download failed: Mirror randombook.org failed"));
@@ -248,6 +254,94 @@ class DownloadPipelineManagerTest {
         assertEquals(2L, processed.getSource().getId());
         verify(failingExecutor).download(any(), any());
         verify(fallbackExecutor).download(any(), any());
+    }
+
+    @Test
+    void processQueuedJob_reloadsFallbackResultBeforeExecutingAttempt() {
+        AppProperties appProperties = new AppProperties();
+        appProperties.setBookdropFolder(tempDir.toString());
+
+        DownloadResultRepository resultRepository = mock(DownloadResultRepository.class);
+        DownloadJobRepository jobRepository = mock(DownloadJobRepository.class);
+        DownloadExecutorRegistry executorRegistry = mock(DownloadExecutorRegistry.class);
+        DownloadNamingService namingService = mock(DownloadNamingService.class);
+        DownloadedCbxMetadataService downloadedCbxMetadataService = mock(DownloadedCbxMetadataService.class);
+        BookdropDeliveryService bookdropDeliveryService = mock(BookdropDeliveryService.class);
+
+        DownloadPipelineManager manager = new DownloadPipelineManager(
+                appProperties,
+                mock(DownloadSourceRepository.class),
+                mock(DownloadSearchRepository.class),
+                resultRepository,
+                jobRepository,
+                mock(DownloadAdapterRegistry.class),
+                executorRegistry,
+                mock(DownloadScoringService.class),
+                namingService,
+                mock(DownloadTargetResolver.class),
+                downloadedCbxMetadataService,
+                bookdropDeliveryService,
+                mock(DownloadQueryIntentParser.class),
+                mock(DownloadCanonicalResolver.class),
+                new ObjectMapper()
+        );
+
+        DownloadSourceEntity stacksSource = source(1L, "Stacks", DownloadSourceType.ANNAS_ARCHIVE_API);
+        DownloadSourceEntity fallbackSource = source(2L, "Direct", DownloadSourceType.DIRECT_URL);
+        DownloadSearchEntity search = DownloadSearchEntity.builder()
+                .id(10L)
+                .query("fallback lazy proxy")
+                .contentKind(DownloadContentKind.BOOK)
+                .build();
+        DownloadResultEntity failingResult = result(100L, search, stacksSource, "Mirror candidate", 100, DownloadAcquisitionType.EXTERNAL_STACKS);
+        DownloadResultEntity lazyFallbackProxy = mock(DownloadResultEntity.class);
+        when(lazyFallbackProxy.getId()).thenReturn(101L);
+        when(lazyFallbackProxy.getScore()).thenReturn(90);
+        when(lazyFallbackProxy.getSource()).thenReturn(fallbackSource);
+        when(lazyFallbackProxy.getExternalId()).thenThrow(new LazyInitializationException("DownloadResultEntity.externalId"));
+        DownloadResultEntity hydratedFallback = result(101L, search, fallbackSource, "Hydrated fallback", 90, DownloadAcquisitionType.DIRECT_FILE);
+        DownloadJobEntity job = DownloadJobEntity.builder()
+                .id(55L)
+                .search(search)
+                .result(failingResult)
+                .source(stacksSource)
+                .status(DownloadJobStatus.QUEUED)
+                .confidenceScore(100)
+                .autoFinalize(false)
+                .confidenceThreshold(90)
+                .fallbackEnabled(true)
+                .build();
+
+        DownloadExecutor failingExecutor = mock(DownloadExecutor.class);
+        DownloadExecutor fallbackExecutor = mock(DownloadExecutor.class);
+
+        when(jobRepository.findWithSearchAndResultAndSourceById(55L)).thenReturn(Optional.of(job));
+        when(jobRepository.findById(55L)).thenReturn(Optional.of(job));
+        when(jobRepository.save(any(DownloadJobEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(resultRepository.findAllBySearchIdOrderByScoreDescIdAsc(10L)).thenReturn(List.of(failingResult, lazyFallbackProxy));
+        when(resultRepository.findWithSearchAndSourceById(100L)).thenReturn(Optional.of(failingResult));
+        when(resultRepository.findWithSearchAndSourceById(101L)).thenReturn(Optional.of(hydratedFallback));
+        when(executorRegistry.executorFor(DownloadAcquisitionType.EXTERNAL_STACKS)).thenReturn(failingExecutor);
+        when(executorRegistry.executorFor(DownloadAcquisitionType.DIRECT_FILE)).thenReturn(fallbackExecutor);
+        when(failingExecutor.download(any(), any())).thenThrow(new DownloadSourceException("Stacks download failed: Mirror randombook.org failed"));
+        when(fallbackExecutor.download(any(), any())).thenAnswer(invocation -> {
+            DownloadExecutionRequest request = invocation.getArgument(0);
+            Path downloaded = request.getTargetPartFile().resolveSibling("fallback.epub");
+            Files.writeString(downloaded, "EPUB payload");
+            return downloaded;
+        });
+        when(namingService.buildFinalFileName(any(), eq(DownloadFormat.EPUB))).thenReturn("Hydrated fallback.epub");
+        doNothing().when(downloadedCbxMetadataService).embedIfApplicable(any(), any(), any());
+        when(bookdropDeliveryService.deliver(any(), any(), any(), eq("Hydrated fallback.epub")))
+                .thenReturn(new BookdropDeliveryService.DeliveryResult(tempDir.resolve("Hydrated fallback.epub"), false));
+
+        DownloadJobEntity processed = manager.processQueuedJob(55L);
+
+        assertEquals(DownloadJobStatus.PENDING_REVIEW, processed.getStatus());
+        assertEquals(101L, processed.getResult().getId());
+        assertEquals(2L, processed.getSource().getId());
+        verify(fallbackExecutor).download(any(), any());
+        verify(resultRepository, atLeastOnce()).findWithSearchAndSourceById(101L);
     }
 
     @Test

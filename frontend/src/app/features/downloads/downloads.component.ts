@@ -131,6 +131,8 @@ export class DownloadsComponent implements OnInit, OnDestroy {
 
   contentKindOptions: SelectOption<DownloadContentKind>[] = DOWNLOAD_CONTENT_KINDS.map(value => ({label: this.contentKindLabel(value), value}));
   formatOptions: SelectOption<DownloadFormat>[] = DOWNLOAD_FORMATS.map(value => ({label: value, value}));
+  sequenceNumberTypeOptions: SelectOption<DownloadSequenceNumberType>[] = ['AUTO', 'VOLUME', 'ISSUE', 'CHAPTER', 'EPISODE']
+    .map(value => ({label: this.sequenceNumberTypeLabel(value as DownloadSequenceNumberType), value: value as DownloadSequenceNumberType}));
   languageOptions: SelectOption<string | null>[] = [
     {label: this.t.translate('downloads.languages.auto'), value: null},
     {label: this.t.translate('downloads.languages.fr'), value: 'fr'},
@@ -147,6 +149,8 @@ export class DownloadsComponent implements OnInit, OnDestroy {
   private searchProgressTimer?: ReturnType<typeof setInterval>;
   private searchStartedAt = 0;
   private canonicalSearchSignature: string | null = null;
+  private canonicalCandidateSearchSignature: string | null = null;
+  private lastNoCanonicalSearchSignature: string | null = null;
   private canonicalAppliedState: CanonicalAppliedState | null = null;
 
   constructor() {
@@ -178,6 +182,16 @@ export class DownloadsComponent implements OnInit, OnDestroy {
         severity: 'warn',
         summary: this.t.translate('downloads.toast.searchRequiredSummary'),
         detail: this.t.translate('downloads.toast.searchRequiredDetail')
+      });
+      return;
+    }
+
+    const requestSignature = this.requestSignature(request);
+    if (!this.selectedCanonicalCandidate && this.canonicalCandidates.length && this.canonicalCandidateSearchSignature === requestSignature) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: this.t.translate('downloads.resolve.selectionRequiredSummary'),
+        detail: this.t.translate('downloads.resolve.selectionRequiredDetail')
       });
       return;
     }
@@ -306,6 +320,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
   }
 
   private resolveBeforeSearch(request: DownloadSearchRequest): void {
+    const requestSignature = this.requestSignature(request);
     this.resolvingCanonical = true;
     this.searchError = null;
     this.downloadsService.resolve(request).pipe(
@@ -317,6 +332,8 @@ export class DownloadsComponent implements OnInit, OnDestroy {
       next: candidates => {
         this.canonicalCandidates = candidates ?? [];
         if (this.canonicalCandidates.length) {
+          this.canonicalCandidateSearchSignature = requestSignature;
+          this.lastNoCanonicalSearchSignature = null;
           this.results = [];
           this.allResults = [];
           this.hiddenWeakResultCount = 0;
@@ -329,6 +346,13 @@ export class DownloadsComponent implements OnInit, OnDestroy {
           this.markViewDirty();
           return;
         }
+        this.canonicalCandidateSearchSignature = null;
+        this.lastNoCanonicalSearchSignature = requestSignature;
+        this.messageService.add({
+          severity: 'info',
+          summary: this.t.translate('downloads.resolve.noneSummary'),
+          detail: this.t.translate('downloads.resolve.noneThenSearchDetail')
+        });
         this.runSourceSearch(request);
         this.markViewDirty();
       },
@@ -406,6 +430,8 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     }
     this.selectedCanonicalCandidate = candidate;
     this.canonicalCandidates = [];
+    this.canonicalCandidateSearchSignature = null;
+    this.lastNoCanonicalSearchSignature = null;
     this.canonicalSearchSignature = this.requestSignature(this.buildSearchRequest(false));
     this.canonicalAppliedState = this.captureCanonicalAppliedState();
     this.messageService.add({
@@ -553,6 +579,8 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     this.canonicalCandidates = [];
     this.selectedCanonicalCandidate = null;
     this.canonicalSearchSignature = null;
+    this.canonicalCandidateSearchSignature = null;
+    this.lastNoCanonicalSearchSignature = null;
     this.canonicalAppliedState = null;
     this.searchId = null;
     this.searchError = null;
@@ -701,6 +729,10 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     return this.t.translate(`downloads.contentKinds.${kind}`);
   }
 
+  sequenceNumberTypeLabel(type: DownloadSequenceNumberType): string {
+    return this.t.translate(`downloads.sequenceNumberTypes.${type}`);
+  }
+
   canonicalCandidateTitle(candidate: DownloadCanonicalCandidate): string {
     return candidate.resolvedSeriesName || candidate.seriesName || candidate.resolvedTitle || candidate.title || candidate.query || '-';
   }
@@ -718,7 +750,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
   canonicalCandidateMeta(candidate: DownloadCanonicalCandidate): string {
     const number = candidate.seriesNumber == null
       ? null
-      : `${candidate.sequenceNumberType && candidate.sequenceNumberType !== 'AUTO' ? candidate.sequenceNumberType.toLowerCase() : '#'} ${candidate.seriesNumber}`;
+      : `${candidate.sequenceNumberType && candidate.sequenceNumberType !== 'AUTO' ? this.sequenceNumberTypeLabel(candidate.sequenceNumberType) : '#'} ${candidate.seriesNumber}`;
     return [
       candidate.provider,
       this.contentKindLabel(candidate.contentKind),
@@ -747,7 +779,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
       return '';
     }
     const type = candidate.sequenceNumberType && candidate.sequenceNumberType !== 'AUTO'
-      ? candidate.sequenceNumberType.toLowerCase()
+      ? this.sequenceNumberTypeLabel(candidate.sequenceNumberType)
       : '#';
     return `${type} ${candidate.seriesNumber}`;
   }
@@ -758,12 +790,18 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     }
     const formattedNumber = this.formatSeriesNumber(result.seriesNumber);
     if (result.acquisitionType === 'MANGADEX_CHAPTER') {
-      return `ch. ${formattedNumber}`;
+      return `${this.sequenceNumberTypeLabel('CHAPTER')} ${formattedNumber}`;
     }
     if (result.contentKind === 'WEBTOON') {
-      return `ep. ${formattedNumber}`;
+      return `${this.sequenceNumberTypeLabel('EPISODE')} ${formattedNumber}`;
     }
-    return `vol. ${formattedNumber}`;
+    if (result.contentKind === 'COMIC') {
+      return `${this.sequenceNumberTypeLabel('ISSUE')} ${formattedNumber}`;
+    }
+    if (result.contentKind === 'MANGA') {
+      return `${this.sequenceNumberTypeLabel('VOLUME')} ${formattedNumber}`;
+    }
+    return `# ${formattedNumber}`;
   }
 
   resultHeading(result: DownloadResult): string {
@@ -791,6 +829,8 @@ export class DownloadsComponent implements OnInit, OnDestroy {
   clearCanonicalLock(): void {
     this.selectedCanonicalCandidate = null;
     this.canonicalSearchSignature = null;
+    this.canonicalCandidateSearchSignature = null;
+    this.lastNoCanonicalSearchSignature = null;
     this.canonicalAppliedState = null;
     this.markViewDirty();
   }
@@ -954,7 +994,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     if (this.selectedCanonicalCandidate) {
       this.clearCanonicalLock();
     }
-    return this.canonicalSearchSignature !== this.requestSignature(request);
+    return this.lastNoCanonicalSearchSignature !== this.requestSignature(request);
   }
 
   private isCanonicalSelectionCurrent(request: DownloadSearchRequest): boolean {
@@ -1032,6 +1072,8 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     if (this.contentKind === applied.contentKind) this.contentKind = 'AUTO';
     this.selectedCanonicalCandidate = null;
     this.canonicalSearchSignature = null;
+    this.canonicalCandidateSearchSignature = null;
+    this.lastNoCanonicalSearchSignature = null;
     this.canonicalAppliedState = null;
     this.results = [];
     this.allResults = [];

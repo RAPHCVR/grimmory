@@ -28,6 +28,7 @@
     "author": "Author",
     "isbn": "ISBN",
     "seriesName": "Series",
+    "sequenceNumberType": "Number type",
     "seriesNumber": "Number",
     "directUrl": "Direct URL",
     "progressStarting": "Searching fast sources... {{seconds}} s",
@@ -41,6 +42,13 @@
     "seriesNumberEnd": "To number",
     "seriesNumberEndPlaceholder": "Optional range end",
     "preferredLanguage": "Preferred language"
+  },
+  "sequenceNumberTypes": {
+    "AUTO": "Auto",
+    "VOLUME": "Volume",
+    "ISSUE": "Issue",
+    "CHAPTER": "Chapter",
+    "EPISODE": "Episode"
   },
   "results": {
     "title": "Results",
@@ -117,6 +125,9 @@
     "description": "Pick the public/catalog identity first, then search acquisition sources with the work locked.",
     "noneSummary": "No canonical match",
     "noneDetail": "No public resolver returned a confident work candidate.",
+    "noneThenSearchDetail": "No confident canonical candidate was found; source search will run without a locked work.",
+    "selectionRequiredSummary": "Canonical choice required",
+    "selectionRequiredDetail": "Canonical candidates are already shown. Pick “Use this work” or reset before searching sources.",
     "error": "Canonical resolution failed.",
     "appliedSummary": "Canonical work selected",
     "appliedDetail": "{{title}} is now locked into the search fields.",

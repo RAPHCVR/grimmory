@@ -289,19 +289,20 @@ public class DownloadPipelineManager {
                 .orElseThrow(() -> new DownloadException("Download job not found: " + jobId));
         List<Long> attemptedResultIds = new ArrayList<>();
         while (true) {
-            attemptedResultIds.add(job.getResult().getId());
+            Long currentResultId = job.getResult().getId();
+            attemptedResultIds.add(currentResultId);
             try {
-                return processJobAttempt(job);
+                return processJobAttempt(job, currentResultId);
             } catch (Exception e) {
-                log.error("Download job {} failed on result {}: {}", jobId, job.getResult().getId(), e.getMessage(), e);
+                log.error("Download job {} failed on result {}: {}", jobId, currentResultId, e.getMessage(), e);
                 if (isSupersededByRetry(jobId)) {
                     return jobRepository.findById(jobId).orElse(job);
                 }
-                Optional<DownloadResultEntity> fallback = fallbackResult(job, attemptedResultIds, e);
+                Optional<DownloadResultEntity> fallback = fallbackResult(job, currentResultId, attemptedResultIds, e);
                 if (fallback.isPresent()) {
-                    DownloadResultEntity next = fallback.get();
+                    DownloadResultEntity next = loadResult(fallback.get().getId());
                     log.warn("Download job {} falling back from result {} to result {} after failure: {}",
-                            jobId, job.getResult().getId(), next.getId(), e.getMessage());
+                            jobId, currentResultId, next.getId(), e.getMessage());
                     job = switchJobToFallbackResult(job, next);
                     continue;
                 }
@@ -312,8 +313,11 @@ public class DownloadPipelineManager {
         }
     }
 
-    private DownloadJobEntity processJobAttempt(DownloadJobEntity job) throws Exception {
-        NormalizedDownloadResult result = toNormalizedResult(job.getResult());
+    private DownloadJobEntity processJobAttempt(DownloadJobEntity job, Long resultId) throws Exception {
+        DownloadResultEntity resultEntity = loadResult(resultId);
+        job.setResult(resultEntity);
+        job.setSource(resultEntity.getSource());
+        NormalizedDownloadResult result = toNormalizedResult(resultEntity);
         DownloadExecutor executor = executorRegistry.executorFor(result.getAcquisitionType());
 
         Path stagingDir = createStagingDir(job.getId());
@@ -386,6 +390,14 @@ public class DownloadPipelineManager {
         return firstNonBlank(result.getDownloadUrl(), result.getExternalId(), result.getDetailsUrl(), String.valueOf(result.getId()));
     }
 
+    private DownloadResultEntity loadResult(Long resultId) {
+        if (resultId == null) {
+            throw new DownloadException("Download result id is missing");
+        }
+        return resultRepository.findWithSearchAndSourceById(resultId)
+                .orElseThrow(() -> new DownloadException("Download result not found: " + resultId));
+    }
+
     private String trimToNull(String value) {
         if (value == null || value.isBlank()) {
             return null;
@@ -403,8 +415,9 @@ public class DownloadPipelineManager {
         return null;
     }
 
-    private Optional<DownloadResultEntity> fallbackResult(DownloadJobEntity job, List<Long> attemptedResultIds, Exception failure) {
-        if (!shouldAttemptFallback(job, failure) || job.getSearch() == null || job.getSearch().getId() == null) {
+    private Optional<DownloadResultEntity> fallbackResult(DownloadJobEntity job, Long currentResultId, List<Long> attemptedResultIds, Exception failure) {
+        DownloadResultEntity currentResult = loadResult(currentResultId);
+        if (!shouldAttemptFallback(job, currentResult, failure) || job.getSearch() == null || job.getSearch().getId() == null) {
             return Optional.empty();
         }
         return resultRepository.findAllBySearchIdOrderByScoreDescIdAsc(job.getSearch().getId()).stream()
@@ -413,14 +426,14 @@ public class DownloadPipelineManager {
                 .findFirst();
     }
 
-    private boolean shouldAttemptFallback(DownloadJobEntity job, Exception failure) {
-        if (Boolean.TRUE.equals(job.getFallbackEnabled())) {
+    private boolean shouldAttemptFallback(DownloadJobEntity job, DownloadResultEntity currentResult, Exception failure) {
+        if (job != null && Boolean.TRUE.equals(job.getFallbackEnabled())) {
             return true;
         }
-        if (job == null || job.getResult() == null || failure == null) {
+        if (currentResult == null || failure == null) {
             return false;
         }
-        DownloadAcquisitionType acquisitionType = job.getResult().getAcquisitionType();
+        DownloadAcquisitionType acquisitionType = currentResult.getAcquisitionType();
         return acquisitionType == DownloadAcquisitionType.EXTERNAL_STACKS
                 && isStacksMirrorFailure(failure.getMessage());
     }
