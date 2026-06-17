@@ -951,6 +951,15 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     this.invalidateCanonicalLockIfQueryChanged();
   }
 
+  onSearchInputEnter(event: Event): void {
+    event.preventDefault();
+    if (this.isCanonicalLocked()) {
+      this.search();
+      return;
+    }
+    this.resolveCanonical();
+  }
+
   private buildSearchRequest(includeCanonicalSelection = true): DownloadSearchRequest {
     const request: DownloadSearchRequest = {
       query: this.clean(this.query),

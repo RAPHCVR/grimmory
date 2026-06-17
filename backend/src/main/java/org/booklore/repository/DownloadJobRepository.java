@@ -2,9 +2,9 @@ package org.booklore.repository;
 
 import org.booklore.model.entity.DownloadJobEntity;
 import org.booklore.model.enums.DownloadJobStatus;
-import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
@@ -26,8 +26,17 @@ public interface DownloadJobRepository extends JpaRepository<DownloadJobEntity, 
 
     List<DownloadJobEntity> findAllByStatusAndDeliveredFilePath(DownloadJobStatus status, String deliveredFilePath);
 
-    @EntityGraph(attributePaths = {"search", "result", "source"})
-    Optional<DownloadJobEntity> findWithSearchAndResultAndSourceById(Long id);
+    @Query("""
+            SELECT job
+            FROM DownloadJobEntity job
+            JOIN FETCH job.search
+            JOIN FETCH job.result result
+            JOIN FETCH job.source
+            JOIN FETCH result.search
+            JOIN FETCH result.source
+            WHERE job.id = :id
+            """)
+    Optional<DownloadJobEntity> findWithSearchAndResultAndSourceById(@Param("id") Long id);
 
     @Query("""
             SELECT job
@@ -44,9 +53,9 @@ public interface DownloadJobRepository extends JpaRepository<DownloadJobEntity, 
               )
             ORDER BY job.createdAt DESC, job.id DESC
             """)
-    List<DownloadJobEntity> findReusableByResultFingerprint(Long sourceId,
-                                                            String externalId,
-                                                            String detailsUrl,
-                                                            String downloadUrl,
-                                                            Collection<DownloadJobStatus> statuses);
+    List<DownloadJobEntity> findReusableByResultFingerprint(@Param("sourceId") Long sourceId,
+                                                            @Param("externalId") String externalId,
+                                                            @Param("detailsUrl") String detailsUrl,
+                                                            @Param("downloadUrl") String downloadUrl,
+                                                            @Param("statuses") Collection<DownloadJobStatus> statuses);
 }

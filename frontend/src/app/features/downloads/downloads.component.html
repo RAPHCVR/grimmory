@@ -38,7 +38,8 @@
             [(ngModel)]="query"
             [placeholder]="t('search.placeholder')"
             (ngModelChange)="onQueryChange($event)"
-            (keydown.enter)="search()"/>
+            (keydown.enter)="onSearchInputEnter($event)"/>
+          <small class="search-keyboard-hint">{{ t('search.enterHint') }}</small>
         </div>
         <p-button
           icon="pi pi-search"

@@ -95,6 +95,57 @@ class DownloadCanonicalResolverTest {
     }
 
     @Test
+    void resolve_autoBookTitleWithDefaultMixedFormatsKeepsTomeAsTitleText() throws Exception {
+        HttpServer server = jsonServer("/search.json", """
+                {
+                  "docs": [
+                    {
+                      "title": "Le Temps des Tempêtes - Tome 1",
+                      "author_name": ["Nicolas Sarkozy"],
+                      "isbn": ["9782258209108"]
+                    }
+                  ]
+                }
+                """);
+        server.start();
+        try {
+            DownloadCanonicalResolver resolver = resolver();
+            resolver.openLibraryBaseUrl = baseUrl(server);
+            resolver.googleBooksEnabled = false;
+            resolver.mangaDexEnabled = false;
+            resolver.webtoonsEnabled = false;
+
+            DownloadSearchCriteria parsed = parser.enrich(DownloadSearchCriteria.builder()
+                    .query("Le Temps des Tempêtes - Tome 1")
+                    .contentKind(DownloadContentKind.AUTO)
+                    .preferredFormats(List.of(
+                            DownloadFormat.EPUB,
+                            DownloadFormat.PDF,
+                            DownloadFormat.CBZ,
+                            DownloadFormat.CBR,
+                            DownloadFormat.CB7,
+                            DownloadFormat.MOBI,
+                            DownloadFormat.AZW,
+                            DownloadFormat.AZW3,
+                            DownloadFormat.FB2
+                    ))
+                    .build());
+
+            DownloadSearchCriteria resolved = resolver.resolve(parsed);
+
+            assertThat(resolved.getTitle()).isEqualTo("Le Temps des Tempêtes - Tome 1");
+            assertThat(resolved.getAuthor()).isEqualTo("Nicolas Sarkozy");
+            assertThat(resolved.getIsbn()).isEqualTo("9782258209108");
+            assertThat(resolved.getSeriesNumber()).isNull();
+            assertThat(resolved.getSequenceNumberType()).isEqualTo(DownloadSequenceNumberType.AUTO);
+            assertThat(resolved.getContentKind()).isEqualTo(DownloadContentKind.BOOK);
+            assertThat(resolved.getQuery()).isEqualTo("Le Temps des Tempêtes - Tome 1 Nicolas Sarkozy");
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     void resolve_openLibraryBookCandidateDoesNotForceBookKindForSequentialAutoSearch() throws Exception {
         HttpServer server = jsonServer("/search.json", """
                 {

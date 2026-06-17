@@ -255,7 +255,7 @@ public class DownloadPipelineManager {
             jobRepository.save(previous);
         }
 
-        DownloadResultEntity result = previous.getResult();
+        DownloadResultEntity result = loadResult(previous.getResult().getId());
         DownloadTargetResolver.ResolvedTarget target = targetResolver.resolve(
                 previous.getTargetLibraryId(),
                 previous.getTargetLibraryPathId(),

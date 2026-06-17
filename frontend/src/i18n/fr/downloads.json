@@ -19,6 +19,7 @@
   },
   "search": {
     "placeholder": "Rechercher par titre, auteur, ISBN, série, ou coller une URL directe ci-dessous",
+    "enterHint": "Entrée : résoudre l’œuvre canonique. Bouton Rechercher : lancer les sources.",
     "contentKind": "Contenu",
     "formats": "Formats",
     "maxResults": "Résultats max",

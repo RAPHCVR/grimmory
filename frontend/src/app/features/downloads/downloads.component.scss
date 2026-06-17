@@ -75,7 +75,7 @@
   .pi {
     position: absolute;
     left: 0.75rem;
-    top: 50%;
+    top: 1.1rem;
     transform: translateY(-50%);
     color: var(--p-text-muted-color);
   }
@@ -84,6 +84,14 @@
     width: 100%;
     padding-left: 2.35rem;
   }
+}
+
+.search-keyboard-hint {
+  display: block;
+  margin-top: 0.3rem;
+  color: var(--p-text-muted-color);
+  font-size: 0.75rem;
+  line-height: 1.2;
 }
 
 .canonical-candidates {

@@ -19,6 +19,7 @@
   },
   "search": {
     "placeholder": "Search by title, author, ISBN, series, or paste a direct URL below",
+    "enterHint": "Enter: resolve the canonical work. Search button: query sources.",
     "contentKind": "Content",
     "formats": "Formats",
     "maxResults": "Max results",

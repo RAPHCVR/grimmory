@@ -989,11 +989,19 @@ public class DownloadCanonicalResolver {
 
     private boolean likelySequentialArt(DownloadSearchCriteria criteria) {
         DownloadContentKind kind = requestedKind(criteria);
-        if (kind.isSequentialArt() || criteria.getSeriesNumber() != null) {
+        if (kind.isSequentialArt()) {
+            return true;
+        }
+        if (kind == DownloadContentKind.BOOK) {
+            return false;
+        }
+        if (criteria.getSeriesNumber() != null) {
             return true;
         }
         List<DownloadFormat> formats = criteria.getPreferredFormats();
-        return formats != null && formats.stream().anyMatch(DownloadFormat::isArchiveComicFormat);
+        return formats != null
+                && !formats.isEmpty()
+                && formats.stream().allMatch(format -> format != null && format.isArchiveComicFormat());
     }
 
     private double score(String query, String title, String author) {

@@ -141,8 +141,9 @@ public class DownloadQueryIntentParser {
             return true;
         }
         List<DownloadFormat> preferredFormats = criteria.getPreferredFormats();
-        return preferredFormats != null && preferredFormats.stream()
-                .anyMatch(format -> format != null && format.isArchiveComicFormat());
+        return preferredFormats != null
+                && !preferredFormats.isEmpty()
+                && preferredFormats.stream().allMatch(format -> format != null && format.isArchiveComicFormat());
     }
 
     private boolean hasConcreteSequentialKind(DownloadSearchCriteria criteria) {

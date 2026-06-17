@@ -346,6 +346,7 @@ class DownloadPipelineManagerTest {
 
     @Test
     void retryJob_enablesFallbackForLegacyJobs() {
+        DownloadResultRepository resultRepository = mock(DownloadResultRepository.class);
         DownloadJobRepository jobRepository = mock(DownloadJobRepository.class);
         DownloadTargetResolver targetResolver = mock(DownloadTargetResolver.class);
 
@@ -353,7 +354,7 @@ class DownloadPipelineManagerTest {
                 new AppProperties(),
                 mock(DownloadSourceRepository.class),
                 mock(DownloadSearchRepository.class),
-                mock(DownloadResultRepository.class),
+                resultRepository,
                 jobRepository,
                 mock(DownloadAdapterRegistry.class),
                 mock(DownloadExecutorRegistry.class),
@@ -387,6 +388,7 @@ class DownloadPipelineManagerTest {
                 .build();
 
         when(jobRepository.findWithSearchAndResultAndSourceById(55L)).thenReturn(Optional.of(previous));
+        when(resultRepository.findWithSearchAndSourceById(100L)).thenReturn(Optional.of(result));
         when(targetResolver.resolve(null, null, false, DownloadFormat.EPUB)).thenReturn(DownloadTargetResolver.ResolvedTarget.empty());
         when(jobRepository.save(any(DownloadJobEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -394,6 +396,64 @@ class DownloadPipelineManagerTest {
 
         assertEquals(DownloadJobStatus.QUEUED, retry.getStatus());
         assertTrue(retry.getFallbackEnabled(), "Retries must recover legacy failed jobs with fallback enabled");
+    }
+
+    @Test
+    void retryJob_reloadsDetachedResultBeforeReadingResultFields() {
+        DownloadResultRepository resultRepository = mock(DownloadResultRepository.class);
+        DownloadJobRepository jobRepository = mock(DownloadJobRepository.class);
+        DownloadTargetResolver targetResolver = mock(DownloadTargetResolver.class);
+
+        DownloadPipelineManager manager = new DownloadPipelineManager(
+                new AppProperties(),
+                mock(DownloadSourceRepository.class),
+                mock(DownloadSearchRepository.class),
+                resultRepository,
+                jobRepository,
+                mock(DownloadAdapterRegistry.class),
+                mock(DownloadExecutorRegistry.class),
+                mock(DownloadScoringService.class),
+                mock(DownloadNamingService.class),
+                targetResolver,
+                mock(DownloadedCbxMetadataService.class),
+                mock(BookdropDeliveryService.class),
+                mock(DownloadQueryIntentParser.class),
+                mock(DownloadCanonicalResolver.class),
+                new ObjectMapper()
+        );
+
+        DownloadSourceEntity source = source(1L, "Stacks", DownloadSourceType.ANNAS_ARCHIVE_API);
+        DownloadSearchEntity search = DownloadSearchEntity.builder()
+                .id(10L)
+                .query("stale retry")
+                .contentKind(DownloadContentKind.BOOK)
+                .build();
+        DownloadResultEntity detachedProxy = mock(DownloadResultEntity.class);
+        when(detachedProxy.getId()).thenReturn(100L);
+        when(detachedProxy.getFormat()).thenThrow(new LazyInitializationException("DownloadResultEntity.externalId"));
+        DownloadResultEntity hydrated = result(100L, search, source, "Hydrated candidate", 85, DownloadAcquisitionType.EXTERNAL_STACKS);
+        DownloadJobEntity previous = DownloadJobEntity.builder()
+                .id(55L)
+                .search(search)
+                .result(detachedProxy)
+                .source(source)
+                .status(DownloadJobStatus.FAILED)
+                .confidenceScore(85)
+                .autoFinalize(false)
+                .confidenceThreshold(90)
+                .fallbackEnabled(false)
+                .build();
+
+        when(jobRepository.findWithSearchAndResultAndSourceById(55L)).thenReturn(Optional.of(previous));
+        when(resultRepository.findWithSearchAndSourceById(100L)).thenReturn(Optional.of(hydrated));
+        when(targetResolver.resolve(null, null, false, DownloadFormat.EPUB)).thenReturn(DownloadTargetResolver.ResolvedTarget.empty());
+        when(jobRepository.save(any(DownloadJobEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        DownloadJobEntity retry = manager.retryJob(55L);
+
+        assertEquals(DownloadJobStatus.QUEUED, retry.getStatus());
+        assertSame(hydrated, retry.getResult());
+        verify(resultRepository).findWithSearchAndSourceById(100L);
     }
 
     @Test
